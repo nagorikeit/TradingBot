@@ -7,6 +7,14 @@ export const SUPPORTED_ASSETS: AssetInfo[] = [
   { symbol: 'AUD/USD', name: 'Australian Dollar / US Dollar', category: 'FOREX', pipDecimals: 5, basePrice: 0.65420, spread: 0.00014 },
   { symbol: 'BTC/USDT', name: 'Bitcoin / Tether', category: 'CRYPTO', pipDecimals: 2, basePrice: 67840.00, spread: 1.50 },
   { symbol: 'ETH/USDT', name: 'Ethereum / Tether', category: 'CRYPTO', pipDecimals: 2, basePrice: 3485.50, spread: 0.35 },
+  { symbol: 'BNB/USDT', name: 'BNB / Tether', category: 'CRYPTO', pipDecimals: 2, basePrice: 585.00, spread: 0.15 },
+  { symbol: 'SOL/USDT', name: 'Solana / Tether', category: 'CRYPTO', pipDecimals: 2, basePrice: 154.50, spread: 0.08 },
+  { symbol: 'XRP/USDT', name: 'XRP / Tether', category: 'CRYPTO', pipDecimals: 4, basePrice: 0.5840, spread: 0.0005 },
+  { symbol: 'DOGE/USDT', name: 'Dogecoin / Tether', category: 'CRYPTO', pipDecimals: 5, basePrice: 0.12450, spread: 0.00010 },
+  { symbol: 'ADA/USDT', name: 'Cardano / Tether', category: 'CRYPTO', pipDecimals: 4, basePrice: 0.3520, spread: 0.0004 },
+  { symbol: 'AVAX/USDT', name: 'Avalanche / Tether', category: 'CRYPTO', pipDecimals: 2, basePrice: 28.40, spread: 0.03 },
+  { symbol: 'LINK/USDT', name: 'Chainlink / Tether', category: 'CRYPTO', pipDecimals: 3, basePrice: 11.850, spread: 0.010 },
+  { symbol: 'TRX/USDT', name: 'TRON / Tether', category: 'CRYPTO', pipDecimals: 5, basePrice: 0.15820, spread: 0.00008 },
 ];
 
 export function getAssetInfo(symbol: string): AssetInfo {
@@ -35,13 +43,21 @@ export function getTimeframeMs(timeframe: TimeframeKey): number {
   }
 }
 
+export type MarketDataSourceMode = 'BINANCE' | 'MOCK';
+
 /**
  * Clean adapter interface for market data providers
  * Allows swapping mock data with Binance, AlphaVantage, or broker feeds seamlessly
  */
 export interface MarketDataProvider {
+  readonly name: string;
   getCandles(symbol: string, timeframe: TimeframeKey, limit: number): Promise<Candle[]>;
   getLatestPrice(symbol: string): Promise<number>;
+  subscribeLive(
+    symbol: string,
+    timeframe: TimeframeKey,
+    onCandle: (candle: Candle, isClosed: boolean) => void
+  ): () => void;
 }
 
 /**
@@ -49,6 +65,7 @@ export interface MarketDataProvider {
  * Produces high-fidelity realistic candlestick price action with trend cycles and volatility
  */
 export class MockMarketDataProvider implements MarketDataProvider {
+  public readonly name: string = 'Mock Simulation';
   private cache: Map<string, Candle[]> = new Map();
 
   private getCacheKey(symbol: string, timeframe: string): string {
@@ -75,6 +92,27 @@ export class MockMarketDataProvider implements MarketDataProvider {
     }
     const asset = getAssetInfo(symbol);
     return asset.basePrice;
+  }
+
+  /**
+   * Subscribes to mock simulated live feed
+   */
+  public subscribeLive(
+    symbol: string,
+    timeframe: TimeframeKey,
+    onCandle: (candle: Candle, isClosed: boolean) => void
+  ): () => void {
+    const intervalId = window.setInterval(() => {
+      const { candles, isNewCandle } = this.simulateTick(symbol, timeframe);
+      if (candles.length > 0) {
+        const latestCandle = candles[candles.length - 1];
+        onCandle(latestCandle, isNewCandle);
+      }
+    }, 1500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }
 
   /**

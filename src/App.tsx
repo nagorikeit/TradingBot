@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { marketService } from './services/marketService';
 import { Candle, Signal, TimeframeKey } from './types';
+import { MarketDataSourceMode } from './data/marketDataProvider';
 import { computeSignalStatistics } from './strategy/signalEvaluator';
 import { SafetyBanner } from './components/SafetyBanner';
 import { Header } from './components/Header';
@@ -16,34 +17,46 @@ import { StatsSummaryBar } from './components/StatsSummaryBar';
 import { SignalHistoryTable } from './components/SignalHistoryTable';
 import { BacktestView } from './components/BacktestView';
 import { StrategyRulesView } from './components/StrategyRulesView';
+import { ScannerView } from './components/ScannerView';
+import { AgentCommandCenter } from './components/AgentCommandCenter';
+import { scannerService } from './services/scannerService';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'terminal' | 'backtest' | 'history' | 'strategy'>('terminal');
+  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent'>('terminal');
   const [symbol, setSymbol] = useState<string>(() => marketService.getSymbol());
   const [timeframe, setTimeframe] = useState<TimeframeKey>(() => marketService.getTimeframe());
+  const [providerMode, setProviderMode] = useState<MarketDataSourceMode>(() => marketService.getProviderMode());
   const [candles, setCandles] = useState<Candle[]>(() => [...marketService.getCandles()]);
   const [activeSignal, setActiveSignal] = useState<Signal | null>(() => marketService.getActiveSignal());
   const [signalHistory, setSignalHistory] = useState<Signal[]>(() => [...marketService.getSignalHistory()]);
   const [isScanning, setIsScanning] = useState<boolean>(() => marketService.getIsScanning());
+  const [isScannerBusy, setIsScannerBusy] = useState<boolean>(false);
+  const [scannerSignalCount, setScannerSignalCount] = useState<number>(() => scannerService.getQualifiedSignals().length);
 
   useEffect(() => {
-    // Initialize market service with default EUR/USD and 1m timeframe
-    marketService.init('EUR/USD', '1m');
-
     const updateState = () => {
       setSymbol(marketService.getSymbol());
       setTimeframe(marketService.getTimeframe());
+      setProviderMode(marketService.getProviderMode());
       setCandles([...marketService.getCandles()]);
       setActiveSignal(marketService.getActiveSignal());
       setSignalHistory([...marketService.getSignalHistory()]);
       setIsScanning(marketService.getIsScanning());
     };
 
+    const updateScanner = () => {
+      setScannerSignalCount(scannerService.getQualifiedSignals().length);
+    };
+
     updateState();
-    const unsubscribe = marketService.subscribe(updateState);
+    updateScanner();
+
+    const unsubscribeMarket = marketService.subscribe(updateState);
+    const unsubscribeScanner = scannerService.subscribe(updateScanner);
 
     return () => {
-      unsubscribe();
+      unsubscribeMarket();
+      unsubscribeScanner();
       marketService.stopLiveFeed();
     };
   }, []);
@@ -54,14 +67,25 @@ export default function App() {
 
   const handleSelectTimeframe = (newTf: TimeframeKey) => {
     marketService.setTimeframe(newTf);
+    scannerService.setTimeframe(newTf);
+  };
+
+  const handleSelectProvider = (mode: MarketDataSourceMode) => {
+    marketService.setProviderMode(mode);
   };
 
   const handleAdvanceCandle = () => {
     marketService.advanceCandle();
   };
 
-  const handleManualScan = () => {
-    marketService.triggerManualScan();
+  const handleManualScan = async () => {
+    if (currentTab === 'scanner') {
+      setIsScannerBusy(true);
+      await scannerService.reconcileAllWorkers();
+      setIsScannerBusy(false);
+    } else {
+      marketService.triggerManualScan();
+    }
   };
 
   const handleClearHistory = () => {
@@ -83,15 +107,18 @@ export default function App() {
         onSelectTab={setCurrentTab}
         onAdvanceCandle={handleAdvanceCandle}
         onManualScan={handleManualScan}
-        isScanning={isScanning}
+        isScanning={currentTab === 'scanner' ? isScannerBusy : isScanning}
+        scannerSignalCount={scannerSignalCount}
       />
 
       {/* 3. Asset and Timeframe Bar */}
       <AssetSelectorBar
         selectedSymbol={symbol}
         selectedTimeframe={timeframe}
+        providerMode={providerMode}
         onSelectSymbol={handleSelectSymbol}
         onSelectTimeframe={handleSelectTimeframe}
+        onSelectProvider={handleSelectProvider}
         latestCandle={latestCandle}
         previousCandle={previousCandle}
       />
@@ -134,6 +161,13 @@ export default function App() {
           </div>
         )}
 
+        {currentTab === 'scanner' && (
+          <ScannerView
+            onSelectSymbolForTerminal={handleSelectSymbol}
+            onNavigateToTerminal={() => setCurrentTab('terminal')}
+          />
+        )}
+
         {currentTab === 'backtest' && (
           <BacktestView />
         )}
@@ -150,6 +184,10 @@ export default function App() {
 
         {currentTab === 'strategy' && (
           <StrategyRulesView />
+        )}
+
+        {currentTab === 'agent' && (
+          <AgentCommandCenter />
         )}
       </main>
 
