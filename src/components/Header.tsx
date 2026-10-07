@@ -112,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
             <span>AI Agent</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">0A</span>
+            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">2C</span>
           </button>
         </nav>
 

@@ -1,0 +1,33 @@
+[
+  {
+    "sourceId": "src_1791358433577_be94",
+    "name": "Financial Times Markets RSS Feed",
+    "url": "https://www.ft.com/markets?format=rss",
+    "reason": "Submitted for Phase 2B RSS ingestion validation.",
+    "discoveredAt": 1791358433577,
+    "discoveredBy": "SYSTEM",
+    "reviewStatus": "PENDING",
+    "reviewNotes": "Financial market commentary RSS; pending review for integration in daily news digest."
+  },
+  {
+    "sourceId": "src_1791358454382_8ipt",
+    "name": "European Central Bank Economic Bulletins",
+    "url": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html",
+    "reason": "New source pending review and trust evaluation",
+    "discoveredAt": 1791358454382,
+    "discoveredBy": "SYSTEM",
+    "reviewStatus": "APPROVED",
+    "reviewNotes": "Verified as official ECB research publication.",
+    "evidence": []
+  },
+  {
+    "sourceId": "src_1791358454386_xyaj",
+    "name": "ECB Duplicate Registration",
+    "url": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html/",
+    "reason": "New source pending review and trust evaluation",
+    "discoveredAt": 1791358454386,
+    "discoveredBy": "SYSTEM",
+    "reviewStatus": "PENDING",
+    "evidence": []
+  }
+]

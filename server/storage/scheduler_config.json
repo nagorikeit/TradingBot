@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "dailyRunTime": "02:00",
+  "timezone": "Asia/Dhaka",
+  "lastStatus": "COMPLETED",
+  "nextRunAt": 1791403200540,
+  "lastRunAt": 1791358505540,
+  "lastExecutionDurationMs": 351
+}

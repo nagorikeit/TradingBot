@@ -1,0 +1,137 @@
+[
+  {
+    "id": "src_1791358433575_8a94",
+    "name": "Bank for International Settlements (BIS)",
+    "url": "https://www.bis.org",
+    "normalizedUrl": "https://www.bis.org",
+    "sourceType": "RESEARCH",
+    "categories": [
+      "MACROECONOMICS",
+      "RESEARCH",
+      "CURRENCY"
+    ],
+    "status": "TRUSTED",
+    "trustScore": 0.95,
+    "authorityLevel": "TIER_1_OFFICIAL",
+    "lastReviewedAt": 1791358433575,
+    "reviewNotes": "Global central bank research hub; authoritative data on foreign exchange, liquidity, and systemic risk.",
+    "evidenceLinks": [],
+    "createdAt": 1791358433575,
+    "updatedAt": 1791358433575
+  },
+  {
+    "id": "src_1791358433576_9kc3",
+    "name": "Federal Reserve Economic Data (FRED)",
+    "url": "https://fred.stlouisfed.org",
+    "normalizedUrl": "https://fred.stlouisfed.org",
+    "sourceType": "WEBSITE",
+    "categories": [
+      "MACROECONOMICS",
+      "FUNDAMENTAL_ANALYSIS",
+      "CURRENCY"
+    ],
+    "status": "TRUSTED",
+    "trustScore": 0.95,
+    "authorityLevel": "TIER_1_OFFICIAL",
+    "lastReviewedAt": 1791358433576,
+    "reviewNotes": "St. Louis Fed official macroeconomic data, inflation, yields, and interest rate statistics.",
+    "evidenceLinks": [],
+    "createdAt": 1791358433576,
+    "updatedAt": 1791358433576
+  },
+  {
+    "id": "src_1791358433576_tavt",
+    "name": "Investopedia Financial Education",
+    "url": "https://www.investopedia.com",
+    "normalizedUrl": "https://www.investopedia.com",
+    "sourceType": "WEBSITE",
+    "categories": [
+      "EDUCATION",
+      "TRADING",
+      "TECHNICAL_ANALYSIS",
+      "RISK_MANAGEMENT"
+    ],
+    "status": "TRUSTED",
+    "trustScore": 0.85,
+    "authorityLevel": "TIER_2_ESTABLISHED",
+    "lastReviewedAt": 1791358433576,
+    "reviewNotes": "Standardized reference for technical indicators, price action concepts, and risk metrics.",
+    "evidenceLinks": [],
+    "createdAt": 1791358433576,
+    "updatedAt": 1791358433576
+  },
+  {
+    "id": "src_1791358433576_ut80",
+    "name": "DailyFX Technical & Currency Analysis",
+    "url": "https://www.dailyfx.com",
+    "normalizedUrl": "https://www.dailyfx.com",
+    "sourceType": "NEWS",
+    "categories": [
+      "FOREX",
+      "CURRENCY",
+      "TECHNICAL_ANALYSIS",
+      "MARKET_NEWS"
+    ],
+    "status": "MONITORED",
+    "trustScore": 0.8,
+    "authorityLevel": "TIER_2_ESTABLISHED",
+    "reviewNotes": "Established FX market research, support/resistance levels, and economic calendar analysis.",
+    "evidenceLinks": [],
+    "createdAt": 1791358433576,
+    "updatedAt": 1791358433576
+  },
+  {
+    "id": "src_1791358433577_be94",
+    "name": "Financial Times Markets RSS Feed",
+    "url": "https://www.ft.com/markets?format=rss",
+    "normalizedUrl": "https://www.ft.com/markets?format=rss",
+    "sourceType": "RSS",
+    "categories": [
+      "MARKET_NEWS",
+      "MACROECONOMICS"
+    ],
+    "status": "UNDER_REVIEW",
+    "trustScore": 0.75,
+    "authorityLevel": "TIER_2_ESTABLISHED",
+    "reviewNotes": "Financial market commentary RSS; pending review for integration in daily news digest.",
+    "reviewReason": "Submitted for Phase 2B RSS ingestion validation.",
+    "evidenceLinks": [],
+    "createdAt": 1791358433577,
+    "updatedAt": 1791358433577
+  },
+  {
+    "id": "src_1791358454382_8ipt",
+    "name": "European Central Bank Economic Bulletins",
+    "url": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html",
+    "normalizedUrl": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html",
+    "sourceType": "RESEARCH",
+    "categories": [
+      "MACROECONOMICS",
+      "FOREX"
+    ],
+    "status": "TRUSTED",
+    "trustScore": 0.9,
+    "authorityLevel": "TIER_1_OFFICIAL",
+    "lastReviewedAt": 1791358492972,
+    "reviewNotes": "Verified as official ECB research publication.",
+    "evidenceLinks": [],
+    "createdAt": 1791358454382,
+    "updatedAt": 1791358454382
+  },
+  {
+    "id": "src_1791358454386_xyaj",
+    "name": "ECB Duplicate Registration",
+    "url": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html/",
+    "normalizedUrl": "https://www.ecb.europa.eu/pub/economic-bulletin/html/index.en.html/",
+    "sourceType": "RESEARCH",
+    "categories": [
+      "MACROECONOMICS"
+    ],
+    "status": "UNDER_REVIEW",
+    "trustScore": 0.5,
+    "authorityLevel": "UNVERIFIED",
+    "evidenceLinks": [],
+    "createdAt": 1791358454386,
+    "updatedAt": 1791358454386
+  }
+]
