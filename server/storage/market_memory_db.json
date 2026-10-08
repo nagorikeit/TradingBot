@@ -81,5 +81,74 @@
       "Candle Timestamp: 1791479700000",
       "Source: BINANCE_REST"
     ]
+  },
+  {
+    "id": "mkt_1791482352645_ikma",
+    "symbol": "ETH/USDT",
+    "market": "CRYPTO",
+    "timeframe": "1m",
+    "setup": "BULLISH ENGULFING",
+    "marketCondition": "LOW_VOLATILITY",
+    "candleContext": "Candle at 2026-10-08T17:58:00.000Z: O=2415.13 H=2416.74 L=2415.13 C=2416.48 V=105.2652",
+    "technicalContext": "RSI=47.4, MACD Hist=-0.0963, ATR=3.03",
+    "historicalOutcome": "BULLISH ENGULFING observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791482352645,
+    "evidenceReferences": [
+      "Observation ID: obs_1791482280000_bull_engulf_ETHUSDT",
+      "Candle Timestamp: 1791482280000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
+  },
+  {
+    "id": "mkt_1791482352721_28e0",
+    "symbol": "ETH/USDT",
+    "market": "CRYPTO",
+    "timeframe": "5m",
+    "setup": "POSSIBLE REJECTION",
+    "marketCondition": "LOW_VOLATILITY",
+    "candleContext": "Candle at 2026-10-08T17:50:00.000Z: O=2410.81 H=2416.26 L=2408.61 C=2415.46 V=2805.9477",
+    "technicalContext": "RSI=36.1, MACD Hist=2.5380, ATR=10.45",
+    "historicalOutcome": "POSSIBLE REJECTION observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791482352721,
+    "evidenceReferences": [
+      "Observation ID: obs_1791481800000_rejection_ETHUSDT",
+      "Candle Timestamp: 1791481800000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
+  },
+  {
+    "id": "mkt_1791482352877_7xpk",
+    "symbol": "SOL/USDT",
+    "market": "CRYPTO",
+    "timeframe": "15m",
+    "setup": "BEARISH REJECTION WICK",
+    "marketCondition": "HIGH_VOLATILITY",
+    "candleContext": "Candle at 2026-10-08T17:30:00.000Z: O=106.69 H=107.09 L=106.52 C=106.69 V=49346.217",
+    "technicalContext": "RSI=19.2, MACD Hist=-0.2795, ATR=0.94",
+    "historicalOutcome": "BEARISH REJECTION WICK observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791482352877,
+    "evidenceReferences": [
+      "Observation ID: obs_1791480600000_bear_wick_SOLUSDT",
+      "Candle Timestamp: 1791480600000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
   }
 ]

@@ -201,5 +201,280 @@
       "knowledgeItemsConsulted": 5,
       "validationsConsulted": 2
     }
+  },
+  {
+    "sessionId": "learn_1791482352880_manual",
+    "startTime": 1791482352343,
+    "endTime": 1791482352880,
+    "sourcesProcessed": 31,
+    "newKnowledgeCount": 1,
+    "updatedKnowledgeCount": 3,
+    "contradictionsFound": 0,
+    "importantMarketObservations": [
+      "[SOL/USDT 15m] REGIME_CLASSIFICATION: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.69, EMA9=108.12, EMA21=109.85, RSI=19.23, MACD Hist=-0.2795, ATR=0.94.",
+      "[SOL/USDT 15m] BEARISH_REJECTION_WICK: Factual: Candle formed upper rejection wick of 0.40 (70.2% of candle range [106.52 - 107.09]).",
+      "[SOL/USDT 5m] REGIME_CLASSIFICATION: Factual: Regime assessed as TRENDING_BEARISH with Close=106.27, EMA9=106.75, EMA21=107.57, RSI=32.14, MACD Hist=-0.0364, ATR=0.61.",
+      "[ETH/USDT 5m] REGIME_CLASSIFICATION: Factual: Regime assessed as LOW_VOLATILITY with Close=2415.46, EMA9=2419.18, EMA21=2428.37, RSI=36.07, MACD Hist=2.5380, ATR=10.45.",
+      "[ETH/USDT 5m] POSSIBLE_REJECTION: Factual: Price pierced Bollinger Band lower boundary but closed back inside band range.",
+      "[ETH/USDT 1m] REGIME_CLASSIFICATION: Factual: Regime assessed as LOW_VOLATILITY with Close=2416.48, EMA9=2415.60, EMA21=2416.91, RSI=47.36, MACD Hist=-0.0963, ATR=3.03.",
+      "[ETH/USDT 1m] BULLISH_ENGULFING: Factual: Bullish candle body [2415.13 - 2416.48] completely engulfs preceding bearish body [2415.13 - 2415.14].",
+      "[BTC/USDT 5m] REGIME_CLASSIFICATION: Factual: Regime assessed as UNCERTAIN with Close=80682.95, EMA9=80784.26, EMA21=80978.18, RSI=38.34, MACD Hist=13.4831, ATR=237.77.",
+      "[BTC/USDT 1m] REGIME_CLASSIFICATION: Factual: Regime assessed as LOW_VOLATILITY with Close=80698.91, EMA9=80690.81, EMA21=80722.26, RSI=46.36, MACD Hist=-2.1974, ATR=67.81.",
+      "[SOL/USDT 15m] REGIME_CLASSIFICATION: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.14, EMA9=108.37, EMA21=110.11, RSI=17.67, MACD Hist=-0.3277, ATR=0.95."
+    ],
+    "summary": "Daily Learning Session completed. Analyzed 18 confirmed closed candle observations. Monitored regimes: [BTC/USDT(LOW_VOLATILITY), ETH/USDT(LOW_VOLATILITY), ETH/USDT(LOW_VOLATILITY), BTC/USDT(UNCERTAIN), SOL/USDT(TRENDING_BEARISH), SOL/USDT(HIGH_VOLATILITY)]. Conducted 2 knowledge comparisons and 8 market memory comparisons. Identified 4 repeated market patterns, flagged 0 contradiction candidates, and formulated 1 testable hypotheses for empirical backtest queue.",
+    "status": "COMPLETED",
+    "importantFindings": [
+      "Regime Tracking: BTC/USDT (1m) is in LOW_VOLATILITY (EMA9=80690.81, RSI=46.4, MACD Hist=-2.197).",
+      "Regime Tracking: ETH/USDT (1m) is in LOW_VOLATILITY (EMA9=2415.60, RSI=47.4, MACD Hist=-0.096).",
+      "Regime Tracking: ETH/USDT (5m) is in LOW_VOLATILITY (EMA9=2419.18, RSI=36.1, MACD Hist=2.538).",
+      "Regime Tracking: BTC/USDT (5m) is in UNCERTAIN (EMA9=80784.26, RSI=38.3, MACD Hist=13.483).",
+      "Regime Tracking: SOL/USDT (5m) is in TRENDING_BEARISH (EMA9=106.75, RSI=32.1, MACD Hist=-0.036).",
+      "Regime Tracking: SOL/USDT (15m) is in HIGH_VOLATILITY (EMA9=108.12, RSI=19.2, MACD Hist=-0.280).",
+      "Volatility Baseline: No abnormal ATR spikes or excessive volume bursts detected in the sample period.",
+      "Price Rejections: 3 structural wick rejections observed, indicating active defense at short-term support/resistance levels."
+    ],
+    "contradictions": [],
+    "repeatedPatterns": [
+      {
+        "patternName": "REGIME CLASSIFICATION",
+        "occurrences": 9,
+        "symbols": [
+          "SOL/USDT",
+          "ETH/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, TRENDING_BEARISH, LOW_VOLATILITY, UNCERTAIN",
+        "description": "Pattern \"REGIME_CLASSIFICATION\" observed 9 times across SOL/USDT, ETH/USDT, BTC/USDT. Context: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.69, EMA9=108.12, EMA21=109.85, RSI=19.23, MACD Hist=-0.2795, ATR=0.94."
+      },
+      {
+        "patternName": "BEARISH REJECTION WICK",
+        "occurrences": 2,
+        "symbols": [
+          "SOL/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, LOW_VOLATILITY",
+        "description": "Pattern \"BEARISH_REJECTION_WICK\" observed 2 times across SOL/USDT, BTC/USDT. Context: Factual: Candle formed upper rejection wick of 0.40 (70.2% of candle range [106.52 - 107.09])."
+      },
+      {
+        "patternName": "POSSIBLE REJECTION",
+        "occurrences": 2,
+        "symbols": [
+          "ETH/USDT"
+        ],
+        "regime": "LOW_VOLATILITY, UNCERTAIN",
+        "description": "Pattern \"POSSIBLE_REJECTION\" observed 2 times across ETH/USDT. Context: Factual: Price pierced Bollinger Band lower boundary but closed back inside band range."
+      },
+      {
+        "patternName": "POSSIBLE BREAKOUT",
+        "occurrences": 2,
+        "symbols": [
+          "SOL/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, LOW_VOLATILITY",
+        "description": "Pattern \"POSSIBLE_BREAKOUT\" observed 2 times across SOL/USDT, BTC/USDT. Context: Factual: Candle close 106.14 crossed beyond Bollinger Band lower boundary (106.16)."
+      }
+    ],
+    "mistakesOrLessons": [
+      {
+        "lesson": "Historical trade execution lesson: Rule achieved Evidence Score 61/100. Verdict: REJECTED. OOS Win Rate: 52.7% (IS: 58.2%, retention: 0.91).",
+        "context": "UNIVERSAL 5m - Automated Validation Engine for Rule: PUT - RSI Overbought Rejection (rule_bearish_rsi_overbought_drop)",
+        "preventiveAction": "Failed out-of-sample edge preservation. Hypothesis rejected and recorded in failure memory."
+      },
+      {
+        "lesson": "Historical trade execution lesson: Signal triggered while ATR expanded to 4.2x average due to high-impact CPI release. Bid-ask spread increased tenfold.",
+        "context": "ETHUSDT 1m - High-volatility fast session with erratic ATR spike.",
+        "preventiveAction": "Root cause analysis: System lacked hard volatility/news freeze filter. Never trade 1m during scheduled macro volatility releases."
+      },
+      {
+        "lesson": "Operational Discipline: Spread expansion and slippage spike during HIGH_VOLATILITY regimes.",
+        "context": "Observed elevated ATR ratio (>1.6x baseline).",
+        "preventiveAction": "Increase minimum stop margin or halt fast 1m execution until volatility normalizes."
+      }
+    ],
+    "hypothesesGenerated": [
+      {
+        "hypothesisId": "hyp_1791482352881_cqr9",
+        "statement": "Requiring candle body ratio to exceed 55% of candle range on breakout setups should be systematically backtested across multi-timeframe samples to evaluate continuation expectancy.",
+        "rationale": "Repeated pattern analysis recorded 2 rejection wick events where breakouts failed due to immediate counter-rejection shadows.",
+        "evidenceIds": [
+          "obs_1791480600000_bear_wick_SOLUSDT",
+          "obs_1791481800000_rejection_ETHUSDT",
+          "obs_1791480300000_bull_wick_ETHUSDT"
+        ],
+        "targetSymbols": [
+          "SOL/USDT",
+          "BTC/USDT"
+        ],
+        "suggestedRegime": "BREAKOUT_SETUP",
+        "createdAt": 1791482352880
+      }
+    ],
+    "knowledgeComparisons": [
+      {
+        "knowledgeId": "kn_1791480142557_gp9x7",
+        "knowledgeTitle": "Overhead Resistance Rejection & False Breakout Trap",
+        "topic": "Breakout & False Breakout",
+        "observationId": "obs_1791480600000_bear_wick_SOLUSDT",
+        "symbol": "SOL/USDT",
+        "timeframe": "15m",
+        "comparisonResult": "AGREEMENT",
+        "explanation": "Observation of upper shadow rejection (Factual: Candle formed upper rejection wick of 0.40 (70.2% of candle range [106.52 - 107.09]).) confirms knowledge claim \"Unconfirmed breakouts right under multi-touch resistance carry high false-breakout risk.\" regarding premature breakout traps.",
+        "evidenceReferences": [
+          "obs_1791480600000_bear_wick_SOLUSDT",
+          "kn_1791480142557_gp9x7"
+        ]
+      },
+      {
+        "knowledgeId": "kn_1791480142557_gp9x7",
+        "knowledgeTitle": "Overhead Resistance Rejection & False Breakout Trap",
+        "topic": "Breakout & False Breakout",
+        "observationId": "obs_1791480300000_bear_wick_BTCUSDT",
+        "symbol": "BTC/USDT",
+        "timeframe": "1m",
+        "comparisonResult": "AGREEMENT",
+        "explanation": "Observation of upper shadow rejection (Factual: Candle formed upper rejection wick of 60.43 (74.3% of candle range [80504.63 - 80585.96]).) confirms knowledge claim \"Unconfirmed breakouts right under multi-touch resistance carry high false-breakout risk.\" regarding premature breakout traps.",
+        "evidenceReferences": [
+          "obs_1791480300000_bear_wick_BTCUSDT",
+          "kn_1791480142557_gp9x7"
+        ]
+      }
+    ],
+    "marketMemoryComparisons": [
+      {
+        "memoryId": "mkt_1791482352877_7xpk",
+        "observationId": "obs_1791480600000_bear_wick_SOLUSDT",
+        "symbol": "SOL/USDT",
+        "timeframe": "15m",
+        "setup": "BEARISH REJECTION WICK",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"BEARISH REJECTION WICK\" observed again on SOL/USDT (prior observations: 1). Current condition: HIGH_VOLATILITY (Historical: HIGH_VOLATILITY)."
+      },
+      {
+        "memoryId": "mkt_1791482352721_28e0",
+        "observationId": "obs_1791481800000_rejection_ETHUSDT",
+        "symbol": "ETH/USDT",
+        "timeframe": "5m",
+        "setup": "POSSIBLE REJECTION",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"POSSIBLE REJECTION\" observed again on ETH/USDT (prior observations: 1). Current condition: LOW_VOLATILITY (Historical: LOW_VOLATILITY)."
+      },
+      {
+        "memoryId": "mkt_1791482352645_ikma",
+        "observationId": "obs_1791482280000_bull_engulf_ETHUSDT",
+        "symbol": "ETH/USDT",
+        "timeframe": "1m",
+        "setup": "BULLISH ENGULFING",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"BULLISH ENGULFING\" observed again on ETH/USDT (prior observations: 1). Current condition: LOW_VOLATILITY (Historical: LOW_VOLATILITY)."
+      },
+      {
+        "memoryId": "mkt_1791480371661_b83b",
+        "observationId": "obs_1791479700000_bear_engulf_SOLUSDT",
+        "symbol": "SOL/USDT",
+        "timeframe": "15m",
+        "setup": "BEARISH ENGULFING",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"BEARISH ENGULFING\" observed again on SOL/USDT (prior observations: 1). Current condition: HIGH_VOLATILITY (Historical: HIGH_VOLATILITY)."
+      },
+      {
+        "observationId": "obs_1791479700000_breakout_SOLUSDT",
+        "symbol": "SOL/USDT",
+        "timeframe": "15m",
+        "setup": "POSSIBLE BREAKOUT",
+        "comparisonResult": "NEW",
+        "priorObservationCount": 0,
+        "explanation": "New setup occurrence: \"POSSIBLE BREAKOUT\" observed for the first time on SOL/USDT 15m. Recorded for ongoing longitudinal tracking."
+      },
+      {
+        "memoryId": "mkt_1791480355608_1i5d",
+        "observationId": "obs_1791480300000_bull_wick_ETHUSDT",
+        "symbol": "ETH/USDT",
+        "timeframe": "5m",
+        "setup": "BULLISH REJECTION WICK",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"BULLISH REJECTION WICK\" observed again on ETH/USDT (prior observations: 1). Current condition: UNCERTAIN (Historical: UNCERTAIN)."
+      },
+      {
+        "memoryId": "mkt_1791480348728_84jh",
+        "observationId": "obs_1791480300000_bear_wick_BTCUSDT",
+        "symbol": "BTC/USDT",
+        "timeframe": "1m",
+        "setup": "BEARISH REJECTION WICK",
+        "comparisonResult": "CONSISTENT",
+        "priorObservationCount": 1,
+        "explanation": "Repeated setup: \"BEARISH REJECTION WICK\" observed again on BTC/USDT (prior observations: 1). Current condition: LOW_VOLATILITY (Historical: LOW_VOLATILITY)."
+      },
+      {
+        "observationId": "obs_1791480300000_breakout_BTCUSDT",
+        "symbol": "BTC/USDT",
+        "timeframe": "1m",
+        "setup": "POSSIBLE BREAKOUT",
+        "comparisonResult": "NEW",
+        "priorObservationCount": 0,
+        "explanation": "New setup occurrence: \"POSSIBLE BREAKOUT\" observed for the first time on BTC/USDT 1m. Recorded for ongoing longitudinal tracking."
+      }
+    ],
+    "validationEvidenceReferences": [
+      {
+        "validationId": "val_271e51b97066293f",
+        "ruleId": "rule_bearish_rsi_overbought_drop",
+        "status": "Evidence Available",
+        "phase2dVerdict": "REJECTED",
+        "sampleSize": 180,
+        "wins": 29,
+        "losses": 26,
+        "draws": 1,
+        "unresolved": 0,
+        "inSampleWinRate": 58.2,
+        "outOfSampleWinRate": 52.7,
+        "profitFactor": 0.97,
+        "expectancy": -0.03,
+        "maxDrawdown": 14.8,
+        "oosRetentionRatio": 0.91,
+        "evidenceStatus": "AVAILABLE"
+      },
+      {
+        "validationId": "val_seed_rsi_bounce",
+        "ruleId": "rule_rsi_oversold_ema_bounce",
+        "status": "Evidence Available",
+        "phase2dVerdict": "TRUSTED_CANDIDATE",
+        "sampleSize": 204,
+        "wins": 41,
+        "losses": 20,
+        "draws": 1,
+        "unresolved": 0,
+        "inSampleWinRate": 68.6,
+        "outOfSampleWinRate": 67.2,
+        "profitFactor": 1.72,
+        "expectancy": 0.24,
+        "maxDrawdown": 12.1,
+        "oosRetentionRatio": 0.98,
+        "evidenceStatus": "AVAILABLE"
+      }
+    ],
+    "researchAcquisitionResults": {
+      "attemptedCount": 0,
+      "successCount": 0,
+      "failedCount": 0,
+      "sourcesProcessed": [],
+      "failures": []
+    },
+    "metrics": {
+      "observationsAnalyzed": 18,
+      "memoriesConsulted": 8,
+      "knowledgeItemsConsulted": 5,
+      "validationsConsulted": 2,
+      "knowledgeComparisonsCount": 2,
+      "marketMemoryComparisonsCount": 8,
+      "freshClosedCandlesAnalyzed": 9
+    }
   }
 ]

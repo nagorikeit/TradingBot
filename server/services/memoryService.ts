@@ -118,7 +118,9 @@ export class MemoryService {
   }
 
   /**
-   * Record or update market behavior pattern memory
+   * Record or update market behavior pattern memory.
+   * Guarantees strict segregation: Market Observation is NOT a trade outcome.
+   * Only true trade evaluations record WIN/LOSS/DRAW.
    */
   public recordMarketObservation(input: {
     symbol: string;
@@ -129,13 +131,19 @@ export class MemoryService {
     candleContext: string;
     technicalContext: string;
     newsContext?: string;
-    outcome: 'WIN' | 'LOSS' | 'DRAW';
+    outcome?: 'WIN' | 'LOSS' | 'DRAW' | null;
+    tradeOutcome?: 'WIN' | 'LOSS' | 'DRAW' | null;
+    memoryType?: 'TRADE_OUTCOME' | 'MARKET_OBSERVATION';
     evidenceReferences?: string[];
   }): MarketMemoryItem {
     const key = `${input.symbol.toUpperCase()}::${input.timeframe}::${input.setup.toLowerCase()}`;
     let existing = this.marketMemories.get(key);
 
     const now = Date.now();
+    const effectiveOutcome = input.tradeOutcome !== undefined ? input.tradeOutcome : input.outcome;
+    const memoryType = input.memoryType || (effectiveOutcome ? 'TRADE_OUTCOME' : 'MARKET_OBSERVATION');
+    const isTrade = memoryType === 'TRADE_OUTCOME' && !!effectiveOutcome;
+
     if (!existing) {
       existing = {
         id: `mkt_${now}_${Math.random().toString(36).substring(2, 6)}`,
@@ -149,17 +157,23 @@ export class MemoryService {
         newsContext: input.newsContext,
         historicalOutcome: `${input.setup} observed`,
         observationCount: 1,
-        winningCount: input.outcome === 'WIN' ? 1 : 0,
-        losingCount: input.outcome === 'LOSS' ? 1 : 0,
-        drawCount: input.outcome === 'DRAW' ? 1 : 0,
+        winningCount: isTrade && input.outcome === 'WIN' ? 1 : 0,
+        losingCount: isTrade && input.outcome === 'LOSS' ? 1 : 0,
+        drawCount: isTrade && input.outcome === 'DRAW' ? 1 : 0,
         lastObserved: now,
         evidenceReferences: input.evidenceReferences || [],
+        memoryType,
+        tradeOutcome: isTrade ? input.outcome : null,
       };
     } else {
       existing.observationCount++;
-      if (input.outcome === 'WIN') existing.winningCount++;
-      if (input.outcome === 'LOSS') existing.losingCount++;
-      if (input.outcome === 'DRAW') existing.drawCount++;
+      if (isTrade) {
+        if (input.outcome === 'WIN') existing.winningCount++;
+        if (input.outcome === 'LOSS') existing.losingCount++;
+        if (input.outcome === 'DRAW') existing.drawCount++;
+        existing.tradeOutcome = input.outcome;
+      }
+      existing.memoryType = memoryType;
       existing.lastObserved = now;
       existing.marketCondition = input.marketCondition;
       existing.candleContext = input.candleContext;

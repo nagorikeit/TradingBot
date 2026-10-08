@@ -625,7 +625,8 @@ export class MarketObserverService {
         marketCondition: regime,
         candleContext: `Candle at ${new Date(candle.timestamp).toISOString()}: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} V=${candle.volume}`,
         technicalContext: `RSI=${patternObs.indicatorSnapshot.rsi.toFixed(1)}, MACD Hist=${patternObs.indicatorSnapshot.macd.histogram.toFixed(4)}, ATR=${patternObs.indicatorSnapshot.atr.toFixed(2)}`,
-        outcome: 'DRAW', // Neutral observation outcome (not evaluated trade)
+        memoryType: 'MARKET_OBSERVATION',
+        tradeOutcome: null,
         evidenceReferences: [
           `Observation ID: ${patternObs.observationId}`,
           `Candle Timestamp: ${candle.timestamp}`,
@@ -639,7 +640,9 @@ export class MarketObserverService {
   }
 
   /**
-   * Direct Binance REST fetcher reusing standard endpoints
+   * Direct Binance REST fetcher reusing standard endpoints.
+   * STRICT ENFORCEMENT: Only confirmed, CLOSED candles are evaluated.
+   * Forming/active in-progress candles are strictly excluded from learning evidence.
    */
   public async fetchAndObserveBinance(
     symbol: string,
@@ -649,8 +652,8 @@ export class MarketObserverService {
     const cleanSymbol = symbol.replace(/[\/\-_]/g, '').toUpperCase();
     const interval = timeframe;
     const endpoints = [
-      `https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${Math.min(limit, 500)}`,
-      `https://data-api.binance.vision/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${Math.min(limit, 500)}`,
+      `https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${Math.min(limit + 5, 500)}`,
+      `https://data-api.binance.vision/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${Math.min(limit + 5, 500)}`,
     ];
 
     let rawKlines: any[] | null = null;
@@ -673,7 +676,30 @@ export class MarketObserverService {
       throw new Error(`Failed to fetch Binance klines for ${symbol} on ${timeframe}`);
     }
 
-    const candles: CandleData[] = rawKlines.map((item) => ({
+    // STRICT CLOSED CANDLE FILTER:
+    // Binance kline structure: [openTime, open, high, low, close, volume, closeTime, ...]
+    // item[6] is closeTime in milliseconds.
+    // If closeTime > now, the candle is still open and currently forming.
+    const now = Date.now();
+    let confirmedKlines = rawKlines.filter((item) => Number(item[6]) <= now);
+
+    // If local clock skew makes closeTime slightly ahead, safely drop the last (forming) element
+    if (confirmedKlines.length === 0 && rawKlines.length > 1) {
+      confirmedKlines = rawKlines.slice(0, -1);
+    } else if (confirmedKlines.length === rawKlines.length && rawKlines.length > 1) {
+      // Defensive check: Binance REST often returns the open candle as the very last element
+      // where closeTime is current period end (e.g. 59.999s). Exclude the last candle if it's open.
+      const lastKline = rawKlines[rawKlines.length - 1];
+      if (Number(lastKline[6]) >= now - 1000) {
+        confirmedKlines = confirmedKlines.slice(0, -1);
+      }
+    }
+
+    if (confirmedKlines.length === 0) {
+      throw new Error(`No closed candles available for ${symbol} on ${timeframe}`);
+    }
+
+    const candles: CandleData[] = confirmedKlines.map((item) => ({
       timestamp: Number(item[0]),
       open: parseFloat(item[1]),
       high: parseFloat(item[2]),

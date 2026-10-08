@@ -100,6 +100,55 @@ export interface MarketMemoryItem {
   drawCount: number;
   lastObserved: number;
   evidenceReferences: string[];
+  // Phase 2E-B: Strict separation of Market Observation vs Trade Outcome
+  memoryType?: 'TRADE_OUTCOME' | 'MARKET_OBSERVATION';
+  tradeOutcome?: 'WIN' | 'LOSS' | 'DRAW' | null;
+}
+
+export type KnowledgeComparisonType = 'AGREEMENT' | 'CONTRADICTION_CANDIDATE' | 'NEW_OBSERVATION';
+
+export interface KnowledgeComparisonItem {
+  knowledgeId: string;
+  knowledgeTitle: string;
+  topic: string;
+  observationId: string;
+  symbol: string;
+  timeframe: string;
+  comparisonResult: KnowledgeComparisonType;
+  explanation: string;
+  evidenceReferences: string[];
+}
+
+export type MarketMemoryComparisonType = 'NEW' | 'REPEATED' | 'CONSISTENT' | 'DIFFERENT' | 'POSSIBLE_CONTRADICTION';
+
+export interface MarketMemoryComparisonItem {
+  memoryId?: string;
+  observationId: string;
+  symbol: string;
+  timeframe: string;
+  setup: string;
+  comparisonResult: MarketMemoryComparisonType;
+  priorObservationCount: number;
+  explanation: string;
+}
+
+export interface ValidationEvidenceReference {
+  validationId: string;
+  ruleId: string;
+  status: 'Evidence Available'; // Strictly Evidence Available, NOT 'VALIDATED'
+  phase2dVerdict: string;
+  sampleSize: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  unresolved: number;
+  inSampleWinRate: number;
+  outOfSampleWinRate: number;
+  profitFactor: number;
+  expectancy: number;
+  maxDrawdown: number;
+  oosRetentionRatio: number;
+  evidenceStatus?: 'AVAILABLE' | 'INSUFFICIENT';
 }
 
 export interface LearningContradiction {
@@ -150,11 +199,24 @@ export interface DailyLearningSession {
   repeatedPatterns?: RepeatedMarketPattern[];
   mistakesOrLessons?: LearningLesson[];
   hypothesesGenerated?: PotentialHypothesis[];
+  knowledgeComparisons?: KnowledgeComparisonItem[];
+  marketMemoryComparisons?: MarketMemoryComparisonItem[];
+  validationEvidenceReferences?: ValidationEvidenceReference[];
+  researchAcquisitionResults?: {
+    attemptedCount: number;
+    successCount: number;
+    failedCount: number;
+    sourcesProcessed: string[];
+    failures: Array<{ sourceId: string; sourceName: string; error: string }>;
+  };
   metrics?: {
     observationsAnalyzed: number;
     memoriesConsulted: number;
     knowledgeItemsConsulted: number;
     validationsConsulted: number;
+    knowledgeComparisonsCount?: number;
+    marketMemoryComparisonsCount?: number;
+    freshClosedCandlesAnalyzed?: number;
   };
 }
 
