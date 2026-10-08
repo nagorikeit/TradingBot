@@ -26,6 +26,13 @@ import {
   Radio,
   Youtube,
   Layers,
+  FlaskConical,
+  Target,
+  BarChart2,
+  CheckCircle,
+  HelpCircle,
+  TrendingUp,
+  FileCheck,
 } from 'lucide-react';
 import {
   fetchAgentHealth,
@@ -44,6 +51,14 @@ import {
   fetchResearchLibrary,
   fetchResearchChunks,
   fetchResearchLibraryStats,
+  extractResearchClaims,
+  fetchResearchClaims,
+  formalizeClaimToRule,
+  fetchRuleCandidates,
+  verifyRuleCandidate,
+  fetchRuleEvidenceChain,
+  approveRuleHumanGate,
+  fetchPhase2DVerificationStatus,
   AgentBackendHealth,
   AgentStatsResponse,
   KnowledgeItem,
@@ -56,6 +71,10 @@ import {
   UnifiedResearchItem,
   ResearchLibraryStatistics,
   ContentChunk,
+  ResearchClaim,
+  RuleCandidate,
+  RuleValidationRecord,
+  RuleEvidenceChain,
 } from '../services/agentBackendService';
 
 export const AgentCommandCenter: React.FC = () => {
@@ -67,7 +86,7 @@ export const AgentCommandCenter: React.FC = () => {
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
 
   // Active view within Command Center
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'scheduler' | 'sources' | 'content' | 'youtubeResearch' | 'knowledge' | 'memory' | 'retrieval'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'scheduler' | 'sources' | 'content' | 'youtubeResearch' | 'ruleVerification' | 'knowledge' | 'memory' | 'retrieval'>('overview');
 
   // Sub-tab data
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
@@ -75,6 +94,18 @@ export const AgentCommandCenter: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('Risk Management');
   const [retrievalResult, setRetrievalResult] = useState<RetrievalResult | null>(null);
   const [retrievalLoading, setRetrievalLoading] = useState<boolean>(false);
+
+  // Phase 2D Research Claim & Rule Verification states
+  const [claimsList, setClaimsList] = useState<ResearchClaim[]>([]);
+  const [rulesList, setRulesList] = useState<RuleCandidate[]>([]);
+  const [activeEvidenceModal, setActiveEvidenceModal] = useState<RuleEvidenceChain | null>(null);
+  const [activeRuleValidation, setActiveRuleValidation] = useState<RuleValidationRecord | null>(null);
+  const [claimsLoading, setClaimsLoading] = useState<boolean>(false);
+  const [verificationLoading, setVerificationLoading] = useState<string | null>(null); // ruleId being verified
+  const [verificationFeedback, setVerificationFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+  const [claimFilter, setClaimFilter] = useState<string>('ALL');
+  const [humanApprovalNotes, setHumanApprovalNotes] = useState<string>('');
+  const [humanApprovalTarget, setHumanApprovalTarget] = useState<RuleCandidate | null>(null);
 
   // Phase 2B Web Content Acquisition & Firewall states
   const [fetchedContentList, setFetchedContentList] = useState<FetchedContentItem[]>([]);
@@ -118,6 +149,8 @@ export const AgentCommandCenter: React.FC = () => {
         contentStatsData,
         researchData,
         researchStatsData,
+        claimsData,
+        rulesData,
       ] = await Promise.all([
         fetchAgentHealth(),
         fetchAgentStats(),
@@ -129,6 +162,8 @@ export const AgentCommandCenter: React.FC = () => {
         fetchContentAcquisitionStats(),
         fetchResearchLibrary(),
         fetchResearchLibraryStats(),
+        fetchResearchClaims(),
+        fetchRuleCandidates(),
       ]);
       setHealth(healthData);
       setStats(statsData);
@@ -143,6 +178,8 @@ export const AgentCommandCenter: React.FC = () => {
       setFetchStats(contentStatsData.stats || null);
       setResearchLibraryList(researchData.items || []);
       setResearchStats(researchStatsData.stats || null);
+      setClaimsList(claimsData.claims || []);
+      setRulesList(rulesData.rules || []);
       setLastCheckTime(new Date().toLocaleTimeString());
     } catch (err: unknown) {
       console.error('Connection error:', err);
@@ -520,6 +557,21 @@ export const AgentCommandCenter: React.FC = () => {
           <span>YouTube & Research (2C)</span>
           <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 font-mono text-[10px]">
             {researchLibraryList.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('ruleVerification')}
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 border border-emerald-500/40 ${
+            activeSubTab === 'ruleVerification'
+              ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm border-emerald-500'
+              : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <FlaskConical className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Rule Verification (2D)</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+            {rulesList.length} Rules / {claimsList.length} Claims
           </span>
         </button>
 
@@ -1728,6 +1780,728 @@ export const AgentCommandCenter: React.FC = () => {
                     className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     Close Chunks Inspector
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PHASE 2D: RESEARCH CLAIM EXTRACTION + RULE DISCOVERY + AUTOMATED VERIFICATION ENGINE */}
+      {activeSubTab === 'ruleVerification' && (
+        <div className="space-y-6">
+          {/* Header & Autonomous Extraction Trigger */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-cyan-950/40 border border-emerald-500/30 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    PHASE 2D
+                  </span>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4 text-emerald-400" />
+                    <span>Research Claim Extraction + Automated Verification Engine</span>
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 max-w-2xl">
+                  <strong>Core Invariant:</strong> Research evidence ≠ Trading proof. External claims remain <code>untrusted</code> until evaluated through Historical Backtest, Out-of-Sample (OOS) testing, Walk-Forward stability, and Controlled Human Promotion.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={async () => {
+                    setClaimsLoading(true);
+                    try {
+                      const res = await extractResearchClaims();
+                      setClaimsList(await (await fetchResearchClaims()).claims);
+                      setVerificationFeedback({
+                        ok: true,
+                        message: `Extracted ${res.extractedCount} new claims from stored Phase 2C chunks. Total claims: ${res.totalClaims}.`,
+                      });
+                    } catch (e: unknown) {
+                      setVerificationFeedback({
+                        ok: false,
+                        message: e instanceof Error ? e.message : 'Claim extraction failed',
+                      });
+                    } finally {
+                      setClaimsLoading(false);
+                    }
+                  }}
+                  disabled={claimsLoading}
+                  className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${claimsLoading ? 'animate-spin' : ''}`} />
+                  <span>{claimsLoading ? 'Scanning Chunks...' : 'Scan & Extract Claims'}</span>
+                </button>
+
+                <button
+                  onClick={refreshAll}
+                  className="p-2 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700"
+                  title="Refresh"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {verificationFeedback && (
+              <div
+                className={`p-3 rounded-lg text-xs flex items-center justify-between border ${
+                  verificationFeedback.ok
+                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                <span>{verificationFeedback.message}</span>
+                <button
+                  onClick={() => setVerificationFeedback(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {/* Quick KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2">
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Total Claims</span>
+                <p className="text-lg font-bold text-white font-mono mt-0.5">{claimsList.length}</p>
+                <span className="text-[10px] text-emerald-400">
+                  {claimsList.filter((c) => c.testability === 'TESTABLE').length} Testable
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Rule Candidates</span>
+                <p className="text-lg font-bold text-cyan-400 font-mono mt-0.5">{rulesList.length}</p>
+                <span className="text-[10px] text-slate-400">Machine Formalized</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Trusted Candidates</span>
+                <p className="text-lg font-bold text-emerald-400 font-mono mt-0.5">
+                  {rulesList.filter((r) => r.status === 'TRUSTED_CANDIDATE').length}
+                </p>
+                <span className="text-[10px] text-emerald-300">Statistically Verified</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Human Approved</span>
+                <p className="text-lg font-bold text-purple-400 font-mono mt-0.5">
+                  {rulesList.filter((r) => r.status === 'APPROVED').length}
+                </p>
+                <span className="text-[10px] text-purple-300">Safety Gate Passed</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Rejected / Failed</span>
+                <p className="text-lg font-bold text-rose-400 font-mono mt-0.5">
+                  {rulesList.filter((r) => r.status === 'REJECTED' || r.status === 'CONTRADICTED').length}
+                </p>
+                <span className="text-[10px] text-rose-400">Post-Mortem Logged</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Formalized Rule Candidates Workbench */}
+          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Target className="w-4 h-4 text-emerald-400" />
+                  <span>Rule Candidates & Automated Verification Workbench</span>
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Each rule candidate undergoes In-Sample (70%) backtest, Out-of-Sample (30%) frozen test, and Walk-Forward stability checks before reaching Trusted Candidate status.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {rulesList.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                  No rule candidates currently available. Scan research chunks above to extract testable claims.
+                </div>
+              ) : (
+                rulesList.map((rule) => {
+                  const isTrusted = rule.status === 'TRUSTED_CANDIDATE';
+                  const isApproved = rule.status === 'APPROVED';
+                  const isRejected = rule.status === 'REJECTED';
+                  const isHypothesis = rule.status === 'HYPOTHESIS';
+
+                  return (
+                    <div
+                      key={rule.ruleId}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all space-y-3"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                rule.direction === 'CALL'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              }`}
+                            >
+                              {rule.direction}
+                            </span>
+                            <h5 className="font-semibold text-white text-xs">{rule.name}</h5>
+                            <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded">
+                              v{rule.version}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 text-[10px] font-mono rounded font-semibold border ${
+                                isApproved
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                  : isTrusted
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : isRejected
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                  : isHypothesis
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                              }`}
+                            >
+                              STATUS: {rule.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400">{rule.description}</p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const ev = await fetchRuleEvidenceChain(rule.ruleId);
+                                setActiveEvidenceModal(ev.evidenceChain);
+                              } catch (e: unknown) {
+                                alert(e instanceof Error ? e.message : 'Error fetching evidence');
+                              }
+                            }}
+                            className="px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <FileCheck className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Evidence Chain</span>
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              setVerificationLoading(rule.ruleId);
+                              try {
+                                const res = await verifyRuleCandidate(rule.ruleId);
+                                setActiveRuleValidation(res.record);
+                                await refreshAll();
+                                setVerificationFeedback({
+                                  ok: true,
+                                  message: res.message,
+                                });
+                              } catch (e: unknown) {
+                                setVerificationFeedback({
+                                  ok: false,
+                                  message: e instanceof Error ? e.message : 'Verification failed',
+                                });
+                              } finally {
+                                setVerificationLoading(null);
+                              }
+                            }}
+                            disabled={verificationLoading === rule.ruleId}
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                          >
+                            <BarChart2 className={`w-3.5 h-3.5 ${verificationLoading === rule.ruleId ? 'animate-spin' : ''}`} />
+                            <span>{verificationLoading === rule.ruleId ? 'Running Verification...' : 'Run Full Verification'}</span>
+                          </button>
+
+                          {isTrusted && !isApproved && (
+                            <button
+                              onClick={() => {
+                                setHumanApprovalTarget(rule);
+                                setHumanApprovalNotes('Evidence chain and out-of-sample metrics verified by human supervisor.');
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 text-purple-200" />
+                              <span>Human Safety Gate</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Rule Conditions Badges */}
+                      <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2 flex-wrap text-[11px]">
+                        <span className="text-slate-400 font-mono">Formalized Conditions:</span>
+                        {rule.conditions.map((c, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono"
+                          >
+                            {c.description}
+                          </span>
+                        ))}
+                        <span className="text-slate-400 font-mono ml-auto">
+                          TF: {rule.timeframe} · Expiry: {rule.expiryCandles} candles
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Section 2: Research Claims Discovery List */}
+          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-cyan-400" />
+                  <span>Extracted Research Claims ({claimsList.length})</span>
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Claims extracted from Phase 2C YouTube transcripts, BIS Research PDFs, and Articles. Only TESTABLE claims can be formalized into rules.
+                </p>
+              </div>
+
+              {/* Filter */}
+              <div className="flex items-center gap-1.5 text-xs">
+                {['ALL', 'TESTABLE', 'NOT_TESTABLE', 'INSUFFICIENT_DATA'].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setClaimFilter(f)}
+                    className={`px-2.5 py-1 rounded-lg font-mono transition-colors ${
+                      claimFilter === f
+                        ? 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-semibold'
+                        : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {claimsList
+                .filter((c) => (claimFilter === 'ALL' ? true : c.testability === claimFilter))
+                .map((claim) => {
+                  const isTestable = claim.testability === 'TESTABLE';
+                  const isFormalized = claim.status === 'FORMALIZED';
+
+                  return (
+                    <div
+                      key={claim.claimId}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                              isTestable
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-400 border-slate-700'
+                            }`}
+                          >
+                            {claim.testability}
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-slate-300 border border-slate-800">
+                            {claim.claimType}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            Source: {claim.evidenceReferences.authorOrChannel}
+                          </span>
+                        </div>
+
+                        {/* Formalize button */}
+                        {isTestable && !isFormalized && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await formalizeClaimToRule(claim.claimId);
+                                await refreshAll();
+                                setVerificationFeedback({
+                                  ok: true,
+                                  message: res.message,
+                                });
+                              } catch (e: unknown) {
+                                setVerificationFeedback({
+                                  ok: false,
+                                  message: e instanceof Error ? e.message : 'Formalization failed',
+                                });
+                              }
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-600 rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                          >
+                            <FlaskConical className="w-3 h-3" />
+                            <span>Formalize to Rule</span>
+                          </button>
+                        )}
+                        {isFormalized && (
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+                            FORMALIZED ({claim.ruleCandidateId?.substring(0, 10)}...)
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-slate-200 font-mono text-[11px] bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+                        "{claim.claimText}"
+                      </p>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
+                        <span>Classification Reason: {claim.testabilityReason || 'Standard extraction'}</span>
+                        <span className="text-slate-500">
+                          {new Date(claim.extractedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* Modal: Rule Validation Report */}
+          {activeRuleValidation && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                  <div className="flex items-center gap-2">
+                    <BarChart2 className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <h4 className="font-semibold text-white text-xs">
+                        Automated Verification Results: {activeRuleValidation.ruleId}
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Verdict: {activeRuleValidation.verdict} · Evidence Score: {activeRuleValidation.evidenceScore}/100
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveRuleValidation(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4 overflow-y-auto text-xs flex-1">
+                  {/* Status Banner */}
+                  <div
+                    className={`p-3 rounded-xl border ${
+                      activeRuleValidation.verdict === 'TRUSTED_CANDIDATE'
+                        ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+                        : activeRuleValidation.verdict === 'REJECTED'
+                        ? 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+                        : 'bg-cyan-950/40 border-cyan-500/30 text-cyan-200'
+                    }`}
+                  >
+                    <div className="font-semibold text-xs flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Validation Verdict: {activeRuleValidation.verdict}</span>
+                    </div>
+                    <p className="text-[11px] mt-1">{activeRuleValidation.statusNotes}</p>
+                  </div>
+
+                  {/* IS vs OOS Metrics Comparison */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold">
+                        In-Sample Backtest (70% Data)
+                      </span>
+                      <div className="space-y-1 font-mono text-[11px]">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Win Rate:</span>
+                          <span className="text-white font-bold">{activeRuleValidation.inSampleMetrics.winRate}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Trades (Wins / Losses):</span>
+                          <span className="text-white">
+                            {activeRuleValidation.inSampleMetrics.wins} / {activeRuleValidation.inSampleMetrics.losses}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Profit Factor:</span>
+                          <span className="text-white">{activeRuleValidation.inSampleMetrics.profitFactor}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Expectancy:</span>
+                          <span className="text-white">{activeRuleValidation.inSampleMetrics.expectancy}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Wilson 95% CI:</span>
+                          <span className="text-slate-300">
+                            [{activeRuleValidation.inSampleMetrics.confidenceInterval.lower}% - {activeRuleValidation.inSampleMetrics.confidenceInterval.upper}%]
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      <span className="text-[10px] font-mono uppercase text-emerald-400 font-semibold">
+                        Out-of-Sample Test (30% Frozen)
+                      </span>
+                      <div className="space-y-1 font-mono text-[11px]">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">OOS Win Rate:</span>
+                          <span className="text-emerald-400 font-bold">{activeRuleValidation.outOfSampleMetrics.winRate}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Trades (Wins / Losses):</span>
+                          <span className="text-white">
+                            {activeRuleValidation.outOfSampleMetrics.wins} / {activeRuleValidation.outOfSampleMetrics.losses}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">OOS Retention Ratio:</span>
+                          <span className="text-emerald-300 font-bold">
+                            {(activeRuleValidation.oosRetentionRatio * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Max Drawdown:</span>
+                          <span className="text-white">{activeRuleValidation.outOfSampleMetrics.maxDrawdown}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Wilson 95% CI:</span>
+                          <span className="text-slate-300">
+                            [{activeRuleValidation.outOfSampleMetrics.confidenceInterval.lower}% - {activeRuleValidation.outOfSampleMetrics.confidenceInterval.upper}%]
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Walk-Forward Test Windows */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase text-purple-400 font-semibold">
+                        Walk-Forward Stability Windows
+                      </span>
+                      <span className="text-[10px] font-mono text-purple-300">
+                        Consistency: {activeRuleValidation.walkForwardConsistencyScore}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+                      {activeRuleValidation.walkForwardResults.map((wf) => (
+                        <div
+                          key={wf.windowIndex}
+                          className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1"
+                        >
+                          <div className="flex justify-between text-slate-400 text-[10px]">
+                            <span>Window #{wf.windowIndex}</span>
+                            <span className={wf.consistent ? 'text-emerald-400' : 'text-rose-400'}>
+                              {wf.consistent ? 'CONSISTENT' : 'DEGRADED'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-slate-300">
+                            <span>Train: {wf.trainWinRate}%</span>
+                            <span className="font-semibold text-white">Test: {wf.testWinRate}%</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            {wf.tradesInTest} validation trades
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Post-Mortem & Learning */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <span className="text-[10px] font-mono uppercase text-amber-400 font-semibold">
+                      Post-Mortem & Agent Learning Memory
+                    </span>
+                    <div className="text-slate-300 text-[11px] space-y-1">
+                      <p>
+                        <strong>Overfitting Risk:</strong>{' '}
+                        {activeRuleValidation.postMortem.overfittingDetected ? (
+                          <span className="text-rose-400 font-semibold">DETECTED (&gt;25% OOS drop)</span>
+                        ) : (
+                          <span className="text-emerald-400">LOW (Edge preserved in out-of-sample data)</span>
+                        )}
+                      </p>
+                      <p>
+                        <strong>Weakest Market Regime:</strong>{' '}
+                        <span className="font-mono text-amber-300">
+                          {activeRuleValidation.postMortem.weakestRegime || 'None'}
+                        </span>
+                      </p>
+                      <ul className="list-disc pl-4 space-y-0.5 text-slate-400 text-[10px]">
+                        {activeRuleValidation.postMortem.recommendedAdjustments.map((adj, i) => (
+                          <li key={i}>{adj}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-800 flex justify-end bg-slate-950">
+                  <button
+                    onClick={() => setActiveRuleValidation(null)}
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg"
+                  >
+                    Close Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: Rule Evidence Chain Inspector */}
+          {activeEvidenceModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-cyan-400" />
+                    <div>
+                      <h4 className="font-semibold text-white text-xs">
+                        Audit Evidence Chain: {activeEvidenceModal.rule.name}
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Rule ID: {activeEvidenceModal.rule.ruleId} · Status: {activeEvidenceModal.rule.status}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveEvidenceModal(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4 overflow-y-auto text-xs flex-1">
+                  {/* Step 1: Source */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-cyan-400">
+                      <span>STEP 1: UNTRUSTED EXTERNAL SOURCE</span>
+                      <span className="text-amber-400 border border-amber-500/30 px-1 rounded">
+                        untrusted: true
+                      </span>
+                    </div>
+                    <p className="text-white font-medium">{activeEvidenceModal.source?.title || 'Unknown Source'}</p>
+                    <p className="text-slate-400 text-[11px] font-mono truncate">{activeEvidenceModal.source?.url}</p>
+                  </div>
+
+                  {/* Step 2: Extracted Claim */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-purple-400">
+                      <span>STEP 2: RESEARCH CLAIM</span>
+                      <span>Type: {activeEvidenceModal.claim.claimType}</span>
+                    </div>
+                    <p className="text-slate-200 font-mono text-[11px] bg-slate-900 p-2 rounded">
+                      "{activeEvidenceModal.claim.claimText}"
+                    </p>
+                  </div>
+
+                  {/* Step 3: Formalized Rule */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <span className="text-[10px] font-mono text-emerald-400 uppercase">
+                      STEP 3: FORMALIZED TESTABLE CANDIDATE
+                    </span>
+                    <p className="text-white font-medium">{activeEvidenceModal.rule.name}</p>
+                    <div className="flex gap-2 flex-wrap text-[11px] font-mono text-slate-300 pt-1">
+                      {activeEvidenceModal.rule.conditions.map((c, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                          {c.description}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Step 4: Verification Validation */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <span className="text-[10px] font-mono text-amber-400 uppercase">
+                      STEP 4: EMPIRICAL VERIFICATION PROOF
+                    </span>
+                    {activeEvidenceModal.validation ? (
+                      <div className="space-y-1 text-slate-300 font-mono text-[11px] pt-1">
+                        <div>Evidence Score: {activeEvidenceModal.validation.evidenceScore}/100</div>
+                        <div>OOS Win Rate: {activeEvidenceModal.validation.outOfSampleMetrics.winRate}%</div>
+                        <div>Walk-Forward Consistency: {activeEvidenceModal.validation.walkForwardConsistencyScore}%</div>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 italic text-[11px]">
+                        Pending automated verification. Click "Run Full Verification" on the workbench.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-800 flex justify-end bg-slate-950">
+                  <button
+                    onClick={() => setActiveEvidenceModal(null)}
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg"
+                  >
+                    Close Evidence Chain
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: Human Safety Gate Approval */}
+          {humanApprovalTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-purple-500/40 rounded-2xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-purple-950/40">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-purple-400" />
+                    <div>
+                      <h4 className="font-semibold text-white text-xs">Human Safety Gate Promotion</h4>
+                      <p className="text-[10px] text-purple-300 font-mono">
+                        Rule: {humanApprovalTarget.name}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setHumanApprovalTarget(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4 text-xs">
+                  <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-200 text-xs">
+                    <strong>CRITICAL SAFETY INVARIANT:</strong> AI models and automated backtesters cannot unilaterally promote rules to production. This explicit human approval verifies evidence integrity and authorizes controlled production readiness.
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-slate-300 font-semibold text-xs">Supervisor Review Notes:</label>
+                    <textarea
+                      value={humanApprovalNotes}
+                      onChange={(e) => setHumanApprovalNotes(e.target.value)}
+                      rows={3}
+                      className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-purple-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-800 flex items-center justify-end gap-2 bg-slate-950">
+                  <button
+                    onClick={() => setHumanApprovalTarget(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await approveRuleHumanGate(humanApprovalTarget.ruleId, humanApprovalNotes);
+                        await refreshAll();
+                        setVerificationFeedback({
+                          ok: true,
+                          message: res.message,
+                        });
+                        setHumanApprovalTarget(null);
+                      } catch (e: unknown) {
+                        alert(e instanceof Error ? e.message : 'Approval failed');
+                      }
+                    }}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg flex items-center gap-1.5 shadow-sm"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Confirm Human Promotion</span>
                   </button>
                 </div>
               </div>

@@ -8,8 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
+  const base = process.env.BASE_PATH || (process.env.GITHUB_ACTIONS ? '/TradingBot/' : './');
   return {
-    base: './',
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

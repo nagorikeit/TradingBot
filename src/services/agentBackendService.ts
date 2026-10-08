@@ -800,3 +800,271 @@ export async function fetchResearchLibraryStats(): Promise<{ ok: boolean; stats:
   return response.json();
 }
 
+// =========================================================================
+// Phase 2D: Research Claim Extraction + Rule Discovery + Verification Engine
+// =========================================================================
+
+export type ClaimType =
+  | 'TRADING_RULE'
+  | 'MARKET_OBSERVATION'
+  | 'RISK_PRINCIPLE'
+  | 'TECHNICAL_CONCEPT'
+  | 'FUNDAMENTAL_CLAIM'
+  | 'MACRO_CLAIM'
+  | 'EDUCATIONAL'
+  | 'OPINION'
+  | 'UNTESTABLE';
+
+export type ClaimTestability = 'TESTABLE' | 'NOT_TESTABLE' | 'INSUFFICIENT_DATA';
+export type ClaimStatus = 'EXTRACTED' | 'FORMALIZED' | 'REJECTED' | 'CONTRADICTED';
+
+export interface ResearchClaim {
+  claimId: string;
+  contentId: string;
+  chunkId: string;
+  sourceId: string;
+  sourceUrl: string;
+  claimText: string;
+  claimType: ClaimType;
+  testability: ClaimTestability;
+  testabilityReason?: string;
+  extractedAt: number;
+  evidenceReferences: {
+    title: string;
+    authorOrChannel: string;
+    chunkIndex: number;
+    textSnippet: string;
+  };
+  status: ClaimStatus;
+  ruleCandidateId?: string;
+}
+
+export type RuleDirection = 'CALL' | 'PUT';
+
+export interface RuleCondition {
+  indicator: 'RSI' | 'EMA' | 'MACD' | 'PRICE_ACTION' | 'CANDLE_COLOR';
+  operator: '<' | '>' | '<=' | '>=' | '==' | 'CROSSES_ABOVE' | 'CROSSES_BELOW';
+  threshold?: number;
+  compareTo?: 'EMA_SLOW' | 'EMA_FAST' | 'PRICE' | 'SIGNAL_LINE' | 'ZERO';
+  description: string;
+}
+
+export type MarketRegimeType =
+  | 'TRENDING'
+  | 'RANGING'
+  | 'HIGH_VOLATILITY'
+  | 'LOW_VOLATILITY'
+  | 'BULLISH'
+  | 'BEARISH';
+
+export type RuleLifecycleStatus =
+  | 'NEW'
+  | 'HYPOTHESIS'
+  | 'BACKTESTED'
+  | 'OOS_VALIDATED'
+  | 'WALK_FORWARD_VALIDATED'
+  | 'PAPER_VALIDATED'
+  | 'TRUSTED_CANDIDATE'
+  | 'CONDITIONALLY_VALIDATED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CONTRADICTED'
+  | 'ARCHIVED';
+
+export interface RuleCandidate {
+  ruleId: string;
+  sourceClaimId: string;
+  name: string;
+  description: string;
+  version: string;
+  previousVersionId?: string;
+  direction: RuleDirection;
+  timeframe: '1m' | '5m' | '15m';
+  expiryCandles: number;
+  market: string;
+  conditions: RuleCondition[];
+  targetRegimes?: MarketRegimeType[];
+  parameters: Record<string, number | string>;
+  status: RuleLifecycleStatus;
+  createdAt: number;
+  updatedAt: number;
+  approvedByHuman?: boolean;
+  approvalTimestamp?: number;
+  approvalNotes?: string;
+}
+
+export interface MetricSet {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  unresolved: number;
+  winRate: number;
+  profitFactor: number;
+  expectancy: number;
+  maxDrawdown: number;
+  averageWin: number;
+  averageLoss: number;
+  sampleSize: number;
+  confidenceInterval: { lower: number; upper: number; confidence: number };
+  sharpeRatio?: number;
+}
+
+export interface WalkForwardWindowResult {
+  windowIndex: number;
+  trainRange: { start: string; end: string };
+  testRange: { start: string; end: string };
+  trainWinRate: number;
+  testWinRate: number;
+  tradesInTest: number;
+  consistent: boolean;
+}
+
+export interface RegimePerformance {
+  regime: MarketRegimeType;
+  trades: number;
+  wins: number;
+  winRate: number;
+}
+
+export interface RulePostMortem {
+  isFailure: boolean;
+  failureReason?: string;
+  weakestRegime?: MarketRegimeType;
+  overfittingDetected: boolean;
+  varianceWarning: boolean;
+  smallSampleWarning: boolean;
+  recommendedAdjustments: string[];
+}
+
+export interface RuleValidationRecord {
+  validationId: string;
+  ruleId: string;
+  validatedAt: number;
+  inSampleMetrics: MetricSet;
+  outOfSampleMetrics: MetricSet;
+  oosRetentionRatio: number;
+  walkForwardResults: WalkForwardWindowResult[];
+  walkForwardConsistencyScore: number;
+  regimeBreakdown: RegimePerformance[];
+  evidenceScore: number;
+  postMortem: RulePostMortem;
+  verdict: RuleLifecycleStatus;
+  statusNotes: string;
+}
+
+export interface RuleComparisonResult {
+  relationship: 'DUPLICATE' | 'MINOR_VARIATION' | 'IMPROVEMENT_CANDIDATE' | 'CONTRADICTORY' | 'NEW_RULE';
+  matchedRuleId?: string;
+  matchedRuleName?: string;
+  similarityScore: number;
+  rationale: string;
+}
+
+export interface RuleEvidenceChain {
+  rule: RuleCandidate;
+  claim: ResearchClaim;
+  validation?: RuleValidationRecord;
+  source?: {
+    id: string;
+    sourceType: string;
+    title: string;
+    authorOrChannel: string;
+    url: string;
+    fetchedAt: number;
+    contentHash: string;
+    untrusted: boolean;
+  };
+}
+
+export async function extractResearchClaims(
+  contentId?: string
+): Promise<{ ok: boolean; extractedCount: number; extractedClaims: ResearchClaim[]; totalClaims: number }> {
+  const res = await fetch('/api/agent/claims/extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contentId }),
+  });
+  if (!res.ok) throw new Error(`Extract claims failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchResearchClaims(): Promise<{ ok: boolean; count: number; claims: ResearchClaim[] }> {
+  const res = await fetch('/api/agent/claims');
+  if (!res.ok) throw new Error(`Fetch claims failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function formalizeClaimToRule(
+  claimId: string
+): Promise<{ ok: boolean; rule?: RuleCandidate; comparison?: RuleComparisonResult; message: string }> {
+  const res = await fetch('/api/agent/rules/formalize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ claimId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Formalization failed');
+  return data;
+}
+
+export async function fetchRuleCandidates(): Promise<{ ok: boolean; count: number; rules: RuleCandidate[] }> {
+  const res = await fetch('/api/agent/rules');
+  if (!res.ok) throw new Error(`Fetch rules failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function verifyRuleCandidate(
+  ruleId: string
+): Promise<{ ok: boolean; record: RuleValidationRecord; message: string }> {
+  const res = await fetch(`/api/agent/rules/${ruleId}/verify`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Verification failed');
+  return data;
+}
+
+export async function fetchRuleEvidenceChain(
+  ruleId: string
+): Promise<{ ok: boolean; evidenceChain: RuleEvidenceChain }> {
+  const res = await fetch(`/api/agent/rules/${ruleId}/evidence`);
+  if (!res.ok) throw new Error(`Fetch evidence chain failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function approveRuleHumanGate(
+  ruleId: string,
+  notes?: string
+): Promise<{ ok: boolean; rule: RuleCandidate; message: string }> {
+  const res = await fetch(`/api/agent/rules/${ruleId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Approval failed');
+  return data;
+}
+
+export async function fetchPhase2DVerificationStatus(): Promise<{
+  ok: boolean;
+  phase: string;
+  stats: {
+    totalClaims: number;
+    testableClaims: number;
+    notTestableClaims: number;
+    insufficientDataClaims: number;
+    totalRules: number;
+    trustedCandidates: number;
+    approvedRules: number;
+    rejectedRules: number;
+  };
+  trustedCandidates: RuleCandidate[];
+  approvedRules: RuleCandidate[];
+  rejectedRules: RuleCandidate[];
+}> {
+  const res = await fetch('/api/agent/learning/verification-status');
+  if (!res.ok) throw new Error(`Fetch verification status failed: ${res.statusText}`);
+  return res.json();
+}
+
+

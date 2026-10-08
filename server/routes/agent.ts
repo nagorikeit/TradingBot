@@ -9,6 +9,10 @@ import { webContentFetcher } from '../services/webContentFetcher';
 import { youtubeProcessorService } from '../services/youtubeProcessorService';
 import { documentProcessorService } from '../services/documentProcessorService';
 import { researchLibraryService } from '../services/researchLibraryService';
+import { claimRuleStorageService } from '../services/claimRuleStorageService';
+import { claimExtractionService } from '../services/claimExtractionService';
+import { ruleFormalizationService } from '../services/ruleFormalizationService';
+import { ruleVerificationService } from '../services/ruleVerificationService';
 import {
   KnowledgeStatus,
   MemoryCategory,
@@ -789,3 +793,197 @@ agentRouter.get('/proposals', (_req: Request, res: Response) => {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
+
+// =========================================================================
+// Phase 2D: Research Claim Extraction + Rule Discovery + Verification API
+// =========================================================================
+
+/**
+ * POST /api/agent/claims/extract
+ * Scans Phase 2C stored content chunks and extracts research claims
+ */
+agentRouter.post('/claims/extract', (req: Request, res: Response) => {
+  try {
+    const { contentId } = req.body || {};
+    const extracted = claimExtractionService.extractClaimsFromContent(contentId);
+    res.json({
+      ok: true,
+      extractedCount: extracted.length,
+      extractedClaims: extracted,
+      totalClaims: claimRuleStorageService.getClaims().length,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Extraction error' });
+  }
+});
+
+/**
+ * GET /api/agent/claims
+ * Returns all extracted research claims with testability classification
+ */
+agentRouter.get('/claims', (_req: Request, res: Response) => {
+  try {
+    const claims = claimRuleStorageService.getClaims();
+    res.json({ ok: true, count: claims.length, claims });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /api/agent/claims/:id
+ */
+agentRouter.get('/claims/:id', (req: Request, res: Response) => {
+  try {
+    const claim = claimRuleStorageService.getClaimById(req.params.id);
+    if (!claim) {
+      res.status(404).json({ ok: false, error: 'Claim not found' });
+      return;
+    }
+    res.json({ ok: true, claim });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * POST /api/agent/rules/formalize
+ * Formalizes a TESTABLE claim into a machine-testable RuleCandidate
+ */
+agentRouter.post('/rules/formalize', (req: Request, res: Response) => {
+  try {
+    const { claimId } = req.body || {};
+    if (!claimId) {
+      res.status(400).json({ ok: false, error: 'Missing claimId' });
+      return;
+    }
+    const claim = claimRuleStorageService.getClaimById(claimId);
+    if (!claim) {
+      res.status(404).json({ ok: false, error: 'Claim not found' });
+      return;
+    }
+    const result = ruleFormalizationService.formalizeClaim(claim);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Formalization error' });
+  }
+});
+
+/**
+ * GET /api/agent/rules
+ * Returns all rule candidates across lifecycles
+ */
+agentRouter.get('/rules', (_req: Request, res: Response) => {
+  try {
+    const rules = claimRuleStorageService.getRules();
+    res.json({ ok: true, count: rules.length, rules });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /api/agent/rules/:id
+ */
+agentRouter.get('/rules/:id', (req: Request, res: Response) => {
+  try {
+    const rule = claimRuleStorageService.getRuleById(req.params.id);
+    if (!rule) {
+      res.status(404).json({ ok: false, error: 'Rule not found' });
+      return;
+    }
+    const validation = claimRuleStorageService.getValidationByRuleId(rule.ruleId);
+    res.json({ ok: true, rule, validation });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * POST /api/agent/rules/:id/verify
+ * Runs automated verification (In-Sample, OOS, Walk-Forward, Regime Analysis, Post-Mortem)
+ */
+agentRouter.post('/rules/:id/verify', (req: Request, res: Response) => {
+  try {
+    const result = ruleVerificationService.executeFullVerification(req.params.id);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Verification error' });
+  }
+});
+
+/**
+ * GET /api/agent/rules/:id/evidence
+ * Full evidence chain linking rule -> claim -> chunk -> backtest -> OOS -> post-mortem
+ */
+agentRouter.get('/rules/:id/evidence', (req: Request, res: Response) => {
+  try {
+    const rule = claimRuleStorageService.getRuleById(req.params.id);
+    if (!rule) {
+      res.status(404).json({ ok: false, error: 'Rule not found' });
+      return;
+    }
+    const claim = claimRuleStorageService.getClaimById(rule.sourceClaimId);
+    const validation = claimRuleStorageService.getValidationByRuleId(rule.ruleId);
+    const contentItem = claim ? researchLibraryService.getItemById(claim.contentId) : undefined;
+
+    res.json({
+      ok: true,
+      evidenceChain: {
+        rule,
+        claim,
+        validation,
+        source: contentItem
+          ? {
+              id: contentItem.id,
+              sourceType: contentItem.sourceType,
+              title: contentItem.title,
+              authorOrChannel: contentItem.authorOrChannel,
+              url: contentItem.url,
+              fetchedAt: contentItem.fetchedAt,
+              contentHash: contentItem.contentHash,
+              untrusted: contentItem.untrusted,
+            }
+          : undefined,
+      },
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * POST /api/agent/rules/:id/approve
+ * Human Safety Gate: strictly requires human approval to promote a TRUSTED_CANDIDATE to APPROVED
+ */
+agentRouter.post('/rules/:id/approve', (req: Request, res: Response) => {
+  try {
+    const { notes } = req.body || {};
+    const result = ruleVerificationService.humanApproveRule(req.params.id, notes);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Approval error' });
+  }
+});
+
+/**
+ * GET /api/agent/learning/verification-status
+ * Comprehensive Phase 2D Verification and Learning status summary
+ */
+agentRouter.get('/learning/verification-status', (_req: Request, res: Response) => {
+  try {
+    const stats = claimRuleStorageService.getStats();
+    const rules = claimRuleStorageService.getRules();
+    res.json({
+      ok: true,
+      phase: '2D (Research Claim Extraction + Rule Discovery + Automated Verification Engine)',
+      stats,
+      trustedCandidates: rules.filter((r) => r.status === 'TRUSTED_CANDIDATE'),
+      approvedRules: rules.filter((r) => r.status === 'APPROVED'),
+      rejectedRules: rules.filter((r) => r.status === 'REJECTED'),
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
