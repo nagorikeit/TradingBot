@@ -121,32 +121,28 @@ export const StrategyRulesView: React.FC = () => {
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
           Scoring Tiers & No-Force "WAIT" Discipline
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-          <div className="bg-slate-900 p-3 rounded border border-slate-800">
-            <span className="font-mono font-bold text-emerald-400 block">5 / 5 = Very Strong</span>
-            <span className="text-slate-400 text-[11px] mt-1 block">
-              All 5 indicators aligned in harmonious direction. Highest confirmation confidence (88–96%).
+        <p className="text-xs text-slate-400">
+          Rule scores reflect mathematical condition alignment count, not guaranteed win probability.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="bg-slate-900 p-3.5 rounded border border-emerald-900/60 bg-emerald-950/10">
+            <span className="font-mono font-bold text-emerald-400 block text-sm">5 / 5 — STRONG</span>
+            <span className="text-slate-300 text-[11px] mt-1 block">
+              All 5 indicators aligned in harmonious directional agreement. Highest confirmation standard; eligible for immediate execution.
             </span>
           </div>
 
-          <div className="bg-slate-900 p-3 rounded border border-slate-800">
-            <span className="font-mono font-bold text-emerald-300 block">4 / 5 = Strong</span>
-            <span className="text-slate-400 text-[11px] mt-1 block">
-              4 indicators aligned with 1 minor neutral condition. Strong statistical edge (72–84%).
+          <div className="bg-slate-900 p-3.5 rounded border border-amber-900/60 bg-amber-950/10">
+            <span className="font-mono font-bold text-amber-300 block text-sm">4 / 5 — QUALIFIED</span>
+            <span className="text-slate-300 text-[11px] mt-1 block">
+              4 indicator rules satisfied with 1 non-fatal neutral condition. Meets quantitative qualification threshold for trade execution.
             </span>
           </div>
 
-          <div className="bg-slate-900 p-3 rounded border border-slate-800">
-            <span className="font-mono font-bold text-amber-300 block">3 / 5 = Moderate</span>
+          <div className="bg-slate-900 p-3.5 rounded border border-slate-800 bg-slate-950/40">
+            <span className="font-mono font-bold text-slate-400 block text-sm">≤ 3 / 5 — WAIT / NO SIGNAL</span>
             <span className="text-slate-400 text-[11px] mt-1 block">
-              Minimum acceptable threshold for action (58–68%).
-            </span>
-          </div>
-
-          <div className="bg-slate-900 p-3 rounded border border-slate-800">
-            <span className="font-mono font-bold text-slate-400 block">&lt; 3 = NO SIGNAL (WAIT)</span>
-            <span className="text-slate-400 text-[11px] mt-1 block">
-              Engine strictly refuses to force signals when market conditions are choppy or conflicting.
+              Below the 4/5 qualification minimum. Strictly rejected from scanner, pending trades, and trade history. The engine refuses to force entries.
             </span>
           </div>
         </div>

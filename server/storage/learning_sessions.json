@@ -1,0 +1,205 @@
+[
+  {
+    "sessionId": "learn_1791467029746_alpha",
+    "startTime": 1791463429746,
+    "endTime": 1791465229746,
+    "sourcesProcessed": 4,
+    "newKnowledgeCount": 3,
+    "updatedKnowledgeCount": 1,
+    "contradictionsFound": 1,
+    "importantMarketObservations": [
+      "Overhead resistance rejections in BTCUSDT 5m show consistent retail breakout traps",
+      "Weekend low ATR periods degrade directional follow-through"
+    ],
+    "summary": "Daily learning session completed. Processed classic literature on position sizing and price action false breakouts. Flagged 1 contradiction regarding oscillator oversold thresholds.",
+    "status": "COMPLETED"
+  },
+  {
+    "sessionId": "learn_1791481246950_manual",
+    "startTime": 1791481246948,
+    "endTime": 1791481246950,
+    "sourcesProcessed": 20,
+    "newKnowledgeCount": 1,
+    "updatedKnowledgeCount": 3,
+    "contradictionsFound": 0,
+    "importantMarketObservations": [
+      "[SOL/USDT 15m] REGIME_CLASSIFICATION: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.14, EMA9=108.37, EMA21=110.11, RSI=17.67, MACD Hist=-0.3277, ATR=0.95.",
+      "[SOL/USDT 15m] BEARISH_ENGULFING: Factual: Bearish candle body [106.14 - 107.79] completely engulfs preceding bullish body [107.70 - 107.79].",
+      "[SOL/USDT 15m] POSSIBLE_BREAKOUT: Factual: Candle close 106.14 crossed beyond Bollinger Band lower boundary (106.16).",
+      "[ETH/USDT 5m] REGIME_CLASSIFICATION: Factual: Regime assessed as UNCERTAIN with Close=2412.58, EMA9=2419.94, EMA21=2433.53, RSI=27.63, MACD Hist=1.9822, ATR=10.58.",
+      "[ETH/USDT 5m] BULLISH_REJECTION_WICK: Factual: Candle formed lower rejection wick of 2.30 (62.5% of candle range [2410.28 - 2413.96]).",
+      "[ETH/USDT 5m] POSSIBLE_REJECTION: Factual: Price pierced Bollinger Band lower boundary but closed back inside band range.",
+      "[BTC/USDT 1m] REGIME_CLASSIFICATION: Factual: Regime assessed as LOW_VOLATILITY with Close=80513.95, EMA9=80666.82, EMA21=80766.69, RSI=29.19, MACD Hist=-22.5079, ATR=98.03.",
+      "[BTC/USDT 1m] BEARISH_REJECTION_WICK: Factual: Candle formed upper rejection wick of 60.43 (74.3% of candle range [80504.63 - 80585.96]).",
+      "[BTC/USDT 1m] POSSIBLE_BREAKOUT: Factual: Candle close 80513.95 crossed beyond Bollinger Band lower boundary (80542.28)."
+    ],
+    "summary": "Daily Learning Session completed. Analyzed 9 empirical market observations. Monitored regimes: [ETH/USDT(UNCERTAIN), BTC/USDT(LOW_VOLATILITY), SOL/USDT(HIGH_VOLATILITY)]. Identified 2 repeated market patterns and flagged 0 contradictions against theoretical assumptions. Reinforced 3 risk discipline lessons and formulated 1 testable hypotheses for research validation.",
+    "status": "COMPLETED",
+    "importantFindings": [
+      "Regime Tracking: ETH/USDT (5m) is in UNCERTAIN (EMA9=2419.94, RSI=27.6, MACD Hist=1.982).",
+      "Regime Tracking: BTC/USDT (1m) is in LOW_VOLATILITY (EMA9=80666.82, RSI=29.2, MACD Hist=-22.508).",
+      "Regime Tracking: SOL/USDT (15m) is in HIGH_VOLATILITY (EMA9=108.37, RSI=17.7, MACD Hist=-0.328).",
+      "Volatility Baseline: No abnormal ATR spikes or excessive volume bursts detected in the sample period.",
+      "Price Rejections: 2 structural wick rejections observed, indicating active defense at short-term support/resistance levels."
+    ],
+    "contradictions": [],
+    "repeatedPatterns": [
+      {
+        "patternName": "REGIME CLASSIFICATION",
+        "occurrences": 3,
+        "symbols": [
+          "SOL/USDT",
+          "ETH/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, UNCERTAIN, LOW_VOLATILITY",
+        "description": "Pattern \"REGIME_CLASSIFICATION\" observed 3 times across SOL/USDT, ETH/USDT, BTC/USDT. Context: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.14, EMA9=108.37, EMA21=110.11, RSI=17.67, MACD Hist=-0.3277, ATR=0.95."
+      },
+      {
+        "patternName": "POSSIBLE BREAKOUT",
+        "occurrences": 2,
+        "symbols": [
+          "SOL/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, LOW_VOLATILITY",
+        "description": "Pattern \"POSSIBLE_BREAKOUT\" observed 2 times across SOL/USDT, BTC/USDT. Context: Factual: Candle close 106.14 crossed beyond Bollinger Band lower boundary (106.16)."
+      }
+    ],
+    "mistakesOrLessons": [
+      {
+        "lesson": "Historical pitfall reinforced: Rule achieved Evidence Score 61/100. Verdict: REJECTED. OOS Win Rate: 52.7% (IS: 58.2%, retention: 0.91).",
+        "context": "UNIVERSAL 5m - Automated Validation Engine for Rule: PUT - RSI Overbought Rejection (rule_bearish_rsi_overbought_drop)",
+        "preventiveAction": "Failed out-of-sample edge preservation. Hypothesis rejected and recorded in failure memory."
+      },
+      {
+        "lesson": "Historical pitfall reinforced: Signal triggered while ATR expanded to 4.2x average due to high-impact CPI release. Bid-ask spread increased tenfold.",
+        "context": "ETHUSDT 1m - High-volatility fast session with erratic ATR spike.",
+        "preventiveAction": "Root cause analysis: System lacked hard volatility/news freeze filter. Never trade 1m during scheduled macro volatility releases."
+      },
+      {
+        "lesson": "Spread expansion and slippage spike during HIGH_VOLATILITY regimes.",
+        "context": "Observed elevated ATR ratio (>1.6x baseline).",
+        "preventiveAction": "Increase minimum stop margin or halt fast 1m execution until volatility normalizes."
+      }
+    ],
+    "hypothesesGenerated": [
+      {
+        "hypothesisId": "hyp_1791481246949_0ory",
+        "statement": "Enforcing a minimum Bollinger Bandwidth threshold (>0.012) prior to trend-following rule execution filters whipsaw trades during low-volatility consolidation.",
+        "rationale": "Analysis of recent market sessions indicates low-volatility regimes suffer degraded win rates when evaluating directional moving average signals.",
+        "evidenceIds": [
+          "obs_1791479700000_regime_SOLUSDT",
+          "obs_1791479700000_bear_engulf_SOLUSDT"
+        ],
+        "targetSymbols": [
+          "SOL/USDT",
+          "ETH/USDT",
+          "BTC/USDT"
+        ],
+        "suggestedRegime": "RANGING_CONSOLIDATION",
+        "createdAt": 1791481246949
+      }
+    ],
+    "metrics": {
+      "observationsAnalyzed": 9,
+      "memoriesConsulted": 6,
+      "knowledgeItemsConsulted": 5,
+      "validationsConsulted": 2
+    }
+  },
+  {
+    "sessionId": "learn_1791481258709_manual",
+    "startTime": 1791481258708,
+    "endTime": 1791481258709,
+    "sourcesProcessed": 21,
+    "newKnowledgeCount": 1,
+    "updatedKnowledgeCount": 3,
+    "contradictionsFound": 0,
+    "importantMarketObservations": [
+      "[SOL/USDT 15m] REGIME_CLASSIFICATION: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.14, EMA9=108.37, EMA21=110.11, RSI=17.67, MACD Hist=-0.3277, ATR=0.95.",
+      "[SOL/USDT 15m] BEARISH_ENGULFING: Factual: Bearish candle body [106.14 - 107.79] completely engulfs preceding bullish body [107.70 - 107.79].",
+      "[SOL/USDT 15m] POSSIBLE_BREAKOUT: Factual: Candle close 106.14 crossed beyond Bollinger Band lower boundary (106.16).",
+      "[ETH/USDT 5m] REGIME_CLASSIFICATION: Factual: Regime assessed as UNCERTAIN with Close=2412.58, EMA9=2419.94, EMA21=2433.53, RSI=27.63, MACD Hist=1.9822, ATR=10.58.",
+      "[ETH/USDT 5m] BULLISH_REJECTION_WICK: Factual: Candle formed lower rejection wick of 2.30 (62.5% of candle range [2410.28 - 2413.96]).",
+      "[ETH/USDT 5m] POSSIBLE_REJECTION: Factual: Price pierced Bollinger Band lower boundary but closed back inside band range.",
+      "[BTC/USDT 1m] REGIME_CLASSIFICATION: Factual: Regime assessed as LOW_VOLATILITY with Close=80513.95, EMA9=80666.82, EMA21=80766.69, RSI=29.19, MACD Hist=-22.5079, ATR=98.03.",
+      "[BTC/USDT 1m] BEARISH_REJECTION_WICK: Factual: Candle formed upper rejection wick of 60.43 (74.3% of candle range [80504.63 - 80585.96]).",
+      "[BTC/USDT 1m] POSSIBLE_BREAKOUT: Factual: Candle close 80513.95 crossed beyond Bollinger Band lower boundary (80542.28)."
+    ],
+    "summary": "Daily Learning Session completed. Analyzed 9 empirical market observations. Monitored regimes: [ETH/USDT(UNCERTAIN), BTC/USDT(LOW_VOLATILITY), SOL/USDT(HIGH_VOLATILITY)]. Identified 2 repeated market patterns and flagged 0 contradictions against theoretical assumptions. Reinforced 3 risk discipline lessons and formulated 1 testable hypotheses for research validation.",
+    "status": "COMPLETED",
+    "importantFindings": [
+      "Regime Tracking: ETH/USDT (5m) is in UNCERTAIN (EMA9=2419.94, RSI=27.6, MACD Hist=1.982).",
+      "Regime Tracking: BTC/USDT (1m) is in LOW_VOLATILITY (EMA9=80666.82, RSI=29.2, MACD Hist=-22.508).",
+      "Regime Tracking: SOL/USDT (15m) is in HIGH_VOLATILITY (EMA9=108.37, RSI=17.7, MACD Hist=-0.328).",
+      "Volatility Baseline: No abnormal ATR spikes or excessive volume bursts detected in the sample period.",
+      "Price Rejections: 2 structural wick rejections observed, indicating active defense at short-term support/resistance levels."
+    ],
+    "contradictions": [],
+    "repeatedPatterns": [
+      {
+        "patternName": "REGIME CLASSIFICATION",
+        "occurrences": 3,
+        "symbols": [
+          "SOL/USDT",
+          "ETH/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, UNCERTAIN, LOW_VOLATILITY",
+        "description": "Pattern \"REGIME_CLASSIFICATION\" observed 3 times across SOL/USDT, ETH/USDT, BTC/USDT. Context: Factual: Regime assessed as HIGH_VOLATILITY with Close=106.14, EMA9=108.37, EMA21=110.11, RSI=17.67, MACD Hist=-0.3277, ATR=0.95."
+      },
+      {
+        "patternName": "POSSIBLE BREAKOUT",
+        "occurrences": 2,
+        "symbols": [
+          "SOL/USDT",
+          "BTC/USDT"
+        ],
+        "regime": "HIGH_VOLATILITY, LOW_VOLATILITY",
+        "description": "Pattern \"POSSIBLE_BREAKOUT\" observed 2 times across SOL/USDT, BTC/USDT. Context: Factual: Candle close 106.14 crossed beyond Bollinger Band lower boundary (106.16)."
+      }
+    ],
+    "mistakesOrLessons": [
+      {
+        "lesson": "Historical pitfall reinforced: Rule achieved Evidence Score 61/100. Verdict: REJECTED. OOS Win Rate: 52.7% (IS: 58.2%, retention: 0.91).",
+        "context": "UNIVERSAL 5m - Automated Validation Engine for Rule: PUT - RSI Overbought Rejection (rule_bearish_rsi_overbought_drop)",
+        "preventiveAction": "Failed out-of-sample edge preservation. Hypothesis rejected and recorded in failure memory."
+      },
+      {
+        "lesson": "Historical pitfall reinforced: Signal triggered while ATR expanded to 4.2x average due to high-impact CPI release. Bid-ask spread increased tenfold.",
+        "context": "ETHUSDT 1m - High-volatility fast session with erratic ATR spike.",
+        "preventiveAction": "Root cause analysis: System lacked hard volatility/news freeze filter. Never trade 1m during scheduled macro volatility releases."
+      },
+      {
+        "lesson": "Spread expansion and slippage spike during HIGH_VOLATILITY regimes.",
+        "context": "Observed elevated ATR ratio (>1.6x baseline).",
+        "preventiveAction": "Increase minimum stop margin or halt fast 1m execution until volatility normalizes."
+      }
+    ],
+    "hypothesesGenerated": [
+      {
+        "hypothesisId": "hyp_1791481258708_cgm2",
+        "statement": "Enforcing a minimum Bollinger Bandwidth threshold (>0.012) prior to trend-following rule execution filters whipsaw trades during low-volatility consolidation.",
+        "rationale": "Analysis of recent market sessions indicates low-volatility regimes suffer degraded win rates when evaluating directional moving average signals.",
+        "evidenceIds": [
+          "obs_1791479700000_regime_SOLUSDT",
+          "obs_1791479700000_bear_engulf_SOLUSDT"
+        ],
+        "targetSymbols": [
+          "SOL/USDT",
+          "ETH/USDT",
+          "BTC/USDT"
+        ],
+        "suggestedRegime": "RANGING_CONSOLIDATION",
+        "createdAt": 1791481258708
+      }
+    ],
+    "metrics": {
+      "observationsAnalyzed": 9,
+      "memoriesConsulted": 7,
+      "knowledgeItemsConsulted": 5,
+      "validationsConsulted": 2
+    }
+  }
+]

@@ -145,11 +145,11 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                     </span>
                   </div>
 
-                  {/* Confidence / Strength */}
+                  {/* Rule Alignment Tier */}
                   <div className="font-mono text-xs hidden sm:block">
-                    <span className="text-slate-500 text-[10px] block">CONFIRMATION</span>
-                    <span className="text-slate-300 tabular-nums">
-                      {sig.signalStrength}% ({sig.scoreRatio})
+                    <span className="text-slate-500 text-[10px] block">RULE TIER</span>
+                    <span className="text-slate-200 font-semibold tabular-nums">
+                      {sig.scoreRatio} — {sig.tier ?? (sig.scoreRatio?.startsWith('5') ? 'STRONG' : 'QUALIFIED')}
                     </span>
                   </div>
 
@@ -157,7 +157,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                   <div className="font-mono text-xs hidden md:block">
                     <span className="text-slate-500 text-[10px] block">TIME (ENTRY / EXPIRY)</span>
                     <span className="text-slate-400">
-                      {formatTime(sig.signalTime)} / {formatTime(sig.expiryTime)}
+                      {formatTime(sig.snapshot?.candleTimestamp ?? sig.signalTime)} / {formatTime(sig.expiryTime)}
                     </span>
                   </div>
 
@@ -175,44 +175,60 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                 {/* Expanded Details Drawer */}
                 {isExpanded && (
                   <div className="px-4 py-3 bg-slate-950/80 border-t border-slate-800/80 space-y-3 text-xs">
+                    {/* Snapshot Metadata Banner */}
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyan-400 font-semibold">IMMUTABLE SIGNAL SNAPSHOT</span>
+                        <span>·</span>
+                        <span>Source: {sig.snapshot?.marketDataSource ?? 'Live Market'}</span>
+                        <span>·</span>
+                        <span>Strategy: {sig.snapshot?.strategyVersion ?? 'v1.0.0'}</span>
+                      </div>
+                      <span className="text-slate-500">
+                        Candle: {formatTime(sig.snapshot?.candleTimestamp ?? sig.signalTime)}
+                      </span>
+                    </div>
+
                     {/* Indicator values at entry */}
                     <div>
                       <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
-                        Technical Indicators at Entry:
+                        Technical Indicators at Entry (Snapshot):
                       </span>
                       <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 font-mono text-[11px]">
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">EMA 9</span>
-                          <span className="text-cyan-400">
-                            {formatPrice(sig.indicators.ema9, asset.pipDecimals)}
+                          <span className="text-cyan-400 font-semibold">
+                            {formatPrice(sig.snapshot?.ema9 ?? sig.indicators.ema9, asset.pipDecimals)}
                           </span>
                         </div>
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">EMA 21</span>
-                          <span className="text-amber-400">
-                            {formatPrice(sig.indicators.ema21, asset.pipDecimals)}
+                          <span className="text-amber-400 font-semibold">
+                            {formatPrice(sig.snapshot?.ema21 ?? sig.indicators.ema21, asset.pipDecimals)}
                           </span>
                         </div>
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">RSI (14)</span>
-                          <span className="text-slate-200">{sig.indicators.rsi.toFixed(1)}</span>
+                          <span className="text-slate-200 font-semibold">
+                            {(sig.snapshot?.rsi ?? sig.indicators.rsi).toFixed(1)}
+                          </span>
                         </div>
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">MACD Line</span>
-                          <span className="text-slate-200">
-                            {sig.indicators.macd.macd.toFixed(asset.pipDecimals)}
+                          <span className="text-slate-200 font-semibold">
+                            {(sig.snapshot?.macd.macd ?? sig.indicators.macd.macd).toFixed(asset.pipDecimals)}
                           </span>
                         </div>
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">MACD Signal</span>
-                          <span className="text-slate-200">
-                            {sig.indicators.macd.signal.toFixed(asset.pipDecimals)}
+                          <span className="text-slate-200 font-semibold">
+                            {(sig.snapshot?.macd.signal ?? sig.indicators.macd.signal).toFixed(asset.pipDecimals)}
                           </span>
                         </div>
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <span className="text-slate-500 block text-[10px]">ATR Volatility</span>
-                          <span className="text-slate-200">
-                            {formatPrice(sig.indicators.atr, asset.pipDecimals)}
+                          <span className="text-slate-200 font-semibold">
+                            {formatPrice(sig.snapshot?.atr ?? sig.indicators.atr, asset.pipDecimals)}
                           </span>
                         </div>
                       </div>
@@ -221,12 +237,12 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                     {/* Rule checklist */}
                     <div>
                       <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                        Triggered Rule Confirmations:
+                        Triggered Rule Confirmations ({sig.scoreRatio} — {sig.tier ?? 'QUALIFIED'}):
                       </span>
                       <ul className="space-y-1 text-slate-300">
                         {sig.reasons.map((r, i) => (
                           <li key={i} className="flex items-center gap-1.5 text-[11px]">
-                            <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                             <span>{r}</span>
                           </li>
                         ))}

@@ -13,6 +13,8 @@ import { claimRuleStorageService } from '../services/claimRuleStorageService';
 import { claimExtractionService } from '../services/claimExtractionService';
 import { ruleFormalizationService } from '../services/ruleFormalizationService';
 import { ruleVerificationService } from '../services/ruleVerificationService';
+import { marketObserverService } from '../services/marketObserverService';
+import { dailyLearningService } from '../services/dailyLearningService';
 import {
   KnowledgeStatus,
   MemoryCategory,
@@ -23,6 +25,10 @@ import {
   SourceCategory,
   SourceType,
 } from '../types/sourceTypes';
+import {
+  MarketRegime,
+  ObservationType,
+} from '../types/observationTypes';
 
 export const agentRouter = express.Router();
 
@@ -771,11 +777,78 @@ agentRouter.post('/retrieval', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/agent/learning/session/run
+ * Phase 2E-B: Execute a structured Daily Learning Session
+ */
+agentRouter.post('/learning/session/run', async (req: Request, res: Response) => {
+  try {
+    const { symbol, timeframe, limitObservations, dryRun } = req.body || {};
+    const result = await dailyLearningService.runDailyLearningSession({
+      symbol: symbol ? String(symbol) : undefined,
+      timeframe: timeframe ? String(timeframe) : undefined,
+      limitObservations: limitObservations ? Number(limitObservations) : undefined,
+      dryRun: Boolean(dryRun),
+      triggerSource: 'MANUAL',
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Execution error' });
+  }
+});
+
+/**
+ * GET /api/agent/learning/sessions/latest
+ * Phase 2E-B: Retrieve the most recent completed Daily Learning Session
+ */
+agentRouter.get('/learning/sessions/latest', (_req: Request, res: Response) => {
+  try {
+    const session = dailyLearningService.getLatestSession();
+    if (!session) {
+      res.status(404).json({ ok: false, error: 'No learning session found' });
+      return;
+    }
+    res.json({ ok: true, session });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /api/agent/learning/hypotheses
+ * Phase 2E-B: Retrieve all potential hypotheses formulated across learning sessions
+ */
+agentRouter.get('/learning/hypotheses', (_req: Request, res: Response) => {
+  try {
+    const hypotheses = dailyLearningService.getAllHypotheses();
+    res.json({ ok: true, count: hypotheses.length, hypotheses });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /api/agent/learning/sessions/:sessionId
+ * Phase 2E-B: Retrieve a specific Daily Learning Session by ID
+ */
+agentRouter.get('/learning/sessions/:sessionId', (req: Request, res: Response) => {
+  try {
+    const session = dailyLearningService.getSessionById(req.params.sessionId);
+    if (!session) {
+      res.status(404).json({ ok: false, error: 'Session not found' });
+      return;
+    }
+    res.json({ ok: true, session });
+  } catch (err: unknown) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
  * GET /api/agent/learning/sessions
  */
 agentRouter.get('/learning/sessions', (_req: Request, res: Response) => {
   try {
-    const sessions = memoryService.getLearningSessions();
+    const sessions = dailyLearningService.getAllSessions();
     res.json({ ok: true, count: sessions.length, sessions });
   } catch (err: unknown) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
@@ -986,4 +1059,123 @@ agentRouter.get('/learning/verification-status', (_req: Request, res: Response) 
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
+
+// =========================================================================
+// Phase 2E-A: Market Observation Engine API
+// =========================================================================
+
+/**
+ * POST /api/agent/observations/record
+ * Evaluates and records structured market observations with strict deduplication
+ */
+agentRouter.post('/observations/record', async (req: Request, res: Response) => {
+  try {
+    const { symbol, timeframe, candles, source, fetchFromBinance, limit, observation } = req.body || {};
+
+    if (observation) {
+      const recorded = marketObserverService.recordObservation(observation);
+      res.json({ ok: true, observation: recorded });
+      return;
+    }
+
+    if (fetchFromBinance && symbol) {
+      const observations = await marketObserverService.fetchAndObserveBinance(
+        symbol,
+        timeframe || '1m',
+        limit || 60
+      );
+      res.json({
+        ok: true,
+        count: observations.length,
+        observations,
+        symbol,
+        timeframe: timeframe || '1m',
+      });
+      return;
+    }
+
+    if (candles && Array.isArray(candles) && symbol) {
+      const observations = marketObserverService.observeCandles(
+        symbol,
+        timeframe || '1m',
+        candles,
+        source || 'MANUAL_PAYLOAD'
+      );
+      res.json({
+        ok: true,
+        count: observations.length,
+        observations,
+        symbol,
+        timeframe: timeframe || '1m',
+      });
+      return;
+    }
+
+    res.status(400).json({
+      ok: false,
+      error: 'Invalid payload. Provide either "observation", "candles" (with symbol), or "fetchFromBinance: true" (with symbol).',
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Observation recording error',
+    });
+  }
+});
+
+/**
+ * GET /api/agent/observations/recent
+ * Returns recent market observations with optional filtering by symbol, timeframe, regime, or type
+ */
+agentRouter.get('/observations/recent', (req: Request, res: Response) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const symbol = req.query.symbol as string | undefined;
+    const timeframe = req.query.timeframe as string | undefined;
+    const regime = req.query.regime as MarketRegime | undefined;
+    const observationType = req.query.type as ObservationType | undefined;
+
+    const observations = marketObserverService.getRecentObservations(limit, {
+      symbol,
+      timeframe,
+      regime,
+      observationType,
+    });
+
+    res.json({
+      ok: true,
+      count: observations.length,
+      observations,
+      stats: marketObserverService.getStats(),
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /api/agent/learning/regime-summary
+ * Returns deterministic regime summary across tracked symbols and timeframes
+ */
+agentRouter.get('/learning/regime-summary', (_req: Request, res: Response) => {
+  try {
+    const summary = marketObserverService.getRegimeSummary();
+    const stats = marketObserverService.getStats();
+
+    res.json({
+      ok: true,
+      summary,
+      stats,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
 

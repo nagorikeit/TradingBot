@@ -1,0 +1,78 @@
+[
+  {
+    "claimId": "clm_rsi_oversold_ema_bullish",
+    "contentId": "res_1791358433576_init_yt1",
+    "chunkId": "res_1791358433576_init_yt1_chunk_1",
+    "sourceId": "src_1791358433576_tavt",
+    "sourceUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "claimText": "When 14-period RSI is oversold below 30 and EMA 9 crosses above EMA 21 on a 5-minute chart, price experiences an upward mean reversion bounce within 3 candles.",
+    "claimType": "TRADING_RULE",
+    "testability": "TESTABLE",
+    "testabilityReason": "Concrete indicator thresholds (RSI < 30, EMA 9 > EMA 21) and clear 3-candle CALL outcome expectation",
+    "extractedAt": 1791380629878,
+    "evidenceReferences": {
+      "title": "Price Action Market Structure & Liquidity Concepts",
+      "authorOrChannel": "Forex & Macro Trading Academy",
+      "chunkIndex": 1,
+      "textSnippet": "When 14-period RSI is oversold below 30 and EMA 9 crosses above EMA 21 on a 5-minute chart, price experiences an upward mean reversion bounce within 3 candles."
+    },
+    "status": "FORMALIZED"
+  },
+  {
+    "claimId": "clm_macd_momentum_breakout",
+    "contentId": "res_1791358433576_init_pdf1",
+    "chunkId": "res_1791358433576_init_pdf1_chunk_0",
+    "sourceId": "src_1791358433576_bis1",
+    "sourceUrl": "https://www.bis.org/publ/work998.htm",
+    "claimText": "MACD histogram crossing above zero with price above EMA 21 indicates high-probability bullish trend continuation across high liquidity crypto pairs.",
+    "claimType": "TRADING_RULE",
+    "testability": "TESTABLE",
+    "testabilityReason": "Mathematical conditions (MACD histogram > 0, Price > EMA 21) on trend continuation",
+    "extractedAt": 1791395029879,
+    "evidenceReferences": {
+      "title": "FX Market Liquidity Dynamics & Volatility Regimes",
+      "authorOrChannel": "Bank for International Settlements Research",
+      "chunkIndex": 0,
+      "textSnippet": "MACD histogram crossing above zero with price above EMA 21 indicates high-probability bullish trend continuation."
+    },
+    "status": "FORMALIZED"
+  },
+  {
+    "claimId": "clm_psychology_discipline_untestable",
+    "contentId": "res_1791358433576_init_yt1",
+    "chunkId": "res_1791358433576_init_yt1_chunk_2",
+    "sourceId": "src_1791358433576_tavt",
+    "sourceUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "claimText": "Disciplined traders who maintain emotional calm during high volatility drawdowns achieve long-term profitability.",
+    "claimType": "OPINION",
+    "testability": "NOT_TESTABLE",
+    "testabilityReason": "Subjective psychological statement without quantifiable indicator triggers or execution rules",
+    "extractedAt": 1791402229879,
+    "evidenceReferences": {
+      "title": "Price Action Market Structure & Liquidity Concepts",
+      "authorOrChannel": "Forex & Macro Trading Academy",
+      "chunkIndex": 2,
+      "textSnippet": "Disciplined traders who maintain emotional calm during high volatility drawdowns achieve long-term profitability."
+    },
+    "status": "REJECTED"
+  },
+  {
+    "claimId": "clm_bearish_rejection_rsi_overbought",
+    "contentId": "res_1791358433576_init_yt1",
+    "chunkId": "res_1791358433576_init_yt1_chunk_1",
+    "sourceId": "src_1791358433576_tavt",
+    "sourceUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "claimText": "When 14-period RSI exceeds 70 and price drops below EMA 21, bearish reversal PUT signals yield positive expectancy over 3 candles in ranging regimes.",
+    "claimType": "TRADING_RULE",
+    "testability": "TESTABLE",
+    "testabilityReason": "Testable conditions: RSI > 70, Price < EMA 21, PUT direction, 3 candles expiry in ranging regimes",
+    "extractedAt": 1791423829879,
+    "evidenceReferences": {
+      "title": "Price Action Market Structure & Liquidity Concepts",
+      "authorOrChannel": "Forex & Macro Trading Academy",
+      "chunkIndex": 1,
+      "textSnippet": "When 14-period RSI exceeds 70 and price drops below EMA 21, bearish reversal PUT signals yield positive expectancy."
+    },
+    "status": "FORMALIZED"
+  }
+]

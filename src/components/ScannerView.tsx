@@ -274,7 +274,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   scoreFilter === '5' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                5/5 Strong
+                5/5 STRONG
               </button>
               <button
                 onClick={() => setScoreFilter('4')}
@@ -282,7 +282,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   scoreFilter === '4' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                4/5 Qualified
+                4/5 QUALIFIED
               </button>
             </div>
 
@@ -358,7 +358,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                               : 'bg-amber-900/60 text-amber-300 border border-amber-700/60'
                           }`}
                         >
-                          Score: {sig.score}/5 Rules ({sig.tier === 'STRONG' ? 'Strong' : 'Qualified'})
+                          Score: {sig.score}/5 Rules ({sig.tier === 'STRONG' ? 'STRONG' : 'QUALIFIED'})
                         </span>
 
                         <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">

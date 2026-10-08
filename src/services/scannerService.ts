@@ -326,12 +326,46 @@ export class ScannerService {
         const intervalMs = getTimeframeMs(this.currentTimeframe);
         const expiryTime = candleTimestamp + intervalMs;
         const tier: 'STRONG' | 'QUALIFIED' = evalResult.score === 5 ? 'STRONG' : 'QUALIFIED';
+        const scanId = `scan_${symbol.replace(/[\/\-_]/g, '')}_${candleTimestamp}`;
 
-        const newSignal: ScannerSignal = {
-          id: `scan_${symbol.replace(/[\/\-_]/g, '')}_${candleTimestamp}`,
+        const snapshot = {
+          signalId: scanId,
           symbol,
           timeframe: this.currentTimeframe,
+          candleTimestamp,
+          entryPrice: closedCandle.close,
+          candle: {
+            open: closedCandle.open,
+            high: closedCandle.high,
+            low: closedCandle.low,
+            close: closedCandle.close,
+            volume: closedCandle.volume,
+          },
+          ema9: indicators.ema9,
+          ema21: indicators.ema21,
+          rsi: indicators.rsi,
+          macd: { ...indicators.macd },
+          bollingerBands: { ...indicators.bollingerBands },
+          atr: indicators.atr,
+          ruleScore: evalResult.score,
+          scoreRatio: `${evalResult.score}/5`,
+          tier,
           direction: evalResult.direction,
+          triggeredRules: evalResult.reasons,
+          allRulesEvaluated: evalResult.activeRules,
+          expiryTime,
+          expiryCandles: 1,
+          strategyVersion: 'v1.0.0',
+          ruleVersion: 'v1.0.0',
+          marketDataSource: 'Binance Live Stream',
+          signalCreatedAt: Date.now(),
+        };
+
+        const newSignal: ScannerSignal = {
+          id: scanId,
+          symbol,
+          timeframe: this.currentTimeframe,
+          direction: evalResult.direction as 'CALL' | 'PUT',
           score: evalResult.score,
           maxScore: 5,
           tier,
@@ -342,6 +376,7 @@ export class ScannerService {
           expiryCandles: 1,
           indicators,
           reasons: evalResult.reasons,
+          snapshot,
           isConfirmed: true,
         };
 

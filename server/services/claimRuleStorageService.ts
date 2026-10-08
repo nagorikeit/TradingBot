@@ -113,6 +113,10 @@ export class ClaimRuleStorageService {
   }
 
   // --- Validations CRUD ---
+  public getValidations(): RuleValidationRecord[] {
+    return Array.from(this.validations.values()).sort((a, b) => b.validatedAt - a.validatedAt);
+  }
+
   public getValidationByRuleId(ruleId: string): RuleValidationRecord | undefined {
     return this.validations.get(ruleId);
   }

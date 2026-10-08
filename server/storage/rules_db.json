@@ -1,0 +1,122 @@
+[
+  {
+    "ruleId": "rule_rsi_oversold_ema_bounce",
+    "sourceClaimId": "clm_rsi_oversold_ema_bullish",
+    "name": "CALL - RSI Oversold + EMA Trend Filter Bounce",
+    "description": "Mean reversion CALL signal triggered when RSI 14 < 30 and EMA 9 > EMA 21 on 5m timeframe.",
+    "version": "1.0.0",
+    "direction": "CALL",
+    "timeframe": "5m",
+    "expiryCandles": 3,
+    "market": "CRYPTO_PAIRS",
+    "conditions": [
+      {
+        "indicator": "RSI",
+        "operator": "<",
+        "threshold": 30,
+        "description": "RSI 14 oversold below 30"
+      },
+      {
+        "indicator": "EMA",
+        "operator": ">",
+        "compareTo": "EMA_SLOW",
+        "description": "EMA 9 above EMA 21 (Bullish Trend Alignment)"
+      }
+    ],
+    "targetRegimes": [
+      "RANGING",
+      "BULLISH"
+    ],
+    "parameters": {
+      "rsiPeriod": 14,
+      "rsiThreshold": 30,
+      "fastEma": 9,
+      "slowEma": 21,
+      "expiryCandles": 3
+    },
+    "status": "APPROVED",
+    "createdAt": 1791395029880,
+    "updatedAt": 1791467314219,
+    "approvedByHuman": true,
+    "approvalTimestamp": 1791467314219,
+    "approvalNotes": "Human verified statistical evidence chain and walk-forward stability."
+  },
+  {
+    "ruleId": "rule_macd_momentum_breakout",
+    "sourceClaimId": "clm_macd_momentum_breakout",
+    "name": "CALL - MACD Histogram Breakout + Price Support",
+    "description": "Trend continuation CALL signal when MACD histogram crosses above zero and price > EMA 21.",
+    "version": "1.0.0",
+    "direction": "CALL",
+    "timeframe": "5m",
+    "expiryCandles": 3,
+    "market": "CRYPTO_PAIRS",
+    "conditions": [
+      {
+        "indicator": "MACD",
+        "operator": ">",
+        "compareTo": "ZERO",
+        "description": "MACD histogram above zero"
+      },
+      {
+        "indicator": "PRICE_ACTION",
+        "operator": ">",
+        "compareTo": "PRICE",
+        "description": "Price above EMA 21 Support"
+      }
+    ],
+    "targetRegimes": [
+      "TRENDING",
+      "BULLISH"
+    ],
+    "parameters": {
+      "macdFast": 12,
+      "macdSlow": 26,
+      "macdSignal": 9,
+      "slowEma": 21,
+      "expiryCandles": 3
+    },
+    "status": "BACKTESTED",
+    "createdAt": 1791409429880,
+    "updatedAt": 1791452629880
+  },
+  {
+    "ruleId": "rule_bearish_rsi_overbought_drop",
+    "sourceClaimId": "clm_bearish_rejection_rsi_overbought",
+    "name": "PUT - RSI Overbought Rejection",
+    "description": "Exhaustion PUT signal when RSI 14 > 70 and EMA 9 < EMA 21.",
+    "version": "1.0.0",
+    "direction": "PUT",
+    "timeframe": "5m",
+    "expiryCandles": 3,
+    "market": "CRYPTO_PAIRS",
+    "conditions": [
+      {
+        "indicator": "RSI",
+        "operator": ">",
+        "threshold": 70,
+        "description": "RSI 14 overbought above 70"
+      },
+      {
+        "indicator": "EMA",
+        "operator": "<",
+        "compareTo": "EMA_SLOW",
+        "description": "EMA 9 below EMA 21 (Bearish Momentum)"
+      }
+    ],
+    "targetRegimes": [
+      "RANGING",
+      "BEARISH"
+    ],
+    "parameters": {
+      "rsiPeriod": 14,
+      "rsiThreshold": 70,
+      "fastEma": 9,
+      "slowEma": 21,
+      "expiryCandles": 3
+    },
+    "status": "REJECTED",
+    "createdAt": 1791431029880,
+    "updatedAt": 1791467269677
+  }
+]

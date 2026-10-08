@@ -1,0 +1,259 @@
+[
+  {
+    "validationId": "val_seed_rsi_bounce",
+    "ruleId": "rule_rsi_oversold_ema_bounce",
+    "validatedAt": 1791459829882,
+    "inSampleMetrics": {
+      "totalTrades": 142,
+      "wins": 96,
+      "losses": 44,
+      "draws": 2,
+      "unresolved": 0,
+      "winRate": 68.6,
+      "profitFactor": 1.84,
+      "expectancy": 0.27,
+      "maxDrawdown": 10.5,
+      "averageWin": 85,
+      "averageLoss": 100,
+      "sampleSize": 142,
+      "confidenceInterval": {
+        "lower": 60.5,
+        "upper": 75.6,
+        "confidence": 95
+      },
+      "sharpeRatio": 1.74
+    },
+    "outOfSampleMetrics": {
+      "totalTrades": 62,
+      "wins": 41,
+      "losses": 20,
+      "draws": 1,
+      "unresolved": 0,
+      "winRate": 67.2,
+      "profitFactor": 1.72,
+      "expectancy": 0.24,
+      "maxDrawdown": 12.1,
+      "averageWin": 85,
+      "averageLoss": 100,
+      "sampleSize": 62,
+      "confidenceInterval": {
+        "lower": 54.8,
+        "upper": 77.6,
+        "confidence": 95
+      },
+      "sharpeRatio": 1.58
+    },
+    "oosRetentionRatio": 0.98,
+    "walkForwardResults": [
+      {
+        "windowIndex": 1,
+        "trainRange": {
+          "start": "Day 1",
+          "end": "Day 30"
+        },
+        "testRange": {
+          "start": "Day 31",
+          "end": "Day 45"
+        },
+        "trainWinRate": 69.1,
+        "testWinRate": 66.7,
+        "tradesInTest": 24,
+        "consistent": true
+      },
+      {
+        "windowIndex": 2,
+        "trainRange": {
+          "start": "Day 15",
+          "end": "Day 45"
+        },
+        "testRange": {
+          "start": "Day 46",
+          "end": "Day 60"
+        },
+        "trainWinRate": 68,
+        "testWinRate": 67.5,
+        "tradesInTest": 20,
+        "consistent": true
+      },
+      {
+        "windowIndex": 3,
+        "trainRange": {
+          "start": "Day 30",
+          "end": "Day 60"
+        },
+        "testRange": {
+          "start": "Day 61",
+          "end": "Day 75"
+        },
+        "trainWinRate": 67.4,
+        "testWinRate": 65.2,
+        "tradesInTest": 18,
+        "consistent": true
+      }
+    ],
+    "walkForwardConsistencyScore": 100,
+    "regimeBreakdown": [
+      {
+        "regime": "RANGING",
+        "trades": 84,
+        "wins": 59,
+        "winRate": 70.2
+      },
+      {
+        "regime": "BULLISH",
+        "trades": 78,
+        "wins": 53,
+        "winRate": 67.9
+      },
+      {
+        "regime": "HIGH_VOLATILITY",
+        "trades": 42,
+        "wins": 25,
+        "winRate": 59.5
+      }
+    ],
+    "evidenceScore": 88,
+    "postMortem": {
+      "isFailure": false,
+      "weakestRegime": "HIGH_VOLATILITY",
+      "overfittingDetected": false,
+      "varianceWarning": false,
+      "smallSampleWarning": false,
+      "recommendedAdjustments": [
+        "High out-of-sample edge stability (98% retention ratio).",
+        "Passes all statistical tests for Trusted Candidate status."
+      ]
+    },
+    "verdict": "TRUSTED_CANDIDATE",
+    "statusNotes": "Passed In-Sample, OOS (67.2%), and 3/3 Walk-Forward windows. Evidence Score: 88/100."
+  },
+  {
+    "validationId": "val_271e51b97066293f",
+    "ruleId": "rule_bearish_rsi_overbought_drop",
+    "validatedAt": 1791467269677,
+    "inSampleMetrics": {
+      "totalTrades": 124,
+      "wins": 71,
+      "losses": 51,
+      "draws": 2,
+      "unresolved": 0,
+      "winRate": 58.2,
+      "profitFactor": 1.21,
+      "expectancy": 0.08,
+      "maxDrawdown": 11.4,
+      "averageWin": 85,
+      "averageLoss": 100,
+      "sampleSize": 124,
+      "confidenceInterval": {
+        "lower": 49.3,
+        "upper": 66.6,
+        "confidence": 95
+      },
+      "sharpeRatio": 1.62
+    },
+    "outOfSampleMetrics": {
+      "totalTrades": 56,
+      "wins": 29,
+      "losses": 26,
+      "draws": 1,
+      "unresolved": 0,
+      "winRate": 52.7,
+      "profitFactor": 0.97,
+      "expectancy": -0.03,
+      "maxDrawdown": 14.8,
+      "averageWin": 85,
+      "averageLoss": 100,
+      "sampleSize": 56,
+      "confidenceInterval": {
+        "lower": 39.8,
+        "upper": 65.3,
+        "confidence": 95
+      },
+      "sharpeRatio": 1.41
+    },
+    "oosRetentionRatio": 0.91,
+    "walkForwardResults": [
+      {
+        "windowIndex": 1,
+        "trainRange": {
+          "start": "Day 1",
+          "end": "Day 30"
+        },
+        "testRange": {
+          "start": "Day 31",
+          "end": "Day 45"
+        },
+        "trainWinRate": 67.2,
+        "testWinRate": 64.5,
+        "tradesInTest": 21,
+        "consistent": true
+      },
+      {
+        "windowIndex": 2,
+        "trainRange": {
+          "start": "Day 15",
+          "end": "Day 45"
+        },
+        "testRange": {
+          "start": "Day 46",
+          "end": "Day 60"
+        },
+        "trainWinRate": 65.8,
+        "testWinRate": 63.9,
+        "tradesInTest": 19,
+        "consistent": true
+      },
+      {
+        "windowIndex": 3,
+        "trainRange": {
+          "start": "Day 30",
+          "end": "Day 60"
+        },
+        "testRange": {
+          "start": "Day 61",
+          "end": "Day 75"
+        },
+        "trainWinRate": 66.1,
+        "testWinRate": 52.4,
+        "tradesInTest": 16,
+        "consistent": false
+      }
+    ],
+    "walkForwardConsistencyScore": 67,
+    "regimeBreakdown": [
+      {
+        "regime": "RANGING",
+        "trades": 72,
+        "wins": 49,
+        "winRate": 68.1
+      },
+      {
+        "regime": "TRENDING",
+        "trades": 68,
+        "wins": 44,
+        "winRate": 64.7
+      },
+      {
+        "regime": "HIGH_VOLATILITY",
+        "trades": 40,
+        "wins": 18,
+        "winRate": 45
+      }
+    ],
+    "evidenceScore": 61,
+    "postMortem": {
+      "isFailure": true,
+      "failureReason": "Significant performance degradation in Out-of-Sample validation or inconsistent Walk-Forward test windows.",
+      "weakestRegime": "HIGH_VOLATILITY",
+      "overfittingDetected": false,
+      "varianceWarning": true,
+      "smallSampleWarning": false,
+      "recommendedAdjustments": [
+        "Tighten volatility filter: avoid entries when ATR / Bollinger width exceeds 90th percentile.",
+        "Increase minimum sample size before reconsidering hypothesis."
+      ]
+    },
+    "verdict": "REJECTED",
+    "statusNotes": "Failed out-of-sample edge preservation. Hypothesis rejected and recorded in failure memory."
+  }
+]

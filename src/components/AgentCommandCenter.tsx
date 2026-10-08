@@ -2202,71 +2202,175 @@ export const AgentCommandCenter: React.FC = () => {
 
                   {/* IS vs OOS Metrics Comparison */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                      <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold">
-                        In-Sample Backtest (70% Data)
-                      </span>
-                      <div className="space-y-1 font-mono text-[11px]">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Win Rate:</span>
-                          <span className="text-white font-bold">{activeRuleValidation.inSampleMetrics.winRate}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Trades (Wins / Losses):</span>
-                          <span className="text-white">
-                            {activeRuleValidation.inSampleMetrics.wins} / {activeRuleValidation.inSampleMetrics.losses}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Profit Factor:</span>
-                          <span className="text-white">{activeRuleValidation.inSampleMetrics.profitFactor}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Expectancy:</span>
-                          <span className="text-white">{activeRuleValidation.inSampleMetrics.expectancy}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Wilson 95% CI:</span>
-                          <span className="text-slate-300">
-                            [{activeRuleValidation.inSampleMetrics.confidenceInterval.lower}% - {activeRuleValidation.inSampleMetrics.confidenceInterval.upper}%]
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    {/* In-Sample Card */}
+                    {(() => {
+                      const isM = activeRuleValidation.inSampleMetrics;
+                      const isResolved = isM.wins + isM.losses + (isM.draws ?? 0);
+                      const isTotal = isResolved + (isM.unresolved ?? 0);
 
-                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                      <span className="text-[10px] font-mono uppercase text-emerald-400 font-semibold">
-                        Out-of-Sample Test (30% Frozen)
-                      </span>
-                      <div className="space-y-1 font-mono text-[11px]">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">OOS Win Rate:</span>
-                          <span className="text-emerald-400 font-bold">{activeRuleValidation.outOfSampleMetrics.winRate}%</span>
+                      return (
+                        <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono uppercase text-cyan-400 font-semibold">
+                              In-Sample Backtest (70% Data)
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              Sample Size: {isM.sampleSize}
+                            </span>
+                          </div>
+
+                          {/* Outcomes Breakdown (Wins, Losses, Draws, Unresolved) */}
+                          <div className="grid grid-cols-4 gap-1.5 p-2 bg-slate-900/70 rounded-lg border border-slate-800/80 text-center font-mono text-[10px]">
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Wins</span>
+                              <span className="text-emerald-400 font-bold text-xs">{isM.wins}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Losses</span>
+                              <span className="text-rose-400 font-bold text-xs">{isM.losses}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Draws</span>
+                              <span className="text-slate-300 font-bold text-xs">{isM.draws ?? 0}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Unresolved</span>
+                              <span className="text-amber-400 font-bold text-xs">{isM.unresolved ?? 0}</span>
+                            </div>
+                          </div>
+
+                          {/* Summary Verification Counts (Resolved & Total) */}
+                          <div className="grid grid-cols-2 gap-2 font-mono text-[11px] p-2 bg-slate-900/40 rounded border border-slate-800/60">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Resolved:</span>
+                              <span className="text-white font-semibold tabular-nums">{isResolved}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Total:</span>
+                              <span className="text-white font-semibold tabular-nums">{isTotal}</span>
+                            </div>
+                          </div>
+
+                          {/* Performance & Expectancy Metrics */}
+                          <div className="space-y-1 font-mono text-[11px] pt-1 border-t border-slate-800/80">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Win Rate:</span>
+                              <span className="text-white font-bold">{isM.winRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Profit Factor:</span>
+                              <span className="text-white">{isM.profitFactor}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Expectancy:</span>
+                              <span className="text-white">{isM.expectancy}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Max Drawdown:</span>
+                              <span className="text-white">{isM.maxDrawdown}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Sample Size:</span>
+                              <span className="text-slate-200">{isM.sampleSize}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Wilson 95% CI:</span>
+                              <span className="text-slate-300">
+                                [{isM.confidenceInterval.lower}% - {isM.confidenceInterval.upper}%]
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Trades (Wins / Losses):</span>
-                          <span className="text-white">
-                            {activeRuleValidation.outOfSampleMetrics.wins} / {activeRuleValidation.outOfSampleMetrics.losses}
-                          </span>
+                      );
+                    })()}
+
+                    {/* Out-of-Sample Card */}
+                    {(() => {
+                      const oosM = activeRuleValidation.outOfSampleMetrics;
+                      const oosResolved = oosM.wins + oosM.losses + (oosM.draws ?? 0);
+                      const oosTotal = oosResolved + (oosM.unresolved ?? 0);
+
+                      return (
+                        <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono uppercase text-emerald-400 font-semibold">
+                              Out-of-Sample Test (30% Frozen)
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              Sample Size: {oosM.sampleSize}
+                            </span>
+                          </div>
+
+                          {/* Outcomes Breakdown (Wins, Losses, Draws, Unresolved) */}
+                          <div className="grid grid-cols-4 gap-1.5 p-2 bg-slate-900/70 rounded-lg border border-slate-800/80 text-center font-mono text-[10px]">
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Wins</span>
+                              <span className="text-emerald-400 font-bold text-xs">{oosM.wins}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Losses</span>
+                              <span className="text-rose-400 font-bold text-xs">{oosM.losses}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Draws</span>
+                              <span className="text-slate-300 font-bold text-xs">{oosM.draws ?? 0}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1 rounded">
+                              <span className="text-slate-500 block text-[9px] uppercase">Unresolved</span>
+                              <span className="text-amber-400 font-bold text-xs">{oosM.unresolved ?? 0}</span>
+                            </div>
+                          </div>
+
+                          {/* Summary Verification Counts (Resolved & Total) */}
+                          <div className="grid grid-cols-2 gap-2 font-mono text-[11px] p-2 bg-slate-900/40 rounded border border-slate-800/60">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Resolved:</span>
+                              <span className="text-white font-semibold tabular-nums">{oosResolved}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Total:</span>
+                              <span className="text-white font-semibold tabular-nums">{oosTotal}</span>
+                            </div>
+                          </div>
+
+                          {/* Performance & Expectancy Metrics */}
+                          <div className="space-y-1 font-mono text-[11px] pt-1 border-t border-slate-800/80">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">OOS Win Rate:</span>
+                              <span className="text-emerald-400 font-bold">{oosM.winRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">OOS Retention Ratio:</span>
+                              <span className="text-emerald-300 font-bold">
+                                {(activeRuleValidation.oosRetentionRatio * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Profit Factor:</span>
+                              <span className="text-white">{oosM.profitFactor}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Expectancy:</span>
+                              <span className="text-white">{oosM.expectancy}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Max Drawdown:</span>
+                              <span className="text-white">{oosM.maxDrawdown}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Sample Size:</span>
+                              <span className="text-slate-200">{oosM.sampleSize}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Wilson 95% CI:</span>
+                              <span className="text-slate-300">
+                                [{oosM.confidenceInterval.lower}% - {oosM.confidenceInterval.upper}%]
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">OOS Retention Ratio:</span>
-                          <span className="text-emerald-300 font-bold">
-                            {(activeRuleValidation.oosRetentionRatio * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Max Drawdown:</span>
-                          <span className="text-white">{activeRuleValidation.outOfSampleMetrics.maxDrawdown}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Wilson 95% CI:</span>
-                          <span className="text-slate-300">
-                            [{activeRuleValidation.outOfSampleMetrics.confidenceInterval.lower}% - {activeRuleValidation.outOfSampleMetrics.confidenceInterval.upper}%]
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Walk-Forward Test Windows */}

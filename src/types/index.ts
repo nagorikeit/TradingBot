@@ -28,22 +28,81 @@ export type SignalDirection = 'CALL' | 'PUT' | 'WAIT';
 
 export type SignalStrengthTier = 'Very Strong' | 'Strong' | 'Moderate' | 'None';
 
+export type SignalTier = 'STRONG' | 'QUALIFIED' | 'WAIT';
+
 export type SignalResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
+
+export interface EvaluatedRuleItem {
+  id: string;
+  name: string;
+  description: string;
+  passed: boolean;
+  valueText: string;
+  failReason?: string;
+}
+
+export interface SignalSnapshot {
+  signalId: string;
+  symbol: string;
+  timeframe: string;
+  candleTimestamp: number;
+  entryPrice: number;
+  candle: {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  };
+  ema9: number;
+  ema21: number;
+  rsi: number;
+  macd: {
+    macd: number;
+    signal: number;
+    histogram: number;
+  };
+  bollingerBands: {
+    upper: number;
+    middle: number;
+    lower: number;
+  };
+  atr: number;
+  ruleScore: number;
+  scoreRatio: string;
+  tier: SignalTier;
+  direction: SignalDirection;
+  triggeredRules: string[];
+  allRulesEvaluated: EvaluatedRuleItem[];
+  expiryTime: number;
+  expiryCandles: number;
+  strategyVersion: string;
+  ruleVersion: string;
+  marketDataSource: string;
+  signalCreatedAt: number;
+}
 
 export interface Signal {
   id: string;
   symbol: string;
   timeframe: string;
   direction: SignalDirection;
-  signalStrength: number; // e.g. 84 (%)
-  confidenceScore: number; // e.g. 5/5 = 100, 4/5 = 80, 3/5 = 60
+  signalStrength: number; // Normalized score alignment (0-100)
+  confidenceScore: number; // Score ratio percentage
   scoreRatio: string; // e.g. "5/5", "4/5", "3/5", "2/5"
+  tier?: SignalTier; // 'STRONG' | 'QUALIFIED' | 'WAIT'
   entryPrice: number;
-  signalTime: number; // timestamp
+  signalTime: number; // candleTimestamp
+  candleTimestamp?: number;
   expiryTime: number; // timestamp
   expiryCandles: number; // candles forward (default 1)
   indicators: IndicatorValues;
   reasons: string[];
+  rulesEvaluated?: EvaluatedRuleItem[];
+  strategyVersion?: string;
+  ruleVersion?: string;
+  marketDataSource?: string;
+  snapshot?: SignalSnapshot;
   result?: SignalResult;
   exitPrice?: number;
   evaluatedAt?: number;
@@ -195,6 +254,7 @@ export interface ScannerSignal {
   expiryCandles: number;
   indicators: IndicatorValues;
   reasons: string[];
+  snapshot?: SignalSnapshot;
   isConfirmed: boolean;
 }
 

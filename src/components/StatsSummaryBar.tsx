@@ -24,7 +24,7 @@ export const StatsSummaryBar: React.FC<StatsSummaryBarProps> = ({ stats }) => {
             {stats.winRate}%
           </span>
           <span className="text-[11px] text-slate-500 block mt-0.5">
-            {stats.resolved} resolved trades
+            {stats.resolved} resolved trades{stats.resolved > 0 && stats.resolved < 15 ? ' · Small sample' : ''}
           </span>
         </div>
       </div>

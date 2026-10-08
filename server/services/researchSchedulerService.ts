@@ -5,6 +5,7 @@ import {
   SchedulerConfig,
   SchedulerStatusResponse,
 } from '../types/sourceTypes';
+import { dailyLearningService } from './dailyLearningService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -230,10 +231,10 @@ export class ResearchSchedulerService {
     const startTime = Date.now();
 
     try {
-      // 3. Controlled Foundation Execution:
-      // Note: Phase 2A deliberately does NOT execute external web scraping or AI calls.
-      // This establishes the verified execution lifecycle for future Phase 2B-2E.
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // 3. Controlled Daily Learning & Research Session Execution:
+      const learningResult = await dailyLearningService.runDailyLearningSession({
+        triggerSource: triggerSource === 'SCHEDULED' ? 'SCHEDULED' : 'MANUAL',
+      });
 
       const durationMs = Date.now() - startTime;
 
@@ -246,11 +247,11 @@ export class ResearchSchedulerService {
       // Calculate next scheduled run
       this.recalculateNextRun();
 
-      console.log(`[SCHEDULER] job completed in ${durationMs}ms`);
+      console.log(`[SCHEDULER] job completed in ${durationMs}ms (Session: ${learningResult.session.sessionId})`);
 
       return {
         ok: true,
-        message: `Research session foundation executed successfully (${triggerSource}).`,
+        message: `Daily learning & research session executed successfully (${triggerSource}). Session ID: ${learningResult.session.sessionId}`,
         durationMs,
       };
     } catch (err: unknown) {

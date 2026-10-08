@@ -1,0 +1,85 @@
+[
+  {
+    "id": "mkt_1791467029745_dfwb",
+    "symbol": "BTCUSDT",
+    "market": "CRYPTO",
+    "timeframe": "5m",
+    "setup": "EMA Pullback Continuation",
+    "marketCondition": "TRENDING_BULLISH",
+    "candleContext": "Clean bullish trend with higher highs and higher lows",
+    "technicalContext": "EMA 20 > 50, RSI between 45-65",
+    "historicalOutcome": "EMA Pullback Continuation observed",
+    "observationCount": 1,
+    "winningCount": 1,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791467029745,
+    "evidenceReferences": [
+      "Session 2026-10-05",
+      "Candle batch #102"
+    ]
+  },
+  {
+    "id": "mkt_1791480348728_84jh",
+    "symbol": "BTC/USDT",
+    "market": "CRYPTO",
+    "timeframe": "1m",
+    "setup": "BEARISH REJECTION WICK",
+    "marketCondition": "LOW_VOLATILITY",
+    "candleContext": "Candle at 2026-10-08T17:25:00.000Z: O=80525.53 H=80585.96 L=80504.63 C=80513.95 V=26.79207",
+    "technicalContext": "RSI=29.2, MACD Hist=-22.5079, ATR=98.03",
+    "historicalOutcome": "BEARISH REJECTION WICK observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 1,
+    "lastObserved": 1791480348728,
+    "evidenceReferences": [
+      "Observation ID: obs_1791480300000_bear_wick_BTCUSDT",
+      "Candle Timestamp: 1791480300000",
+      "Source: BINANCE_REST"
+    ]
+  },
+  {
+    "id": "mkt_1791480355608_1i5d",
+    "symbol": "ETH/USDT",
+    "market": "CRYPTO",
+    "timeframe": "5m",
+    "setup": "BULLISH REJECTION WICK",
+    "marketCondition": "UNCERTAIN",
+    "candleContext": "Candle at 2026-10-08T17:25:00.000Z: O=2412.88 H=2413.96 L=2410.28 C=2412.58 V=493.3",
+    "technicalContext": "RSI=27.6, MACD Hist=1.9822, ATR=10.58",
+    "historicalOutcome": "BULLISH REJECTION WICK observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 1,
+    "lastObserved": 1791480355608,
+    "evidenceReferences": [
+      "Observation ID: obs_1791480300000_bull_wick_ETHUSDT",
+      "Candle Timestamp: 1791480300000",
+      "Source: BINANCE_REST"
+    ]
+  },
+  {
+    "id": "mkt_1791480371661_b83b",
+    "symbol": "SOL/USDT",
+    "market": "CRYPTO",
+    "timeframe": "15m",
+    "setup": "BEARISH ENGULFING",
+    "marketCondition": "HIGH_VOLATILITY",
+    "candleContext": "Candle at 2026-10-08T17:15:00.000Z: O=107.79 H=107.79 L=106.06 C=106.14 V=89558.19",
+    "technicalContext": "RSI=17.7, MACD Hist=-0.3277, ATR=0.95",
+    "historicalOutcome": "BEARISH ENGULFING observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 1,
+    "lastObserved": 1791480371661,
+    "evidenceReferences": [
+      "Observation ID: obs_1791479700000_bear_engulf_SOLUSDT",
+      "Candle Timestamp: 1791479700000",
+      "Source: BINANCE_REST"
+    ]
+  }
+]

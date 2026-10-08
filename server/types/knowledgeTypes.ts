@@ -102,6 +102,37 @@ export interface MarketMemoryItem {
   evidenceReferences: string[];
 }
 
+export interface LearningContradiction {
+  topic: string;
+  observation: string;
+  contradictedPrinciple: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface RepeatedMarketPattern {
+  patternName: string;
+  occurrences: number;
+  symbols: string[];
+  regime: string;
+  description: string;
+}
+
+export interface LearningLesson {
+  lesson: string;
+  context: string;
+  preventiveAction: string;
+}
+
+export interface PotentialHypothesis {
+  hypothesisId: string;
+  statement: string;
+  rationale: string;
+  evidenceIds: string[];
+  targetSymbols?: string[];
+  suggestedRegime?: string;
+  createdAt: number;
+}
+
 export interface DailyLearningSession {
   sessionId: string;
   startTime: number;
@@ -113,6 +144,18 @@ export interface DailyLearningSession {
   importantMarketObservations: string[];
   summary: string;
   status: 'COMPLETED' | 'IN_PROGRESS' | 'FAILED';
+  // Phase 2E-B structured learning additions:
+  importantFindings?: string[];
+  contradictions?: LearningContradiction[];
+  repeatedPatterns?: RepeatedMarketPattern[];
+  mistakesOrLessons?: LearningLesson[];
+  hypothesesGenerated?: PotentialHypothesis[];
+  metrics?: {
+    observationsAnalyzed: number;
+    memoriesConsulted: number;
+    knowledgeItemsConsulted: number;
+    validationsConsulted: number;
+  };
 }
 
 export interface RetrievalQuery {

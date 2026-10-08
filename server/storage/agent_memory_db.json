@@ -1,0 +1,163 @@
+[
+  {
+    "id": "mem_1791467029743_jdq4",
+    "category": "DECISION",
+    "timestamp": 1791467029743,
+    "market": "CRYPTO",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "context": "Signal Engine evaluated 4/5 QUALIFIED Bullish signal at $67,450.",
+    "observation": "Price is printing 0.3% below major horizontal 4h resistance. Upper candle shadow shows 45% wick rejection.",
+    "decision": "Recommend NO_TRADE / WAIT. Do not initiate long position directly into immediate overhead resistance.",
+    "outcome": "Price rejected by 1.2% in subsequent 3 candles. Trade saved from adverse false breakout loss.",
+    "evidence": [
+      "Candle Timestamp 1712398000000",
+      "Resistance line $67,550"
+    ],
+    "confidence": 0.88,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "AI reasoning: Risk of buying into liquidity trap exceeds mathematical expectancy without confirmed candle close above resistance."
+  },
+  {
+    "id": "mem_1791467029743_cy5k",
+    "category": "MISTAKE",
+    "timestamp": 1791467029743,
+    "market": "CRYPTO",
+    "symbol": "ETHUSDT",
+    "timeframe": "1m",
+    "context": "High-volatility fast session with erratic ATR spike.",
+    "observation": "Signal triggered while ATR expanded to 4.2x average due to high-impact CPI release. Bid-ask spread increased tenfold.",
+    "decision": "Signal executed without news/volatility spread filter.",
+    "outcome": "Slippage caused poor fill, resulting in immediate stopout loss.",
+    "evidence": [
+      "CPI release schedule 12:30 UTC",
+      "Trade slip log +$12.50"
+    ],
+    "confidence": 0.95,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Root cause analysis: System lacked hard volatility/news freeze filter. Never trade 1m during scheduled macro volatility releases."
+  },
+  {
+    "id": "mem_1791467029743_q3mw",
+    "category": "SUCCESS_PATTERN",
+    "timestamp": 1791467029743,
+    "market": "CRYPTO",
+    "symbol": "SOLUSDT",
+    "timeframe": "15m",
+    "context": "Strong trend alignment with EMA 9 > EMA 21 > EMA 50 > EMA 200.",
+    "observation": "Price gently pulled back to touch the 21 EMA band while RSI reset to 48. Bullish engulfing candle printed on support.",
+    "decision": "QUALIFIED 5/5 CALL setup aligned with multi-timeframe trend.",
+    "outcome": "Target reached at 2.4R within 6 candles.",
+    "evidence": [
+      "Backtest Run #42",
+      "Live confirmation log"
+    ],
+    "confidence": 0.92,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "High-conviction pattern: Pullback to dynamic EMA support in verified uptrend exhibits highest empirical win rate."
+  },
+  {
+    "id": "mem_1791467029745_a84z",
+    "category": "IMPROVEMENT",
+    "timestamp": 1791467029745,
+    "market": "UNIVERSAL",
+    "timeframe": "1m/5m",
+    "context": "Historical trade evaluation over 500 signals.",
+    "observation": "Trades taken during low-volume weekend consolidation (ATR < 0.5 percentile) produced 41% win rate compared to 62% during active volume sessions.",
+    "decision": "Formulate Improvement Proposal: Introduce minimum ATR activity threshold to filter flat chop sessions.",
+    "outcome": "Pending backtest validation and human approval.",
+    "evidence": [
+      "Weekend performance statistics breakdown",
+      "Sample size n=142"
+    ],
+    "confidence": 0.85,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Filtering dead consolidation will reduce trade frequency by ~18% but expected to lift net system expectancy by +0.14R."
+  },
+  {
+    "id": "mem_1791467269678_kbpw",
+    "category": "MISTAKE",
+    "timestamp": 1791467269678,
+    "market": "CRYPTO_PAIRS",
+    "timeframe": "5m",
+    "context": "Automated Validation Engine for Rule: PUT - RSI Overbought Rejection (rule_bearish_rsi_overbought_drop)",
+    "observation": "Rule achieved Evidence Score 61/100. Verdict: REJECTED. OOS Win Rate: 52.7% (IS: 58.2%, retention: 0.91).",
+    "decision": "Assigned lifecycle status REJECTED based on statistical evidence.",
+    "outcome": "Hypothesis rejected to prevent production loss. Post-mortem noted failure in high volatility.",
+    "evidence": [
+      "val_271e51b97066293f",
+      "clm_bearish_rejection_rsi_overbought"
+    ],
+    "confidence": 0.61,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Failed out-of-sample edge preservation. Hypothesis rejected and recorded in failure memory."
+  },
+  {
+    "id": "mem_1791467314219_rxp6",
+    "category": "DECISION",
+    "timestamp": 1791467314219,
+    "market": "CRYPTO_PAIRS",
+    "timeframe": "5m",
+    "context": "Human Approval Gate for Rule: CALL - RSI Oversold + EMA Trend Filter Bounce",
+    "observation": "Human supervisor reviewed statistical evidence chain and out-of-sample metrics.",
+    "decision": "Approved rule candidate for controlled production readiness.",
+    "outcome": "Rule status transitioned to APPROVED. Notes: Human verified statistical evidence chain and walk-forward stability.",
+    "evidence": [
+      "rule_rsi_oversold_ema_bounce",
+      "clm_rsi_oversold_ema_bullish"
+    ],
+    "confidence": 1,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Human verified statistical evidence chain and walk-forward stability."
+  },
+  {
+    "id": "mem_1791481246950_marg",
+    "category": "IMPROVEMENT",
+    "timestamp": 1791481246950,
+    "market": "CRYPTO",
+    "symbol": "MULTI",
+    "timeframe": "MULTI",
+    "context": "Daily Learning Session learn_1791481246950_manual completed (MANUAL trigger).",
+    "observation": "Analyzed 9 observations across SOL/USDT, ETH/USDT, BTC/USDT. Detected 0 market contradictions and formulated 1 testable hypotheses.",
+    "decision": "Logged learning session findings and queued 1 hypotheses for empirical backtest validation.",
+    "evidence": [
+      "obs_1791479700000_regime_SOLUSDT",
+      "obs_1791479700000_bear_engulf_SOLUSDT",
+      "obs_1791479700000_breakout_SOLUSDT",
+      "obs_1791480300000_regime_ETHUSDT",
+      "obs_1791480300000_bull_wick_ETHUSDT"
+    ],
+    "confidence": 0.9,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Structured learning synthesis identified dominant regimes and edge preservation opportunities without altering live production rules."
+  },
+  {
+    "id": "mem_1791481258709_qaq9",
+    "category": "IMPROVEMENT",
+    "timestamp": 1791481258709,
+    "market": "CRYPTO",
+    "symbol": "MULTI",
+    "timeframe": "MULTI",
+    "context": "Daily Learning Session learn_1791481258709_manual completed (MANUAL trigger).",
+    "observation": "Analyzed 9 observations across SOL/USDT, ETH/USDT, BTC/USDT. Detected 0 market contradictions and formulated 1 testable hypotheses.",
+    "decision": "Logged learning session findings and queued 1 hypotheses for empirical backtest validation.",
+    "evidence": [
+      "obs_1791479700000_regime_SOLUSDT",
+      "obs_1791479700000_bear_engulf_SOLUSDT",
+      "obs_1791479700000_breakout_SOLUSDT",
+      "obs_1791480300000_regime_ETHUSDT",
+      "obs_1791480300000_bull_wick_ETHUSDT"
+    ],
+    "confidence": 0.9,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Structured learning synthesis identified dominant regimes and edge preservation opportunities without altering live production rules."
+  }
+]
