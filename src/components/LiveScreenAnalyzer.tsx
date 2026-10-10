@@ -16,8 +16,11 @@ import {
   Sliders,
   Upload,
   Image as ImageIcon,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
+import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
 
 export const LiveScreenAnalyzer: React.FC = () => {
@@ -27,6 +30,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [intervalSec, setIntervalSec] = useState<number>(liveScreenService.getScanIntervalSeconds());
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
   const [now, setNow] = useState<number>(Date.now());
+  const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
+  const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
@@ -37,6 +42,18 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setErrorMessage(liveScreenService.getErrorMessage());
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsubVoice = voiceAssistantService.subscribe((text) => {
+      setVoiceNotification(text);
+      setIsVoiceOn(voiceAssistantService.isVoiceEnabled());
+      const timer = setTimeout(() => {
+        setVoiceNotification((prev) => (prev === text ? null : prev));
+      }, 6000);
+      return () => clearTimeout(timer);
+    });
+    return unsubVoice;
   }, []);
 
   useEffect(() => {
@@ -90,6 +107,11 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const handleConnect = async () => {
     await liveScreenService.connectScreen();
+  };
+
+  const handleToggleVoice = () => {
+    const next = voiceAssistantService.toggleVoice();
+    setIsVoiceOn(next);
   };
 
   const handlePause = () => {
@@ -222,6 +244,20 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 />
               </div>
             )}
+
+            {/* Voice Assistant Toggle Button */}
+            <button
+              onClick={handleToggleVoice}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors shadow-sm ${
+                isVoiceOn
+                  ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/50'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+              title={isVoiceOn ? 'ভয়েস সহকারী চালু আছে (ক্লিক করে বন্ধ করুন)' : 'ভয়েস সহকারী বন্ধ আছে (ক্লিক করে চালু করুন)'}
+            >
+              {isVoiceOn ? <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+              <span>{isVoiceOn ? 'ভয়েস অন' : 'ভয়েস অফ'}</span>
+            </button>
           </div>
         </div>
 
@@ -250,6 +286,19 @@ export const LiveScreenAnalyzer: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Voice Assistant Speech Subtitle Banner */}
+      {voiceNotification && (
+        <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center gap-3 text-xs text-cyan-200 shadow-md animate-in fade-in duration-150">
+          <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center shrink-0">
+            <Volume2 className="w-4 h-4 text-cyan-400 animate-pulse" />
+          </div>
+          <div className="flex-1 font-medium leading-relaxed">
+            <span className="font-semibold text-cyan-300 mr-1.5">🗣️ ভয়েস সহকারী:</span>
+            “{voiceNotification}”
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-200">

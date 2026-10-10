@@ -14,8 +14,11 @@ import {
   HelpCircle,
   XCircle,
   Upload,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
+import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
 
 interface FloatingLiveScreenControllerProps {
@@ -33,6 +36,8 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [now, setNow] = useState<number>(Date.now());
+  const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
+  const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
 
   // Subscribe to singleton liveScreenService updates
   useEffect(() => {
@@ -43,6 +48,19 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       setErrorMessage(liveScreenService.getErrorMessage());
     });
     return unsub;
+  }, []);
+
+  // Subscribe to voice assistant announcements
+  useEffect(() => {
+    const unsubVoice = voiceAssistantService.subscribe((text) => {
+      setVoiceNotification(text);
+      setIsVoiceOn(voiceAssistantService.isVoiceEnabled());
+      const timer = setTimeout(() => {
+        setVoiceNotification((prev) => (prev === text ? null : prev));
+      }, 6000);
+      return () => clearTimeout(timer);
+    });
+    return unsubVoice;
   }, []);
 
   // Strict 1-second ticker to enforce 15s TTL for active signals
@@ -101,6 +119,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const handleConnect = async (e: React.MouseEvent) => {
     e.stopPropagation();
     await liveScreenService.connectScreen();
+  };
+
+  const handleToggleVoice = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = voiceAssistantService.toggleVoice();
+    setIsVoiceOn(next);
   };
 
   const handleOpenFullScreen = () => {
@@ -200,6 +224,17 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
             <div className="flex items-center gap-1.5">
               <button
+                onClick={handleToggleVoice}
+                className={`p-1 rounded-md transition-colors ${
+                  isVoiceOn
+                    ? 'text-emerald-400 hover:text-emerald-300 hover:bg-slate-800'
+                    : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800'
+                }`}
+                title={isVoiceOn ? 'ভয়েস সহকারী বন্ধ করুন (Mute Voice)' : 'ভয়েস সহকারী চালু করুন (Unmute Voice)'}
+              >
+                {isVoiceOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+              <button
                 onClick={handleOpenFullScreen}
                 className="p-1 text-slate-400 hover:text-cyan-300 hover:bg-slate-800 rounded-md transition-colors"
                 title="Open Full Screen Analysis"
@@ -215,6 +250,14 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               </button>
             </div>
           </div>
+
+          {/* Voice Speech Notification Bar */}
+          {voiceNotification && (
+            <div className="mt-2.5 p-2 rounded-lg bg-cyan-950/40 border border-cyan-800/50 flex items-center gap-2 text-[11px] text-cyan-200 animate-in fade-in">
+              <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+              <div className="line-clamp-2 leading-tight">🗣️ {voiceNotification}</div>
+            </div>
+          )}
 
           {/* Error Banner */}
           {errorMessage && (

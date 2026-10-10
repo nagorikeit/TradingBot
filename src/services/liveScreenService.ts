@@ -1,4 +1,5 @@
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
+import { voiceAssistantService } from './voiceAssistantService';
 
 export class LiveScreenService {
   private static instance: LiveScreenService;
@@ -84,6 +85,7 @@ export class LiveScreenService {
       this.state = 'ERROR';
       this.errorMessage =
         'Screen Capture API (getDisplayMedia) is not supported in this mobile device or iframe preview. Please use Desktop Chrome/Edge/Brave, or use the "Upload Chart Image" option below.';
+      voiceAssistantService.announceNoScreenCapture();
       this.notify();
       return false;
     }
@@ -113,11 +115,15 @@ export class LiveScreenService {
       if (videoTrack) {
         videoTrack.onended = () => {
           this.disconnect('Screen sharing was ended by user.');
+          voiceAssistantService.announceNoScreenCapture();
         };
       }
 
       this.state = 'STREAMING';
       this.notify();
+
+      // Announce chart detected and start analysis
+      voiceAssistantService.announceChartFoundAnalyzing();
 
       // Trigger immediate first frame inspection, then setup loop
       this.captureAndAnalyzeCurrentFrame();
@@ -130,6 +136,7 @@ export class LiveScreenService {
       this.errorMessage = err.name === 'NotAllowedError'
         ? 'Screen capture permission was denied by user.'
         : err.message || 'Failed to capture screen.';
+      voiceAssistantService.announceNoScreenCapture();
       this.notify();
       return false;
     }
@@ -247,6 +254,7 @@ export class LiveScreenService {
         if (data && data.ok && data.result) {
           this.latestResult = data.result;
           this.errorMessage = null;
+          voiceAssistantService.announceAnalysisResult(data.result);
         } else {
           this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
         }
@@ -281,6 +289,7 @@ export class LiveScreenService {
     if (this.isProcessingFrame) return false;
     this.isProcessingFrame = true;
     this.errorMessage = null;
+    voiceAssistantService.announceImageUploaded();
     this.notify();
 
     try {
@@ -307,6 +316,7 @@ export class LiveScreenService {
         if (data && data.ok && data.result) {
           this.latestResult = data.result;
           this.errorMessage = null;
+          voiceAssistantService.announceAnalysisResult(data.result);
           return true;
         } else {
           this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
