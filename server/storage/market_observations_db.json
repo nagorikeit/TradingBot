@@ -1,5 +1,293 @@
 [
   {
+    "observationId": "obs_1791561600000_regime_SOLUSDT",
+    "symbol": "SOL/USDT",
+    "timeframe": "15m",
+    "candleTimestamp": 1791561600000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as UNCERTAIN with Close=109.91, EMA9=109.85, EMA21=110.01, RSI=48.08, MACD Hist=-0.0397, ATR=0.54.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "UNCERTAIN",
+    "indicatorSnapshot": {
+      "ema9": 109.84739651154848,
+      "ema21": 110.01360441224571,
+      "rsi": 48.079618601162956,
+      "macd": {
+        "macd": -0.15039073573778694,
+        "signal": -0.11070479339689278,
+        "histogram": -0.03968594234089416
+      },
+      "bollingerBands": {
+        "upper": 111.19573916560988,
+        "middle": 110.15449999999998,
+        "lower": 109.11326083439009,
+        "bandwidth": 0.018905068165347667
+      },
+      "atr": 0.5428359960823451,
+      "volume": 13111.864,
+      "volumeSma20": 26279.140949999994
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749424
+  },
+  {
+    "observationId": "obs_1791561600000_bull_engulf_SOLUSDT",
+    "symbol": "SOL/USDT",
+    "timeframe": "15m",
+    "candleTimestamp": 1791561600000,
+    "observationType": "BULLISH_ENGULFING",
+    "observationText": "Factual: Bullish candle body [109.70 - 109.91] completely engulfs preceding bearish body [109.71 - 109.82].",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Engulfing pattern documents range expansion over prior period body.",
+    "regime": "UNCERTAIN",
+    "indicatorSnapshot": {
+      "ema9": 109.84739651154848,
+      "ema21": 110.01360441224571,
+      "rsi": 48.079618601162956,
+      "macd": {
+        "macd": -0.15039073573778694,
+        "signal": -0.11070479339689278,
+        "histogram": -0.03968594234089416
+      },
+      "bollingerBands": {
+        "upper": 111.19573916560988,
+        "middle": 110.15449999999998,
+        "lower": 109.11326083439009,
+        "bandwidth": 0.018905068165347667
+      },
+      "atr": 0.5428359960823451,
+      "volume": 13111.864,
+      "volumeSma20": 26279.140949999994
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749424
+  },
+  {
+    "observationId": "obs_1791562200000_regime_SOLUSDT",
+    "symbol": "SOL/USDT",
+    "timeframe": "5m",
+    "candleTimestamp": 1791562200000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=109.91, EMA9=109.77, EMA21=109.82, RSI=52.07, MACD Hist=0.0339, ATR=0.30.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 109.76969146684712,
+      "ema21": 109.81682116393584,
+      "rsi": 52.07091714463429,
+      "macd": {
+        "macd": -0.08017551029804793,
+        "signal": -0.11405343568231822,
+        "histogram": 0.0338779253842703
+      },
+      "bollingerBands": {
+        "upper": 110.26171927009754,
+        "middle": 109.797,
+        "lower": 109.33228072990245,
+        "bandwidth": 0.008465063163794032
+      },
+      "atr": 0.3016153140073562,
+      "volume": 4608.808,
+      "volumeSma20": 7619.680750000001
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749341
+  },
+  {
+    "observationId": "obs_1791562200000_regime_ETHUSDT",
+    "symbol": "ETH/USDT",
+    "timeframe": "5m",
+    "candleTimestamp": 1791562200000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=2496.36, EMA9=2491.57, EMA21=2490.93, RSI=58.82, MACD Hist=0.8322, ATR=4.96.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 2491.5684137343487,
+      "ema21": 2490.9326368059437,
+      "rsi": 58.818868592556825,
+      "macd": {
+        "macd": 0.06220288735357826,
+        "signal": -0.7700386946480776,
+        "histogram": 0.8322415820016559
+      },
+      "bollingerBands": {
+        "upper": 2495.2368223711337,
+        "middle": 2490.1385,
+        "lower": 2485.0401776288663,
+        "bandwidth": 0.0040948102855593695
+      },
+      "atr": 4.9572679147410605,
+      "volume": 965.2059,
+      "volumeSma20": 657.6948800000002
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749261
+  },
+  {
+    "observationId": "obs_1791562200000_breakout_ETHUSDT",
+    "symbol": "ETH/USDT",
+    "timeframe": "5m",
+    "candleTimestamp": 1791562200000,
+    "observationType": "POSSIBLE_BREAKOUT",
+    "observationText": "Factual: Candle close 2496.36 crossed beyond Bollinger Band upper boundary (2495.24).",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Price closing outside Bollinger Band documents standard deviation expansion.",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 2491.5684137343487,
+      "ema21": 2490.9326368059437,
+      "rsi": 58.818868592556825,
+      "macd": {
+        "macd": 0.06220288735357826,
+        "signal": -0.7700386946480776,
+        "histogram": 0.8322415820016559
+      },
+      "bollingerBands": {
+        "upper": 2495.2368223711337,
+        "middle": 2490.1385,
+        "lower": 2485.0401776288663,
+        "bandwidth": 0.0040948102855593695
+      },
+      "atr": 4.9572679147410605,
+      "volume": 965.2059,
+      "volumeSma20": 657.6948800000002
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749261
+  },
+  {
+    "observationId": "obs_1791562680000_regime_ETHUSDT",
+    "symbol": "ETH/USDT",
+    "timeframe": "1m",
+    "candleTimestamp": 1791562680000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=2496.82, EMA9=2496.59, EMA21=2494.36, RSI=61.60, MACD Hist=0.4408, ATR=1.59.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 2496.594431379037,
+      "ema21": 2494.3640910314516,
+      "rsi": 61.601486778328955,
+      "macd": {
+        "macd": 2.182751866799208,
+        "signal": 1.7419492911667536,
+        "histogram": 0.4408025756324545
+      },
+      "bollingerBands": {
+        "upper": 2500.9296092562613,
+        "middle": 2493.3785,
+        "lower": 2485.8273907437383,
+        "bandwidth": 0.006056929789249004
+      },
+      "atr": 1.593356515699624,
+      "volume": 130.6014,
+      "volumeSma20": 126.82140499999998
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749185
+  },
+  {
+    "observationId": "obs_1791562200000_regime_BTCUSDT",
+    "symbol": "BTC/USDT",
+    "timeframe": "5m",
+    "candleTimestamp": 1791562200000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=82934.01, EMA9=82914.00, EMA21=82932.66, RSI=50.23, MACD Hist=-9.1571, ATR=125.80.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 82914.00148679121,
+      "ema21": 82932.66015705607,
+      "rsi": 50.23061451786844,
+      "macd": {
+        "macd": -14.1037247901113,
+        "signal": -4.946583339869603,
+        "histogram": -9.157141450241697
+      },
+      "bollingerBands": {
+        "upper": 83089.79915528794,
+        "middle": 82948.12999999999,
+        "lower": 82806.46084471204,
+        "bandwidth": 0.003415849285281037
+      },
+      "atr": 125.80434313831451,
+      "volume": 29.71524,
+      "volumeSma20": 47.470496
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749107
+  },
+  {
+    "observationId": "obs_1791562680000_regime_BTCUSDT",
+    "symbol": "BTC/USDT",
+    "timeframe": "1m",
+    "candleTimestamp": 1791562680000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=82935.00, EMA9=82942.09, EMA21=82921.46, RSI=52.12, MACD Hist=11.2300, ATR=40.68.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 82942.09466030015,
+      "ema21": 82921.45979941395,
+      "rsi": 52.11616206175082,
+      "macd": {
+        "macd": 14.53989115828881,
+        "signal": 3.309845429716232,
+        "histogram": 11.230045728572579
+      },
+      "bollingerBands": {
+        "upper": 83019.15527746515,
+        "middle": 82893.08750000001,
+        "lower": 82767.01972253487,
+        "bandwidth": 0.0030416957859155927
+      },
+      "atr": 40.68350408171262,
+      "volume": 17.68154,
+      "volumeSma20": 9.0987345
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749023
+  },
+  {
+    "observationId": "obs_1791562680000_vol_anomaly_BTCUSDT",
+    "symbol": "BTC/USDT",
+    "timeframe": "1m",
+    "candleTimestamp": 1791562680000,
+    "observationType": "VOLUME_ANOMALY",
+    "observationText": "Factual: Candle volume 17.68 is 1.94x the 20-period volume SMA (9.10).",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Volume expansion indicates abnormal trading participation relative to recent baseline.",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 82942.09466030015,
+      "ema21": 82921.45979941395,
+      "rsi": 52.11616206175082,
+      "macd": {
+        "macd": 14.53989115828881,
+        "signal": 3.309845429716232,
+        "histogram": 11.230045728572579
+      },
+      "bollingerBands": {
+        "upper": 83019.15527746515,
+        "middle": 82893.08750000001,
+        "lower": 82767.01972253487,
+        "bandwidth": 0.0030416957859155927
+      },
+      "atr": 40.68350408171262,
+      "volume": 17.68154,
+      "volumeSma20": 9.0987345
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791562749023
+  },
+  {
     "observationId": "obs_1791480600000_regime_SOLUSDT",
     "symbol": "SOL/USDT",
     "timeframe": "15m",

@@ -19,10 +19,11 @@ import { BacktestView } from './components/BacktestView';
 import { StrategyRulesView } from './components/StrategyRulesView';
 import { ScannerView } from './components/ScannerView';
 import { AgentCommandCenter } from './components/AgentCommandCenter';
+import { LiveScreenAnalyzer } from './components/LiveScreenAnalyzer';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent'>('terminal');
+  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen'>('terminal');
   const [symbol, setSymbol] = useState<string>(() => marketService.getSymbol());
   const [timeframe, setTimeframe] = useState<TimeframeKey>(() => marketService.getTimeframe());
   const [providerMode, setProviderMode] = useState<MarketDataSourceMode>(() => marketService.getProviderMode());
@@ -188,6 +189,10 @@ export default function App() {
 
         {currentTab === 'agent' && (
           <AgentCommandCenter />
+        )}
+
+        {currentTab === 'live-screen' && (
+          <LiveScreenAnalyzer />
         )}
       </main>
 

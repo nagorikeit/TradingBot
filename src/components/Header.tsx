@@ -3,8 +3,8 @@ import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu } fr
 import { TimeframeKey } from '../types';
 
 interface HeaderProps {
-  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent';
-  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent') => void;
+  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen';
+  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen') => void;
   onAdvanceCandle: () => void;
   onManualScan: () => void;
   isScanning: boolean;
@@ -112,7 +112,20 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
             <span>AI Agent</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">2C</span>
+            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">2E</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('live-screen')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+              currentTab === 'live-screen'
+                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Live Screen</span>
+            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/20 text-cyan-300 font-mono">VISION</span>
           </button>
         </nav>
 

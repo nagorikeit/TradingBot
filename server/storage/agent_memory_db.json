@@ -181,5 +181,27 @@
     "relatedKnowledgeIds": [],
     "isFact": true,
     "reasoning": "Learning session synthesized market structure and validation evidence. No live production rules or signal logic were modified."
+  },
+  {
+    "id": "mem_1791562749430_r46p",
+    "category": "IMPROVEMENT",
+    "timestamp": 1791562749430,
+    "market": "CRYPTO",
+    "symbol": "MULTI",
+    "timeframe": "MULTI",
+    "context": "Daily Learning Session learn_1791562749429_manual completed (MANUAL trigger).",
+    "observation": "Factual: Analyzed 27 closed candle observations across SOL/USDT, ETH/USDT, BTC/USDT. Conducted 2 knowledge comparisons and 11 memory comparisons.",
+    "decision": "Recorded learning session findings and formulated 1 testable hypotheses for empirical backtest queue.",
+    "evidence": [
+      "obs_1791561600000_regime_SOLUSDT",
+      "obs_1791561600000_bull_engulf_SOLUSDT",
+      "obs_1791562200000_regime_SOLUSDT",
+      "obs_1791562200000_regime_ETHUSDT",
+      "obs_1791562200000_breakout_ETHUSDT"
+    ],
+    "confidence": 0.9,
+    "relatedKnowledgeIds": [],
+    "isFact": true,
+    "reasoning": "Learning session synthesized market structure and validation evidence. No live production rules or signal logic were modified."
   }
 ]

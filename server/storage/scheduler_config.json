@@ -3,7 +3,7 @@
   "dailyRunTime": "02:00",
   "timezone": "Asia/Dhaka",
   "lastStatus": "COMPLETED",
-  "nextRunAt": 1791489600710,
-  "lastRunAt": 1791481258710,
-  "lastExecutionDurationMs": 2
+  "nextRunAt": 1791576000431,
+  "lastRunAt": 1791562749431,
+  "lastExecutionDurationMs": 563
 }

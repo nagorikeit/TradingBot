@@ -15,6 +15,7 @@ import { ruleFormalizationService } from '../services/ruleFormalizationService';
 import { ruleVerificationService } from '../services/ruleVerificationService';
 import { marketObserverService } from '../services/marketObserverService';
 import { dailyLearningService } from '../services/dailyLearningService';
+import { screenVerificationService } from '../services/screenVerificationService';
 import {
   KnowledgeStatus,
   MemoryCategory,
@@ -1177,5 +1178,41 @@ agentRouter.get('/learning/regime-summary', (_req: Request, res: Response) => {
     });
   }
 });
+
+/**
+ * POST /api/agent/vision/analyze-frame
+ * Analyzes live screen captured frame, runs multimodal vision analysis & market verification
+ */
+agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg', frameCapturedAt } = req.body;
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      res.status(400).json({
+        ok: false,
+        error: 'Missing or invalid imageBase64 in request body',
+      });
+      return;
+    }
+
+    const result = await screenVerificationService.processScreenFrame(
+      imageBase64,
+      mimeType,
+      frameCapturedAt ? Number(frameCapturedAt) : Date.now()
+    );
+
+    res.json({
+      ok: true,
+      result,
+    });
+  } catch (err: unknown) {
+    console.error('Vision analyze-frame endpoint error:', err);
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Internal error processing screen frame',
+    });
+  }
+});
+
 
 

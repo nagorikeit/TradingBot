@@ -150,5 +150,74 @@
     ],
     "memoryType": "MARKET_OBSERVATION",
     "tradeOutcome": null
+  },
+  {
+    "id": "mkt_1791562749024_x5wf",
+    "symbol": "BTC/USDT",
+    "market": "CRYPTO",
+    "timeframe": "1m",
+    "setup": "VOLUME ANOMALY",
+    "marketCondition": "LOW_VOLATILITY",
+    "candleContext": "Candle at 2026-10-09T16:18:00.000Z: O=82958.01 H=82960.01 L=82935 C=82935 V=17.68154",
+    "technicalContext": "RSI=52.1, MACD Hist=11.2300, ATR=40.68",
+    "historicalOutcome": "VOLUME ANOMALY observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791562749024,
+    "evidenceReferences": [
+      "Observation ID: obs_1791562680000_vol_anomaly_BTCUSDT",
+      "Candle Timestamp: 1791562680000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
+  },
+  {
+    "id": "mkt_1791562749262_i724",
+    "symbol": "ETH/USDT",
+    "market": "CRYPTO",
+    "timeframe": "5m",
+    "setup": "POSSIBLE BREAKOUT",
+    "marketCondition": "LOW_VOLATILITY",
+    "candleContext": "Candle at 2026-10-09T16:10:00.000Z: O=2493.22 H=2498.47 L=2492.38 C=2496.36 V=965.2059",
+    "technicalContext": "RSI=58.8, MACD Hist=0.8322, ATR=4.96",
+    "historicalOutcome": "POSSIBLE BREAKOUT observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791562749262,
+    "evidenceReferences": [
+      "Observation ID: obs_1791562200000_breakout_ETHUSDT",
+      "Candle Timestamp: 1791562200000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
+  },
+  {
+    "id": "mkt_1791562749425_8p4u",
+    "symbol": "SOL/USDT",
+    "market": "CRYPTO",
+    "timeframe": "15m",
+    "setup": "BULLISH ENGULFING",
+    "marketCondition": "UNCERTAIN",
+    "candleContext": "Candle at 2026-10-09T16:00:00.000Z: O=109.7 H=110.05 L=109.5 C=109.91 V=13111.864",
+    "technicalContext": "RSI=48.1, MACD Hist=-0.0397, ATR=0.54",
+    "historicalOutcome": "BULLISH ENGULFING observed",
+    "observationCount": 1,
+    "winningCount": 0,
+    "losingCount": 0,
+    "drawCount": 0,
+    "lastObserved": 1791562749425,
+    "evidenceReferences": [
+      "Observation ID: obs_1791561600000_bull_engulf_SOLUSDT",
+      "Candle Timestamp: 1791561600000",
+      "Source: BINANCE_REST"
+    ],
+    "memoryType": "MARKET_OBSERVATION",
+    "tradeOutcome": null
   }
 ]
