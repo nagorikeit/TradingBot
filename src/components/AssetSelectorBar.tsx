@@ -84,31 +84,79 @@ export const AssetSelectorBar: React.FC<AssetSelectorBarProps> = ({
 
           {/* Data Feed Mode Selector */}
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[11px] text-slate-400 font-medium shrink-0">Feed:</span>
+            <span className="text-[11px] text-slate-400 font-medium shrink-0">Exchange:</span>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-md p-0.5 shrink-0 flex-nowrap">
               <button
                 onClick={() => onSelectProvider('BINANCE')}
                 title="Live Binance Public WebSocket & REST Klines"
-                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
                   providerMode === 'BINANCE'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <Radio className={`w-3 h-3 ${providerMode === 'BINANCE' ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
-                <span>Binance Live</span>
+                <span>Binance</span>
+              </button>
+              <button
+                onClick={() => onSelectProvider('BYBIT')}
+                title="Live Bybit Public WebSocket & REST Kline v5"
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
+                  providerMode === 'BYBIT'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Radio className={`w-3 h-3 ${providerMode === 'BYBIT' ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>Bybit</span>
+              </button>
+              <button
+                onClick={() => onSelectProvider('OKX')}
+                title="Live OKX Public WebSocket & REST Candlesticks"
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
+                  providerMode === 'OKX'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Radio className={`w-3 h-3 ${providerMode === 'OKX' ? 'text-cyan-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>OKX</span>
+              </button>
+              <button
+                onClick={() => onSelectProvider('KRAKEN')}
+                title="Live Kraken Public WebSocket & REST OHLC"
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
+                  providerMode === 'KRAKEN'
+                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Radio className={`w-3 h-3 ${providerMode === 'KRAKEN' ? 'text-purple-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>Kraken</span>
+              </button>
+              <button
+                onClick={() => onSelectProvider('COINBASE')}
+                title="Live Coinbase Exchange Public WebSocket & REST Candles"
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
+                  providerMode === 'COINBASE'
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Radio className={`w-3 h-3 ${providerMode === 'COINBASE' ? 'text-blue-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>Coinbase</span>
               </button>
               <button
                 onClick={() => onSelectProvider('MOCK')}
                 title="Simulated high-fidelity test market"
-                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                className={`px-2 py-1 text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${
                   providerMode === 'MOCK'
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${providerMode === 'MOCK' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                <span>Demo Mock</span>
+                <span>Mock Sim</span>
               </button>
             </div>
           </div>
@@ -156,11 +204,27 @@ export const AssetSelectorBar: React.FC<AssetSelectorBarProps> = ({
           <div className="flex items-center gap-1.5 text-[11px] border-l border-slate-800 pl-2.5 shrink-0">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                providerMode === 'BINANCE' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                providerMode === 'MOCK' ? 'bg-emerald-400' : 'bg-emerald-400 animate-pulse'
               }`}
             />
-            <span className={providerMode === 'BINANCE' ? 'text-amber-300' : 'text-emerald-300'}>
-              {providerMode === 'BINANCE' ? 'Binance WS Live' : 'Mock Sim Active'}
+            <span
+              className={
+                providerMode === 'BINANCE'
+                  ? 'text-amber-300'
+                  : providerMode === 'BYBIT'
+                  ? 'text-amber-300'
+                  : providerMode === 'OKX'
+                  ? 'text-cyan-300'
+                  : providerMode === 'KRAKEN'
+                  ? 'text-purple-300'
+                  : providerMode === 'COINBASE'
+                  ? 'text-blue-300'
+                  : 'text-emerald-300'
+              }
+            >
+              {providerMode === 'MOCK'
+                ? 'Mock Sim Active'
+                : `${providerMode.charAt(0) + providerMode.slice(1).toLowerCase()} Live Feed`}
             </span>
           </div>
         </div>

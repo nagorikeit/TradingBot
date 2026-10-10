@@ -43,7 +43,7 @@ export function getTimeframeMs(timeframe: TimeframeKey): number {
   }
 }
 
-export type MarketDataSourceMode = 'BINANCE' | 'MOCK';
+export type MarketDataSourceMode = 'BINANCE' | 'BYBIT' | 'OKX' | 'KRAKEN' | 'COINBASE' | 'MOCK';
 
 /**
  * Clean adapter interface for market data providers

@@ -1,14 +1,14 @@
 import { Candle, TimeframeKey } from '../types';
 import { MarketDataProvider } from './marketDataProvider';
-import { BinanceAdapter } from './adapters/binanceAdapter';
+import { KrakenAdapter } from './adapters/krakenAdapter';
 
-export class BinanceMarketDataProvider implements MarketDataProvider {
-  public readonly name: string = 'Binance Spot';
-  private adapter = new BinanceAdapter();
+export class KrakenMarketDataProvider implements MarketDataProvider {
+  public readonly name: string = 'Kraken Spot';
+  private adapter = new KrakenAdapter();
 
   public async getCandles(symbol: string, timeframe: TimeframeKey, limit: number = 100): Promise<Candle[]> {
     if (!this.adapter.isSymbolSupported(symbol)) {
-      throw new Error(`[Binance] ${symbol} is not a supported spot asset on Binance. Please select a supported crypto pair or switch to MOCK Simulation mode.`);
+      throw new Error(`[Kraken] ${symbol} is not a supported spot asset on Kraken.`);
     }
     return this.adapter.getCandles(symbol, timeframe, limit);
   }

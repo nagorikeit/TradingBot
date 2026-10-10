@@ -1,14 +1,14 @@
 import { Candle, TimeframeKey } from '../types';
 import { MarketDataProvider } from './marketDataProvider';
-import { BinanceAdapter } from './adapters/binanceAdapter';
+import { BybitAdapter } from './adapters/bybitAdapter';
 
-export class BinanceMarketDataProvider implements MarketDataProvider {
-  public readonly name: string = 'Binance Spot';
-  private adapter = new BinanceAdapter();
+export class BybitMarketDataProvider implements MarketDataProvider {
+  public readonly name: string = 'Bybit Spot V5';
+  private adapter = new BybitAdapter();
 
   public async getCandles(symbol: string, timeframe: TimeframeKey, limit: number = 100): Promise<Candle[]> {
     if (!this.adapter.isSymbolSupported(symbol)) {
-      throw new Error(`[Binance] ${symbol} is not a supported spot asset on Binance. Please select a supported crypto pair or switch to MOCK Simulation mode.`);
+      throw new Error(`[Bybit] ${symbol} is not a supported spot asset on Bybit.`);
     }
     return this.adapter.getCandles(symbol, timeframe, limit);
   }

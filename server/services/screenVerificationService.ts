@@ -18,34 +18,116 @@ export class ScreenVerificationService {
   }
 
   /**
-   * Fetches latest price for crypto pairs from Binance Public API
+   * Fetches latest price from multiple top exchanges (Binance, Bybit, OKX, Kraken, Coinbase)
+   * Ensures high-availability cross-exchange verification for screen capture
    */
-  private async fetchBinancePrice(symbol: string): Promise<number | null> {
+  private async fetchMultiExchangePrice(symbol: string): Promise<{ price: number; exchange: string } | null> {
     const cleaned = symbol.replace(/[\/\-_]/g, '').toUpperCase();
-    if (!cleaned.endsWith('USDT') && !cleaned.endsWith('BUSD') && !cleaned.endsWith('BTC')) {
-      return null;
-    }
 
-    const endpoints = [
-      `https://api.binance.com/api/v3/ticker/price?symbol=${cleaned}`,
-      `https://data-api.binance.vision/api/v3/ticker/price?symbol=${cleaned}`,
-    ];
-
-    for (const url of endpoints) {
-      try {
+    // 1. Try Binance
+    try {
+      const endpoints = [
+        `https://api.binance.com/api/v3/ticker/price?symbol=${cleaned}`,
+        `https://data-api.binance.vision/api/v3/ticker/price?symbol=${cleaned}`,
+      ];
+      for (const url of endpoints) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
+        const timeout = setTimeout(() => controller.abort(), 3000);
         const res = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
         if (res.ok) {
           const data: any = await res.json();
           if (data && data.price) {
-            return parseFloat(data.price);
+            return { price: parseFloat(data.price), exchange: 'Binance Live' };
           }
         }
-      } catch {
-        // try next endpoint
       }
+    } catch {
+      // Continue to next exchange
+    }
+
+    // 2. Try Bybit Public Kline/Ticker
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${cleaned}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data: any = await res.json();
+        const item = data?.result?.list?.[0];
+        if (item && item.lastPrice) {
+          return { price: parseFloat(item.lastPrice), exchange: 'Bybit Live' };
+        }
+      }
+    } catch {
+      // Continue to next exchange
+    }
+
+    // 3. Try OKX Public Ticker
+    try {
+      const base = cleaned.replace(/USDT$/, '');
+      const okxInstId = `${base}-USDT`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${okxInstId}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data: any = await res.json();
+        const item = data?.data?.[0];
+        if (item && item.last) {
+          return { price: parseFloat(item.last), exchange: 'OKX Live' };
+        }
+      }
+    } catch {
+      // Continue to next exchange
+    }
+
+    // 4. Try Kraken Public Ticker
+    try {
+      let krakenPair = cleaned;
+      if (cleaned === 'BTCUSDT') krakenPair = 'XBTUSDT';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${krakenPair}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && data.result) {
+          const pairKey = Object.keys(data.result)[0];
+          const ticker = data.result[pairKey];
+          if (ticker && ticker.c && ticker.c[0]) {
+            return { price: parseFloat(ticker.c[0]), exchange: 'Kraken Live' };
+          }
+        }
+      }
+    } catch {
+      // Continue to next exchange
+    }
+
+    // 5. Try Coinbase Public Ticker
+    try {
+      const base = cleaned.replace(/USDT$/, '');
+      const cbProduct = `${base}-USDT`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`https://api.exchange.coinbase.com/products/${cbProduct}/ticker`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && data.price) {
+          return { price: parseFloat(data.price), exchange: 'Coinbase Live' };
+        }
+      }
+    } catch {
+      // Fallback exhausted
     }
 
     return null;
@@ -91,15 +173,18 @@ export class ScreenVerificationService {
       };
     }
 
-    const livePrice = await this.fetchBinancePrice(symbol);
-    if (!livePrice) {
+    const liveFeed = await this.fetchMultiExchangePrice(symbol);
+    if (!liveFeed) {
       return {
         isVerified: false,
         status: 'STALE_DATA',
         screenPrice,
-        notes: `Could not fetch live reference feed for ${symbol} from Binance.`,
+        notes: `Could not fetch live reference feed for ${symbol} from connected exchanges (Binance, Bybit, OKX, Kraken, Coinbase).`,
       };
     }
+
+    const livePrice = liveFeed.price;
+    const sourceUsed = liveFeed.exchange;
 
     // Calculate price discrepancy percentage
     const deltaPercent = Math.abs((screenPrice - livePrice) / livePrice) * 100;
@@ -112,8 +197,8 @@ export class ScreenVerificationService {
         livePrice,
         screenPrice,
         priceDeltaPercent: Number(deltaPercent.toFixed(2)),
-        sourceUsed: 'Binance Live Public API',
-        notes: `High price discrepancy (${deltaPercent.toFixed(2)}% > ${maxTolerancePercent}% tolerance). Screen price is $${screenPrice}, but live market price is $${livePrice}. Signal blocked.`,
+        sourceUsed,
+        notes: `High price discrepancy (${deltaPercent.toFixed(2)}% > ${maxTolerancePercent}% tolerance). Screen price is $${screenPrice}, but live market price from ${sourceUsed} is $${livePrice}. Signal blocked.`,
       };
     }
 
@@ -123,8 +208,8 @@ export class ScreenVerificationService {
       livePrice,
       screenPrice,
       priceDeltaPercent: Number(deltaPercent.toFixed(2)),
-      sourceUsed: 'Binance Live Public API',
-      notes: `Screen price ($${screenPrice}) matches live Binance feed ($${livePrice}) within ${deltaPercent.toFixed(2)}% tolerance.`,
+      sourceUsed,
+      notes: `Screen price ($${screenPrice}) matches live ${sourceUsed} ($${livePrice}) within ${deltaPercent.toFixed(2)}% tolerance.`,
     };
   }
 

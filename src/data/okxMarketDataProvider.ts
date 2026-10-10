@@ -1,14 +1,14 @@
 import { Candle, TimeframeKey } from '../types';
 import { MarketDataProvider } from './marketDataProvider';
-import { BinanceAdapter } from './adapters/binanceAdapter';
+import { OkxAdapter } from './adapters/okxAdapter';
 
-export class BinanceMarketDataProvider implements MarketDataProvider {
-  public readonly name: string = 'Binance Spot';
-  private adapter = new BinanceAdapter();
+export class OkxMarketDataProvider implements MarketDataProvider {
+  public readonly name: string = 'OKX Spot V5';
+  private adapter = new OkxAdapter();
 
   public async getCandles(symbol: string, timeframe: TimeframeKey, limit: number = 100): Promise<Candle[]> {
     if (!this.adapter.isSymbolSupported(symbol)) {
-      throw new Error(`[Binance] ${symbol} is not a supported spot asset on Binance. Please select a supported crypto pair or switch to MOCK Simulation mode.`);
+      throw new Error(`[OKX] ${symbol} is not a supported spot asset on OKX.`);
     }
     return this.adapter.getCandles(symbol, timeframe, limit);
   }

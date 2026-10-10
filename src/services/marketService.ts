@@ -6,6 +6,10 @@ import {
   getAssetInfo,
 } from '../data/marketDataProvider';
 import { BinanceMarketDataProvider } from '../data/binanceMarketDataProvider';
+import { BybitMarketDataProvider } from '../data/bybitMarketDataProvider';
+import { OkxMarketDataProvider } from '../data/okxMarketDataProvider';
+import { KrakenMarketDataProvider } from '../data/krakenMarketDataProvider';
+import { CoinbaseMarketDataProvider } from '../data/coinbaseMarketDataProvider';
 import { generateSignal } from '../strategy/signalEngine';
 import { evaluatePendingSignals } from '../strategy/signalEvaluator';
 
@@ -24,14 +28,21 @@ export class MarketService {
 
   private providerMode: MarketDataSourceMode = 'BINANCE';
   private binanceProvider = new BinanceMarketDataProvider();
+  private bybitProvider = new BybitMarketDataProvider();
+  private okxProvider = new OkxMarketDataProvider();
+  private krakenProvider = new KrakenMarketDataProvider();
+  private coinbaseProvider = new CoinbaseMarketDataProvider();
   private mockProvider = new MockMarketDataProvider();
   private liveUnsubscribe: (() => void) | null = null;
 
   private constructor() {
     // Read persisted provider mode preference if available
     try {
-      const savedMode = localStorage.getItem(STORAGE_KEY_PROVIDER);
-      if (savedMode === 'BINANCE' || savedMode === 'MOCK') {
+      const savedMode = localStorage.getItem(STORAGE_KEY_PROVIDER) as MarketDataSourceMode | null;
+      if (
+        savedMode &&
+        ['BINANCE', 'BYBIT', 'OKX', 'KRAKEN', 'COINBASE', 'MOCK'].includes(savedMode)
+      ) {
         this.providerMode = savedMode;
       }
     } catch {
@@ -52,7 +63,21 @@ export class MarketService {
   }
 
   public getActiveProvider(): MarketDataProvider {
-    return this.providerMode === 'BINANCE' ? this.binanceProvider : this.mockProvider;
+    switch (this.providerMode) {
+      case 'BINANCE':
+        return this.binanceProvider;
+      case 'BYBIT':
+        return this.bybitProvider;
+      case 'OKX':
+        return this.okxProvider;
+      case 'KRAKEN':
+        return this.krakenProvider;
+      case 'COINBASE':
+        return this.coinbaseProvider;
+      case 'MOCK':
+      default:
+        return this.mockProvider;
+    }
   }
 
   public getProviderMode(): MarketDataSourceMode {
