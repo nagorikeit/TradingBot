@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   CandleData,
   IndicatorSnapshot,
@@ -11,9 +11,7 @@ import {
 } from '../types/observationTypes';
 import { memoryService } from './memoryService';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const OBSERVATIONS_FILE = path.join(STORAGE_DIR, 'market_observations_db.json');
 
 // Observation Heuristics Notice:
@@ -47,9 +45,11 @@ export class MarketObserverService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

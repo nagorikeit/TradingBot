@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   UnifiedResearchItem,
   ContentChunk,
@@ -9,9 +9,7 @@ import {
 } from '../types/researchContentTypes';
 import { youtubeProcessorService } from './youtubeProcessorService';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const LIBRARY_FILE = path.join(STORAGE_DIR, 'research_library_db.json');
 
 export class ResearchLibraryService {
@@ -34,9 +32,11 @@ export class ResearchLibraryService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

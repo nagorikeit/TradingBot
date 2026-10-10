@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   RegisteredSource,
   SourceReviewItem,
@@ -11,9 +11,7 @@ import {
   SourceRegistryStats,
 } from '../types/sourceTypes';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const SOURCES_FILE = path.join(STORAGE_DIR, 'sources_db.json');
 const REVIEWS_FILE = path.join(STORAGE_DIR, 'source_reviews.json');
 
@@ -38,9 +36,11 @@ export class SourceRegistryService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

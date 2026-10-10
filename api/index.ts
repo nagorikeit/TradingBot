@@ -8,11 +8,12 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Mount agent router under /api/agent
+// Mount agent router under both /api/agent and /agent to support all Vercel path rewrites
 app.use('/api/agent', agentRouter);
+app.use('/agent', agentRouter);
 
 // Health check endpoint for Vercel serverless verification
-app.get('/api/health', (_req, res) => {
+app.get(['/api/health', '/health', '/api', '/'], (_req, res) => {
   res.json({
     ok: true,
     environment: 'vercel-serverless',

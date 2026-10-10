@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   HelpCircle,
   XCircle,
+  Upload,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
@@ -79,6 +80,22 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const handleManualSnap = (e: React.MouseEvent) => {
     e.stopPropagation();
     liveScreenService.captureAndAnalyzeCurrentFrame();
+  };
+
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      if (base64) {
+        await liveScreenService.analyzeImageDirectly(base64);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleConnect = async (e: React.MouseEvent) => {
@@ -332,14 +349,32 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             )}
 
             {(!isStreaming && !isPaused) && (
-              <button
-                onClick={handleConnect}
-                disabled={isConnecting}
-                className="w-full py-2 px-3 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-              >
-                <Monitor className="w-3.5 h-3.5" />
-                <span>{isConnecting ? 'Connecting...' : 'Connect Live Screen'}</span>
-              </button>
+              <div className="w-full flex items-center gap-2">
+                <button
+                  onClick={handleConnect}
+                  disabled={isConnecting}
+                  className="flex-1 py-2 px-3 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  <span>{isConnecting ? 'Connecting...' : 'Connect Screen'}</span>
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isBusy}
+                  className="py-2 px-3 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  title="Upload a chart image (Mobile friendly)"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Upload</span>
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                />
+              </div>
             )}
           </div>
 

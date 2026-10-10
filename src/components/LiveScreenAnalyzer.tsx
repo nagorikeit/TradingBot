@@ -14,6 +14,8 @@ import {
   HelpCircle,
   Eye,
   Sliders,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
@@ -44,6 +46,47 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const isStale = !result || now - result.timestamp > 15000;
   const signalAgeSec = result ? Math.max(0, Math.floor((now - result.timestamp) / 1000)) : 0;
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Clipboard paste listener (Ctrl+V) for quick screenshot testing
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const base64 = reader.result as string;
+              if (base64) {
+                await liveScreenService.analyzeImageDirectly(base64);
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      if (base64) {
+        await liveScreenService.analyzeImageDirectly(base64);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const handleConnect = async () => {
     await liveScreenService.connectScreen();
@@ -151,14 +194,33 @@ export const LiveScreenAnalyzer: React.FC = () => {
             )}
 
             {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR' || streamState === 'CONNECTING') && (
-              <button
-                onClick={handleConnect}
-                disabled={streamState === 'CONNECTING'}
-                className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
-              >
-                <Monitor className="w-4 h-4" />
-                <span>{streamState === 'CONNECTING' ? 'Connecting...' : 'Connect Live Screen'}</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleConnect}
+                  disabled={streamState === 'CONNECTING'}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+                >
+                  <Monitor className="w-4 h-4" />
+                  <span>{streamState === 'CONNECTING' ? 'Connecting...' : 'Connect Live Screen'}</span>
+                </button>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isBusy}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+                  title="Upload a TradingView or broker chart screenshot (Mobile/Desktop friendly)"
+                >
+                  <Upload className="w-4 h-4 text-emerald-400" />
+                  <span>Upload Chart Image</span>
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                />
+              </div>
             )}
           </div>
         </div>
@@ -190,11 +252,27 @@ export const LiveScreenAnalyzer: React.FC = () => {
       </div>
 
       {errorMessage && (
-        <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 flex items-start gap-2.5 text-xs text-red-200">
-          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold">Notice:</span> {errorMessage}
+        <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-200">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold">Notice:</span> {errorMessage}
+              {errorMessage.includes('getDisplayMedia') && (
+                <div className="mt-1 text-slate-300 text-[11px] leading-relaxed">
+                  💡 <b>পরামর্শ:</b> মোবাইল ব্রাউজার (Android/iOS) বা আইফ্রেম প্রিভিউতে ব্রাউজার সিকিউরিটির কারণে স্ক্রিন শেয়ার সমর্থিত নয়। চার্টের ছবি দিয়ে তাৎক্ষণিক বিশ্লেষণ পেতে <b>"Upload Chart Image"</b> বাটন ব্যবহার করুন অথবা কিবোর্ড থেকে <b>Ctrl+V</b> দিয়ে সরাসরি পেস্ট করুন।
+                </div>
+              )}
+            </div>
           </div>
+          {errorMessage.includes('getDisplayMedia') && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors shadow-sm self-start sm:self-auto"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Image</span>
+            </button>
+          )}
         </div>
       )}
 

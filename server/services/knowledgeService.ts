@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   KnowledgeItem,
   KnowledgeVersion,
@@ -11,9 +11,7 @@ import {
   EpistemicType,
 } from '../types/knowledgeTypes';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const KNOWLEDGE_FILE = path.join(STORAGE_DIR, 'knowledge_db.json');
 const VERSIONS_FILE = path.join(STORAGE_DIR, 'knowledge_versions.json');
 const PROPOSALS_FILE = path.join(STORAGE_DIR, 'knowledge_proposals.json');
@@ -40,9 +38,11 @@ export class KnowledgeService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

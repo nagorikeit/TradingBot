@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   AgentMemoryItem,
   MarketMemoryItem,
@@ -8,9 +8,7 @@ import {
   MemoryCategory,
 } from '../types/knowledgeTypes';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const MEMORY_FILE = path.join(STORAGE_DIR, 'agent_memory_db.json');
 const MARKET_MEMORY_FILE = path.join(STORAGE_DIR, 'market_memory_db.json');
 const SESSIONS_FILE = path.join(STORAGE_DIR, 'learning_sessions.json');
@@ -37,9 +35,11 @@ export class MemoryService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

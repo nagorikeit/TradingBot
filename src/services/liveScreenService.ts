@@ -83,7 +83,7 @@ export class LiveScreenService {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
       this.state = 'ERROR';
       this.errorMessage =
-        'Screen Capture API (getDisplayMedia) is not supported in this browser or environment.';
+        'Screen Capture API (getDisplayMedia) is not supported in this mobile device or iframe preview. Please use Desktop Chrome/Edge/Brave, or use the "Upload Chart Image" option below.';
       this.notify();
       return false;
     }
@@ -268,6 +268,66 @@ export class LiveScreenService {
     } catch (err: any) {
       console.error('Frame capture & analysis failure:', err);
       this.errorMessage = err.message || 'Network error communicating with Vision backend.';
+    } finally {
+      this.isProcessingFrame = false;
+      this.notify();
+    }
+  }
+
+  /**
+   * Analyzes an uploaded screenshot or pasted chart image directly
+   */
+  public async analyzeImageDirectly(imageBase64: string): Promise<boolean> {
+    if (this.isProcessingFrame) return false;
+    this.isProcessingFrame = true;
+    this.errorMessage = null;
+    this.notify();
+
+    try {
+      const frameCapturedAt = Date.now();
+      const res = await fetch('/api/agent/vision/analyze-frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          mimeType: imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
+          frameCapturedAt,
+        }),
+      });
+
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          this.errorMessage = 'Server returned HTML instead of JSON. Please verify backend API route.';
+          this.notify();
+          return false;
+        }
+
+        const data = await res.json();
+        if (data && data.ok && data.result) {
+          this.latestResult = data.result;
+          this.errorMessage = null;
+          return true;
+        } else {
+          this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
+          return false;
+        }
+      } else {
+        let errorMsg = `Server error (${res.status} ${res.statusText})`;
+        if (res.status === 413) {
+          errorMsg = 'Image payload too large (HTTP 413). Please compress or use a smaller image.';
+        } else {
+          try {
+            const errData = await res.json();
+            if (errData && errData.error) errorMsg = errData.error;
+          } catch {}
+        }
+        this.errorMessage = errorMsg;
+        return false;
+      }
+    } catch (err: any) {
+      this.errorMessage = err.message || 'Network error communicating with Vision backend.';
+      return false;
     } finally {
       this.isProcessingFrame = false;
       this.notify();

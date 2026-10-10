@@ -1,16 +1,14 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getStorageDir } from './storageUtils';
 import {
   ResearchClaim,
   RuleCandidate,
   RuleValidationRecord,
 } from '../types/claimRuleTypes';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_DIR = path.resolve(__dirname, '../storage');
+const STORAGE_DIR = getStorageDir();
 const CLAIMS_FILE = path.join(STORAGE_DIR, 'claims_db.json');
 const RULES_FILE = path.join(STORAGE_DIR, 'rules_db.json');
 const VALIDATIONS_FILE = path.join(STORAGE_DIR, 'validations_db.json');
@@ -34,9 +32,11 @@ export class ClaimRuleStorageService {
   }
 
   private ensureStorageDir(): void {
-    if (!fs.existsSync(STORAGE_DIR)) {
-      fs.mkdirSync(STORAGE_DIR, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+      }
+    } catch {}
   }
 
   private loadFromStorage(): void {

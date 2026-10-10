@@ -19,6 +19,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Phase 0A: Internal Secure Backend API Boundary (/api/agent/*)
 app.use('/api/agent', agentRouter);
 
+// Health check endpoint
+app.get(['/api/health', '/health'], (_req, res) => {
+  res.json({ ok: true, timestamp: Date.now() });
+});
+
 const isProd = process.env.NODE_ENV === 'production';
 
 async function startServer() {
