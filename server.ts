@@ -13,7 +13,8 @@ const app = express();
 // Port 3000 is required by the runtime environment
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Phase 0A: Internal Secure Backend API Boundary (/api/agent/*)
 app.use('/api/agent', agentRouter);

@@ -53,6 +53,15 @@ export class LiveScreenService {
     return this.latestResult;
   }
 
+  public isSignalStale(ttlMs: number = 15000): boolean {
+    if (!this.latestResult) return true;
+    return Date.now() - this.latestResult.timestamp > ttlMs;
+  }
+
+  public getStream(): MediaStream | null {
+    return this.stream;
+  }
+
   public getScanIntervalSeconds(): number {
     return Math.round(this.scanIntervalMs / 1000);
   }
@@ -169,6 +178,7 @@ export class LiveScreenService {
     }
 
     this.state = 'DISCONNECTED';
+    this.latestResult = null;
     if (reason) {
       this.errorMessage = reason;
     }
@@ -226,17 +236,38 @@ export class LiveScreenService {
       });
 
       if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          this.errorMessage = 'Server returned HTML instead of JSON. Please verify backend API route.';
+          this.notify();
+          return;
+        }
+
         const data = await res.json();
         if (data && data.ok && data.result) {
           this.latestResult = data.result;
           this.errorMessage = null;
+        } else {
+          this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
         }
       } else {
-        const errData = await res.json().catch(() => ({}));
-        console.warn('Frame analysis returned non-200:', errData);
+        let errorMsg = `Server error (${res.status} ${res.statusText})`;
+        if (res.status === 413) {
+          errorMsg = 'Screen frame payload too large (HTTP 413). Downscaling applied.';
+        } else {
+          try {
+            const errData = await res.json();
+            if (errData && errData.error) errorMsg = errData.error;
+          } catch {
+            // response was not JSON
+          }
+        }
+        console.warn('Frame analysis returned non-200:', errorMsg);
+        this.errorMessage = errorMsg;
       }
     } catch (err: any) {
       console.error('Frame capture & analysis failure:', err);
+      this.errorMessage = err.message || 'Network error communicating with Vision backend.';
     } finally {
       this.isProcessingFrame = false;
       this.notify();

@@ -1,5 +1,37 @@
 [
   {
+    "observationId": "obs_1791598424054_regime_BTCUSDT",
+    "symbol": "BTC/USDT",
+    "timeframe": "1m",
+    "candleTimestamp": 1791598424054,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=50420.00, EMA9=50380.00, EMA21=50320.00, RSI=100.00, MACD Hist=1.6818, ATR=100.00.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 50380,
+      "ema21": 50320,
+      "rsi": 100,
+      "macd": {
+        "macd": 70,
+        "signal": 68.31815264801374,
+        "histogram": 1.6818473519862636
+      },
+      "bollingerBands": {
+        "upper": 50440.32562594671,
+        "middle": 50325,
+        "lower": 50209.67437405329,
+        "bandwidth": 0.00458323401675942
+      },
+      "atr": 100,
+      "volume": 100,
+      "volumeSma20": 100
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791598484056
+  },
+  {
     "observationId": "obs_1791561600000_regime_SOLUSDT",
     "symbol": "SOL/USDT",
     "timeframe": "15m",
@@ -862,5 +894,49 @@
     },
     "source": "BINANCE_REST",
     "createdAt": 1791480348726
+  },
+  {
+    "timestamp": 1791598406340,
+    "type": "TECHNICAL_LEVEL",
+    "symbol": "BTCUSDT",
+    "timeframe": "1m",
+    "price": 82500,
+    "regime": "TRENDING_BULLISH",
+    "data": {
+      "test": true
+    },
+    "source": "regression_test"
+  },
+  {
+    "observationId": "obs_1791598380000_regime_BTCUSDT",
+    "symbol": "BTC/USDT",
+    "timeframe": "1m",
+    "candleTimestamp": 1791598380000,
+    "observationType": "REGIME_CLASSIFICATION",
+    "observationText": "Factual: Regime assessed as LOW_VOLATILITY with Close=82687.45, EMA9=82697.41, EMA21=82693.39, RSI=48.96, MACD Hist=-0.0294, ATR=13.08.",
+    "isFact": true,
+    "reasoning": "Observation heuristic: Regime state derived deterministically from indicator alignment (Close relative to EMA9/21, MACD histogram polarity, and ATR/Bollinger bandwidth).",
+    "regime": "LOW_VOLATILITY",
+    "indicatorSnapshot": {
+      "ema9": 82697.41377785821,
+      "ema21": 82693.38681201258,
+      "rsi": 48.96370421723334,
+      "macd": {
+        "macd": 4.751916714303661,
+        "signal": 4.7813310013458175,
+        "histogram": -0.029414287042156317
+      },
+      "bollingerBands": {
+        "upper": 82722.60618762189,
+        "middle": 82694.03799999999,
+        "lower": 82665.46981237808,
+        "bandwidth": 0.0006909370569593501
+      },
+      "atr": 13.078656703445613,
+      "volume": 1.2913,
+      "volumeSma20": 2.1320195
+    },
+    "source": "BINANCE_REST",
+    "createdAt": 1791598441407
   }
 ]

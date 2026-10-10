@@ -24,6 +24,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [isBusy, setIsBusy] = useState<boolean>(liveScreenService.isBusy());
   const [intervalSec, setIntervalSec] = useState<number>(liveScreenService.getScanIntervalSeconds());
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
+  const [now, setNow] = useState<number>(Date.now());
 
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
@@ -35,6 +36,14 @@ export const LiveScreenAnalyzer: React.FC = () => {
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const ticker = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(ticker);
+  }, []);
+
+  const isStale = !result || now - result.timestamp > 15000;
+  const signalAgeSec = result ? Math.max(0, Math.floor((now - result.timestamp) / 1000)) : 0;
 
   const handleConnect = async () => {
     await liveScreenService.connectScreen();
@@ -200,14 +209,17 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </span>
               <div className="flex items-center gap-1.5 text-slate-400 text-xs">
                 <Clock className="w-3.5 h-3.5 text-slate-500" />
-                <span>{new Date(result.timestamp).toLocaleTimeString()}</span>
+                <span>{signalAgeSec}s ago ({new Date(result.timestamp).toLocaleTimeString()})</span>
+                {isStale && <span className="text-amber-400 font-semibold ml-1">[EXPIRED &gt;15s]</span>}
               </div>
             </div>
 
             {/* Big Direction Badge */}
             <div
               className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1 ${
-                result.direction === 'UP'
+                isStale
+                  ? 'bg-slate-950/80 border-slate-700/80 text-slate-400'
+                  : result.direction === 'UP'
                   ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
                   : result.direction === 'DOWN'
                   ? 'bg-rose-950/40 border-rose-500/50 text-rose-300'
@@ -215,13 +227,21 @@ export const LiveScreenAnalyzer: React.FC = () => {
               }`}
             >
               <div className="text-2xl font-black tracking-tight font-mono">
-                {result.direction === 'UP' && '▲ UP / CALL'}
-                {result.direction === 'DOWN' && '▼ DOWN / PUT'}
-                {result.direction === 'WAIT' && '⏸ WAIT'}
+                {isStale ? (
+                  <span className="text-slate-400">⏸ SIGNAL EXPIRED</span>
+                ) : (
+                  <>
+                    {result.direction === 'UP' && '▲ UP / CALL'}
+                    {result.direction === 'DOWN' && '▼ DOWN / PUT'}
+                    {result.direction === 'WAIT' && '⏸ WAIT'}
+                  </>
+                )}
               </div>
-              <div className="text-xs font-medium opacity-90">{result.verdictTitle}</div>
+              <div className="text-xs font-medium opacity-90">
+                {isStale ? 'Signal is older than 15s TTL. Awaiting fresh live frame.' : result.verdictTitle}
+              </div>
               <div className="mt-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
-                Confidence: {result.confidence}%
+                Confidence: {isStale ? 0 : result.confidence}%
               </div>
             </div>
 

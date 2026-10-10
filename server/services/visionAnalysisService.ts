@@ -26,8 +26,10 @@ export class VisionAnalysisService {
     imageBase64: string,
     mimeType: string = 'image/jpeg'
   ): Promise<ScreenVisionParsedData> {
-    // Clean base64 prefix if present
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+    // Extract actual mimeType and clean base64 data
+    const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+    const resolvedMimeType = match ? match[1] : (mimeType || 'image/jpeg');
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
 
     if (!process.env.GEMINI_API_KEY) {
       // Graceful fallback simulation if GEMINI_API_KEY is not configured
@@ -64,7 +66,7 @@ CRITICAL SAFETY & PRIVACY RULES:
             parts: [
               {
                 inlineData: {
-                  mimeType,
+                  mimeType: resolvedMimeType,
                   data: cleanBase64,
                 },
               },

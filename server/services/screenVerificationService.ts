@@ -76,10 +76,10 @@ export class ScreenVerificationService {
     if (!isCrypto) {
       // Non-crypto or external broker feed (Forex, stocks, etc.)
       return {
-        isVerified: true, // Non-blocking warning
+        isVerified: false, // Strict safety guard: unverified against live orderbook
         status: 'UNSUPPORTED_BROKER_FEED',
         screenPrice,
-        notes: `Detected ${symbol} (${visionData.marketType}). Live Binance verification is not applicable for non-crypto/external feeds. Technical pattern vision applied with caution.`,
+        notes: `Detected ${symbol} (${visionData.marketType}). Live tick verification is unavailable for non-crypto/external feeds. Directional UP/DOWN signals are held in WAIT for capital safety.`,
       };
     }
 
@@ -169,16 +169,41 @@ export class ScreenVerificationService {
 
     const reasoning: string[] = [];
     let direction: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
-    let confidence = Math.round((visionData.confidenceScore || 0.5) * 80);
+    let confidence = 0;
+    const assetName = visionData.symbol || 'ASSET';
+    let verdictTitle = `WAIT / NEUTRAL (${assetName})`;
 
-    // 3. Evaluate Cross-Verification Gate
+    // 3. Evaluate Cross-Verification Safety Gates
     if (marketVerification.status === 'PRICE_MISMATCH') {
       direction = 'WAIT';
       confidence = 10;
+      verdictTitle = `WAIT / PRICE MISMATCH (${assetName})`;
       reasoning.push(
         `PRICE MISMATCH GUARD: Screen price ($${marketVerification.screenPrice}) deviates ${marketVerification.priceDeltaPercent}% from live market price ($${marketVerification.livePrice}). Chart may be stale or lagging.`
       );
+    } else if (marketVerification.status === 'UNSUPPORTED_BROKER_FEED') {
+      direction = 'WAIT';
+      confidence = 20;
+      verdictTitle = `WAIT / UNVERIFIED FEED (${assetName})`;
+      reasoning.push(
+        `UNVERIFIED FEED GUARD: ${assetName} (${visionData.marketType}) is an external broker feed without verified live orderbook ticker. Directional signals (UP/DOWN) are strictly held in WAIT to avoid OTC broker manipulation or visual pattern misinterpretation.`
+      );
+    } else if (marketVerification.status === 'STALE_DATA') {
+      direction = 'WAIT';
+      confidence = 10;
+      verdictTitle = `WAIT / STALE FEED (${assetName})`;
+      reasoning.push(
+        `STALE FEED GUARD: Live reference price could not be retrieved from Binance. Directional signals are held in WAIT.`
+      );
+    } else if (!marketVerification.isVerified || marketVerification.status !== 'MATCHED') {
+      direction = 'WAIT';
+      confidence = 15;
+      verdictTitle = `WAIT / UNVERIFIED MARKET (${assetName})`;
+      reasoning.push(
+        `UNVERIFIED MARKET GUARD: Live verification did not match trusted orderbook data (${marketVerification.notes || 'Verification pending'}). Directional signals held in WAIT.`
+      );
     } else {
+      // ONLY when marketVerification.isVerified === true && marketVerification.status === 'MATCHED'
       // Analyze technical signals from Vision
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
@@ -194,14 +219,17 @@ export class ScreenVerificationService {
       if (score >= 2) {
         direction = 'UP';
         confidence = Math.min(85, 55 + score * 8);
-        reasoning.push(`Visual technical bias is Bullish (Score: +${score}).`);
+        verdictTitle = `BUY / CALL (${assetName})`;
+        reasoning.push(`Visual technical bias is Bullish (Score: +${score}) and verified by live market price.`);
       } else if (score <= -2) {
         direction = 'DOWN';
         confidence = Math.min(85, 55 + Math.abs(score) * 8);
-        reasoning.push(`Visual technical bias is Bearish (Score: ${score}).`);
+        verdictTitle = `SELL / PUT (${assetName})`;
+        reasoning.push(`Visual technical bias is Bearish (Score: ${score}) and verified by live market price.`);
       } else {
         direction = 'WAIT';
         confidence = 40;
+        verdictTitle = `WAIT / CONSOLIDATION (${assetName})`;
         reasoning.push(`Technical indicators and candlestick structure show consolidation or conflicting bias.`);
       }
 
@@ -219,13 +247,6 @@ export class ScreenVerificationService {
     if (visionData.containsSensitivePrivateData) {
       reasoning.push('Privacy Guard: Private user details were masked from analysis.');
     }
-
-    const verdictTitle =
-      direction === 'UP'
-        ? `BUY / CALL (${visionData.symbol || 'ASSET'})`
-        : direction === 'DOWN'
-        ? `SELL / PUT (${visionData.symbol || 'ASSET'})`
-        : `WAIT / NEUTRAL (${visionData.symbol || 'ASSET'})`;
 
     return {
       analysisId,

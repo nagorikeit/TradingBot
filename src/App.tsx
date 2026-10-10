@@ -20,6 +20,7 @@ import { StrategyRulesView } from './components/StrategyRulesView';
 import { ScannerView } from './components/ScannerView';
 import { AgentCommandCenter } from './components/AgentCommandCenter';
 import { LiveScreenAnalyzer } from './components/LiveScreenAnalyzer';
+import { FloatingLiveScreenController } from './components/FloatingLiveScreenController';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
@@ -203,6 +204,12 @@ export default function App() {
           <span>Paper Analysis & Educational Research Only · Zero Broker Connectivity</span>
         </div>
       </footer>
+
+      {/* 6. Persistent Floating Live Screen Controller */}
+      <FloatingLiveScreenController
+        currentTab={currentTab}
+        onNavigateToLiveScreen={() => setCurrentTab('live-screen')}
+      />
     </div>
   );
 }
