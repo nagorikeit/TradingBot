@@ -88,6 +88,8 @@ jobs:
         run: npm ci || npm install
 
       - name: Build Web App & Sync Capacitor
+        env:
+          BASE_PATH: './'
         run: |
           npm run build
           npx cap sync android
