@@ -419,7 +419,7 @@ export async function fetchKnowledge(filter?: {
   if (filter?.market) params.append('market', filter.market);
 
   const url = `/api/agent/knowledge${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error(`Knowledge fetch failed: ${response.statusText}`);
   }
@@ -437,7 +437,7 @@ export async function fetchMemories(filter?: {
   if (filter?.symbol) params.append('symbol', filter.symbol);
 
   const url = `/api/agent/memory${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error(`Memory fetch failed: ${response.statusText}`);
   }
@@ -509,7 +509,7 @@ export async function fetchSources(filter?: {
   if (filter?.sourceType) params.append('sourceType', filter.sourceType);
 
   const url = `/api/agent/sources${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch sources: ${response.statusText}`);
   }
@@ -561,7 +561,7 @@ export async function reviewSource(
   decision: 'APPROVED' | 'REJECTED',
   notes?: string
 ): Promise<{ ok: boolean; reviewItem: SourceReviewItem; message: string }> {
-  const response = await fetch(`/api/agent/sources/${sourceId}/review`, {
+  const response = await apiFetch(`/api/agent/sources/${sourceId}/review`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ decision, notes }),
@@ -604,7 +604,7 @@ export async function fetchStoredContent(filter?: {
   if (filter?.contentType) params.append('contentType', filter.contentType);
 
   const url = `/api/agent/research/content${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch stored content: ${response.statusText}`);
   }
@@ -612,7 +612,7 @@ export async function fetchStoredContent(filter?: {
 }
 
 export async function fetchStoredContentById(id: string): Promise<{ ok: boolean; item: FetchedContentItem }> {
-  const response = await fetch(`/api/agent/research/content/${id}`);
+  const response = await apiFetch(`/api/agent/research/content/${id}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch content item "${id}": ${response.statusText}`);
   }
@@ -771,7 +771,7 @@ export async function fetchResearchLibrary(filter?: {
   if (filter?.extractionStatus) params.append('extractionStatus', filter.extractionStatus);
 
   const url = `/api/agent/research/library${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch research library: ${response.statusText}`);
   }
@@ -779,7 +779,7 @@ export async function fetchResearchLibrary(filter?: {
 }
 
 export async function fetchResearchItemById(id: string): Promise<{ ok: boolean; item: UnifiedResearchItem }> {
-  const response = await fetch(`/api/agent/research/library/${id}`);
+  const response = await apiFetch(`/api/agent/research/library/${id}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch research item "${id}": ${response.statusText}`);
   }
@@ -789,7 +789,7 @@ export async function fetchResearchItemById(id: string): Promise<{ ok: boolean; 
 export async function fetchResearchChunks(
   contentId: string
 ): Promise<{ ok: boolean; count: number; contentId: string; chunks: ContentChunk[] }> {
-  const response = await fetch(`/api/agent/research/chunks/${contentId}`);
+  const response = await apiFetch(`/api/agent/research/chunks/${contentId}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch chunks for "${contentId}": ${response.statusText}`);
   }
@@ -1021,7 +1021,7 @@ export async function fetchRuleCandidates(): Promise<{ ok: boolean; count: numbe
 export async function verifyRuleCandidate(
   ruleId: string
 ): Promise<{ ok: boolean; record: RuleValidationRecord; message: string }> {
-  const res = await fetch(`/api/agent/rules/${ruleId}/verify`, { method: 'POST' });
+  const res = await apiFetch(`/api/agent/rules/${ruleId}/verify`, { method: 'POST' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || 'Verification failed');
   return data;
@@ -1030,7 +1030,7 @@ export async function verifyRuleCandidate(
 export async function fetchRuleEvidenceChain(
   ruleId: string
 ): Promise<{ ok: boolean; evidenceChain: RuleEvidenceChain }> {
-  const res = await fetch(`/api/agent/rules/${ruleId}/evidence`);
+  const res = await apiFetch(`/api/agent/rules/${ruleId}/evidence`);
   if (!res.ok) throw new Error(`Fetch evidence chain failed: ${res.statusText}`);
   return res.json();
 }
@@ -1039,7 +1039,7 @@ export async function approveRuleHumanGate(
   ruleId: string,
   notes?: string
 ): Promise<{ ok: boolean; rule: RuleCandidate; message: string }> {
-  const res = await fetch(`/api/agent/rules/${ruleId}/approve`, {
+  const res = await apiFetch(`/api/agent/rules/${ruleId}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes }),

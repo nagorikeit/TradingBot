@@ -112,14 +112,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             return;
         }
 
-        // Start Foreground Service first for Android 14+ requirement
-        Intent serviceIntent = new Intent(getContext(), ScreenCaptureService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getContext().startForegroundService(serviceIntent);
-        } else {
-            getContext().startService(serviceIntent);
-        }
-
         // Prompt system dialog to capture screen
         Intent captureIntent = projectionManager.createScreenCaptureIntent();
         startActivityForResult(call, captureIntent, "handleProjectionResult");
@@ -130,6 +122,18 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
             call.reject("User declined screen projection permission");
             return;
+        }
+
+        // Start Foreground Service with MEDIA_PROJECTION type (Android 14+ requires consent prior to service start)
+        try {
+            Intent serviceIntent = new Intent(getContext(), ScreenCaptureService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                getContext().startForegroundService(serviceIntent);
+            } else {
+                getContext().startService(serviceIntent);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
         mediaProjection = projectionManager.getMediaProjection(result.getResultCode(), result.getData());
