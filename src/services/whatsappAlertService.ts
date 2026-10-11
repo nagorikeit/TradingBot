@@ -1,5 +1,6 @@
 import { Signal } from '../types';
 import { ScreenAnalysisFinalResult } from '../types/screenTypes';
+import { getApiUrl } from './apiConfig';
 
 export type WhatsAppProviderType = 'twilio' | 'custom_webhook' | 'callmebot';
 
@@ -272,7 +273,7 @@ export class WhatsAppAlertService {
    */
   public async sendTestAlert(): Promise<{ ok: boolean; message: string }> {
     try {
-      const res = await fetch('/api/agent/whatsapp/test', {
+      const res = await fetch(getApiUrl('/api/agent/whatsapp/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -348,7 +349,7 @@ export class WhatsAppAlertService {
     const messageText = this.formatSignalMessage(signal);
 
     try {
-      const res = await fetch('/api/agent/whatsapp/send', {
+      const res = await fetch(getApiUrl('/api/agent/whatsapp/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -437,7 +438,7 @@ export class WhatsAppAlertService {
     const messageText = this.formatScreenAnalysisMessage(result);
 
     try {
-      const res = await fetch('/api/agent/whatsapp/send', {
+      const res = await fetch(getApiUrl('/api/agent/whatsapp/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

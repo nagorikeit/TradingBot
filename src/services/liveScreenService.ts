@@ -7,6 +7,7 @@ import {
   NativeCaptureFrameEvent,
 } from '../plugins/TradePulseNativeScreen';
 import { Capacitor } from '@capacitor/core';
+import { getApiUrl } from './apiConfig';
 
 export class LiveScreenService {
   private static instance: LiveScreenService;
@@ -261,7 +262,7 @@ export class LiveScreenService {
     const startTime = Date.now();
 
     try {
-      const res = await fetch('/api/agent/vision/analyze-frame', {
+      const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -445,7 +446,7 @@ export class LiveScreenService {
       const frameCapturedAt = Date.now();
       const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
 
-      const res = await fetch('/api/agent/vision/analyze-frame', {
+      const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -535,7 +536,7 @@ export class LiveScreenService {
 
     try {
       const frameCapturedAt = Date.now();
-      const res = await fetch('/api/agent/vision/analyze-frame', {
+      const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

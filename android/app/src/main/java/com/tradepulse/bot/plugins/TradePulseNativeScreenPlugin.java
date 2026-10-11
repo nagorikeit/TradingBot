@@ -148,9 +148,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void setupVirtualDisplay() {
         DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
-        int width = 720;
-        int height = 1280;
-        int density = metrics.densityDpi;
+        int screenWidth = metrics.widthPixels > 0 ? metrics.widthPixels : 720;
+        int screenHeight = metrics.heightPixels > 0 ? metrics.heightPixels : 1280;
+
+        // Scale to 720 width while preserving true device aspect ratio
+        float scale = Math.min(1.0f, 720.0f / (float) screenWidth);
+        int width = Math.round(screenWidth * scale);
+        int height = Math.round(screenHeight * scale);
+        if (width % 2 != 0) width++;
+        if (height % 2 != 0) height++;
+        int density = metrics.densityDpi > 0 ? metrics.densityDpi : DisplayMetrics.DENSITY_DEFAULT;
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         virtualDisplay = mediaProjection.createVirtualDisplay(

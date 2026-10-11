@@ -1,3 +1,5 @@
+import { getApiUrl } from './apiConfig';
+
 export type KnowledgeStatus =
   | 'NEW'
   | 'REVIEW_REQUIRED'
@@ -387,8 +389,10 @@ export interface AgentStatsResponse {
 // API Caller Functions
 // ==========================================
 
+const apiFetch = (url: string, init?: RequestInit) => fetch(getApiUrl(url), init);
+
 export async function fetchAgentHealth(): Promise<AgentBackendHealth> {
-  const response = await fetch('/api/agent/health');
+  const response = await apiFetch('/api/agent/health');
   if (!response.ok) {
     throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
   }
@@ -396,7 +400,7 @@ export async function fetchAgentHealth(): Promise<AgentBackendHealth> {
 }
 
 export async function fetchAgentStats(): Promise<AgentStatsResponse> {
-  const response = await fetch('/api/agent/stats');
+  const response = await apiFetch('/api/agent/stats');
   if (!response.ok) {
     throw new Error(`Stats fetch failed: ${response.status} ${response.statusText}`);
   }
@@ -441,7 +445,7 @@ export async function fetchMemories(filter?: {
 }
 
 export async function executeRetrievalQuery(query: RetrievalQuery): Promise<{ ok: boolean; result: RetrievalResult }> {
-  const response = await fetch('/api/agent/retrieval', {
+  const response = await apiFetch('/api/agent/retrieval', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(query),
@@ -454,7 +458,7 @@ export async function executeRetrievalQuery(query: RetrievalQuery): Promise<{ ok
 
 // Phase 2A: Scheduler APIs
 export async function fetchSchedulerConfig(): Promise<{ ok: boolean; config: SchedulerConfig }> {
-  const response = await fetch('/api/agent/learning/schedule');
+  const response = await apiFetch('/api/agent/learning/schedule');
   if (!response.ok) {
     throw new Error(`Failed to fetch scheduler config: ${response.statusText}`);
   }
@@ -462,7 +466,7 @@ export async function fetchSchedulerConfig(): Promise<{ ok: boolean; config: Sch
 }
 
 export async function updateSchedulerConfig(updates: Partial<Pick<SchedulerConfig, 'enabled' | 'dailyRunTime' | 'timezone'>>): Promise<{ ok: boolean; config: SchedulerConfig; message: string }> {
-  const response = await fetch('/api/agent/learning/schedule', {
+  const response = await apiFetch('/api/agent/learning/schedule', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -475,7 +479,7 @@ export async function updateSchedulerConfig(updates: Partial<Pick<SchedulerConfi
 }
 
 export async function runSchedulerManualTrigger(): Promise<{ ok: boolean; message: string; durationMs?: number; error?: string }> {
-  const response = await fetch('/api/agent/learning/schedule/run', {
+  const response = await apiFetch('/api/agent/learning/schedule/run', {
     method: 'POST',
   });
   const data = await response.json();
@@ -486,7 +490,7 @@ export async function runSchedulerManualTrigger(): Promise<{ ok: boolean; messag
 }
 
 export async function fetchSchedulerStatus(): Promise<{ ok: boolean; status: SchedulerStatusResponse }> {
-  const response = await fetch('/api/agent/learning/schedule/status');
+  const response = await apiFetch('/api/agent/learning/schedule/status');
   if (!response.ok) {
     throw new Error(`Failed to fetch scheduler status: ${response.statusText}`);
   }
@@ -513,7 +517,7 @@ export async function fetchSources(filter?: {
 }
 
 export async function fetchSourceStats(): Promise<{ ok: boolean; stats: SourceRegistryStats }> {
-  const response = await fetch('/api/agent/sources/stats');
+  const response = await apiFetch('/api/agent/sources/stats');
   if (!response.ok) {
     throw new Error(`Failed to fetch source stats: ${response.statusText}`);
   }
@@ -521,7 +525,7 @@ export async function fetchSourceStats(): Promise<{ ok: boolean; stats: SourceRe
 }
 
 export async function fetchReviewQueue(): Promise<{ ok: boolean; count: number; queue: SourceReviewItem[] }> {
-  const response = await fetch('/api/agent/sources/review-queue');
+  const response = await apiFetch('/api/agent/sources/review-queue');
   if (!response.ok) {
     throw new Error(`Failed to fetch review queue: ${response.statusText}`);
   }
@@ -540,7 +544,7 @@ export async function registerSource(input: {
   reviewReason?: string;
   evidenceLinks?: string[];
 }): Promise<{ ok: boolean; isDuplicate: boolean; source: RegisteredSource; message: string }> {
-  const response = await fetch('/api/agent/sources', {
+  const response = await apiFetch('/api/agent/sources', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -577,7 +581,7 @@ export async function fetchSourceContent(
   sourceId: string,
   overridePolicy?: { timeoutMs?: number; maxResponseSizeBytes?: number }
 ): Promise<FetchResult> {
-  const response = await fetch('/api/agent/research/fetch', {
+  const response = await apiFetch('/api/agent/research/fetch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourceId, overridePolicy }),
@@ -616,7 +620,7 @@ export async function fetchStoredContentById(id: string): Promise<{ ok: boolean;
 }
 
 export async function fetchContentAcquisitionStats(): Promise<{ ok: boolean; stats: FetchStatistics }> {
-  const response = await fetch('/api/agent/research/fetch-status');
+  const response = await apiFetch('/api/agent/research/fetch-status');
   if (!response.ok) {
     throw new Error(`Failed to fetch content acquisition stats: ${response.statusText}`);
   }
@@ -725,7 +729,7 @@ export async function fetchYouTubeContent(
   url: string,
   sourceId?: string
 ): Promise<{ ok: boolean; isDuplicate: boolean; item: UnifiedResearchItem; chunksCount: number; message: string }> {
-  const response = await fetch('/api/agent/research/youtube/fetch', {
+  const response = await apiFetch('/api/agent/research/youtube/fetch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, sourceId }),
@@ -742,7 +746,7 @@ export async function fetchDocumentContent(
   sourceId?: string,
   sourceName?: string
 ): Promise<{ ok: boolean; isDuplicate: boolean; item: UnifiedResearchItem; chunksCount: number; message: string }> {
-  const response = await fetch('/api/agent/research/document/fetch', {
+  const response = await apiFetch('/api/agent/research/document/fetch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, sourceId, sourceName }),
@@ -793,7 +797,7 @@ export async function fetchResearchChunks(
 }
 
 export async function fetchResearchLibraryStats(): Promise<{ ok: boolean; stats: ResearchLibraryStatistics }> {
-  const response = await fetch('/api/agent/research/acquisition-status');
+  const response = await apiFetch('/api/agent/research/acquisition-status');
   if (!response.ok) {
     throw new Error(`Failed to fetch research library stats: ${response.statusText}`);
   }
@@ -980,7 +984,7 @@ export interface RuleEvidenceChain {
 export async function extractResearchClaims(
   contentId?: string
 ): Promise<{ ok: boolean; extractedCount: number; extractedClaims: ResearchClaim[]; totalClaims: number }> {
-  const res = await fetch('/api/agent/claims/extract', {
+  const res = await apiFetch('/api/agent/claims/extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contentId }),
@@ -990,7 +994,7 @@ export async function extractResearchClaims(
 }
 
 export async function fetchResearchClaims(): Promise<{ ok: boolean; count: number; claims: ResearchClaim[] }> {
-  const res = await fetch('/api/agent/claims');
+  const res = await apiFetch('/api/agent/claims');
   if (!res.ok) throw new Error(`Fetch claims failed: ${res.statusText}`);
   return res.json();
 }
@@ -998,7 +1002,7 @@ export async function fetchResearchClaims(): Promise<{ ok: boolean; count: numbe
 export async function formalizeClaimToRule(
   claimId: string
 ): Promise<{ ok: boolean; rule?: RuleCandidate; comparison?: RuleComparisonResult; message: string }> {
-  const res = await fetch('/api/agent/rules/formalize', {
+  const res = await apiFetch('/api/agent/rules/formalize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ claimId }),
@@ -1009,7 +1013,7 @@ export async function formalizeClaimToRule(
 }
 
 export async function fetchRuleCandidates(): Promise<{ ok: boolean; count: number; rules: RuleCandidate[] }> {
-  const res = await fetch('/api/agent/rules');
+  const res = await apiFetch('/api/agent/rules');
   if (!res.ok) throw new Error(`Fetch rules failed: ${res.statusText}`);
   return res.json();
 }
@@ -1062,7 +1066,7 @@ export async function fetchPhase2DVerificationStatus(): Promise<{
   approvedRules: RuleCandidate[];
   rejectedRules: RuleCandidate[];
 }> {
-  const res = await fetch('/api/agent/learning/verification-status');
+  const res = await apiFetch('/api/agent/learning/verification-status');
   if (!res.ok) throw new Error(`Fetch verification status failed: ${res.statusText}`);
   return res.json();
 }
