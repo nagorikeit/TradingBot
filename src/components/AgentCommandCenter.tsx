@@ -33,7 +33,10 @@ import {
   HelpCircle,
   TrendingUp,
   FileCheck,
+  MessageSquare,
 } from 'lucide-react';
+import { WhatsAppAlertConfigPanel } from './WhatsAppAlertConfigPanel';
+import { whatsappAlertService } from '../services/whatsappAlertService';
 import {
   fetchAgentHealth,
   fetchAgentStats,
@@ -86,7 +89,8 @@ export const AgentCommandCenter: React.FC = () => {
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
 
   // Active view within Command Center
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'scheduler' | 'sources' | 'content' | 'youtubeResearch' | 'ruleVerification' | 'knowledge' | 'memory' | 'retrieval'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'scheduler' | 'sources' | 'content' | 'youtubeResearch' | 'ruleVerification' | 'knowledge' | 'memory' | 'retrieval' | 'whatsappAlerts'>('overview');
+  const [whatsAppConfig, setWhatsAppConfig] = useState(whatsappAlertService.getConfig());
 
   // Sub-tab data
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
@@ -190,6 +194,10 @@ export const AgentCommandCenter: React.FC = () => {
 
   useEffect(() => {
     refreshAll();
+    const unsub = whatsappAlertService.subscribe(() => {
+      setWhatsAppConfig(whatsappAlertService.getConfig());
+    });
+    return unsub;
   }, []);
 
   const handleManualRunTrigger = async () => {
@@ -610,6 +618,27 @@ export const AgentCommandCenter: React.FC = () => {
           <Search className="w-3.5 h-3.5" />
           <span>Context Retrieval</span>
         </button>
+
+        <button
+          onClick={() => setActiveSubTab('whatsappAlerts')}
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 border ${
+            activeSubTab === 'whatsappAlerts'
+              ? 'bg-emerald-950/70 text-emerald-300 font-semibold shadow-sm border-emerald-500'
+              : 'text-slate-400 hover:text-slate-200 border-slate-700/60 hover:border-slate-600'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+          <span>WhatsApp Alerts</span>
+          <span
+            className={`px-1.5 py-0.2 rounded-full font-mono text-[10px] ${
+              whatsAppConfig.enabled
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            {whatsAppConfig.enabled ? 'ACTIVE' : 'OFF'}
+          </span>
+        </button>
       </div>
 
       {/* 4. Sub-Tab Content Views */}
@@ -913,6 +942,57 @@ export const AgentCommandCenter: React.FC = () => {
                   <p className="text-slate-200 font-medium">Non-Autonomous Strategy Mutation</p>
                   <p className="text-slate-400 text-[11px]">External knowledge never mutates live Binance trading rules directly</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Real-Time WhatsApp Signal Alerts Overview Card */}
+          <div className="md:col-span-2 bg-slate-900/80 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    Real-Time WhatsApp Trade Signal Alerts
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Instant automated trade notifications sent to your personal WhatsApp (Twilio, Webhook, CallMeBot)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 text-xs font-mono rounded border ${
+                    whatsAppConfig.enabled
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  {whatsAppConfig.enabled ? '● ACTIVE' : '○ DISABLED'}
+                </span>
+                <button
+                  onClick={() => setActiveSubTab('whatsappAlerts')}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition-colors"
+                >
+                  Configure API Keys
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80">
+                <span className="text-slate-400 text-[11px] block">Active Provider</span>
+                <span className="font-semibold text-white font-mono uppercase">{whatsAppConfig.provider}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80">
+                <span className="text-slate-400 text-[11px] block">Min Pattern Score</span>
+                <span className="font-semibold text-emerald-400 font-mono">{whatsAppConfig.filters.minConfidence}%</span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80">
+                <span className="text-slate-400 text-[11px] block">Direction Filter</span>
+                <span className="font-semibold text-cyan-400 font-mono">{whatsAppConfig.filters.allowedDirections}</span>
               </div>
             </div>
           </div>
@@ -2814,6 +2894,11 @@ export const AgentCommandCenter: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Sub-Tab: WhatsApp Real-Time Trade Signal Alerts */}
+      {activeSubTab === 'whatsappAlerts' && (
+        <WhatsAppAlertConfigPanel />
       )}
 
       {/* 5. Existing System Protection Footer */}

@@ -258,6 +258,29 @@ export const LiveScreenAnalyzer: React.FC = () => {
               {isVoiceOn ? <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
               <span>{isVoiceOn ? 'ভয়েস অন' : 'ভয়েস অফ'}</span>
             </button>
+
+            {/* Floating HUD Widget Toggle */}
+            <button
+              onClick={() => {
+                if (liveScreenService.isOverlayActive()) {
+                  liveScreenService.hideFloatingOverlayHUD();
+                } else {
+                  liveScreenService.showFloatingOverlayHUD({
+                    direction: result?.direction || 'WAIT',
+                    confidence: result?.confidence || 0,
+                    durationText: '1-3 min',
+                    verdictTitle: result?.verdictTitle || 'TRADEPULSE HUD',
+                    reasonText: result?.reasoning[0] || 'Floating HUD active over other trading apps.',
+                    latencyMs: 120,
+                  });
+                }
+              }}
+              className="px-3 py-2 text-xs font-semibold rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40 flex items-center gap-1.5 transition-colors shadow-sm"
+              title="অন্য যেকোনো ট্রেডিং অ্যাপের (Binomo, Quotex, MT4) ওপর ভাসমান উইন্ডো দেখানো বা লুকানো"
+            >
+              <Layers className="w-4 h-4 text-cyan-400" />
+              <span>ফ্লোটিং HUD</span>
+            </button>
           </div>
         </div>
 
@@ -367,8 +390,15 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <div className="text-xs font-medium opacity-90">
                 {isStale ? 'Signal is older than 15s TTL. Awaiting fresh live frame.' : result.verdictTitle}
               </div>
-              <div className="mt-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
-                Confidence: {isStale ? 0 : result.confidence}%
+              <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+                <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
+                  Confidence: {isStale ? 0 : result.confidence}%
+                </span>
+                {result.suggestedExpiry && (
+                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-indigo-950/70 border border-indigo-600/50 text-indigo-300">
+                    মেয়াদ: {result.suggestedExpiry}
+                  </span>
+                )}
               </div>
             </div>
 

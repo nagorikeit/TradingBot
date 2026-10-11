@@ -16,6 +16,7 @@ import { ruleVerificationService } from '../services/ruleVerificationService';
 import { marketObserverService } from '../services/marketObserverService';
 import { dailyLearningService } from '../services/dailyLearningService';
 import { screenVerificationService } from '../services/screenVerificationService';
+import { whatsappNotificationService } from '../services/whatsappNotificationService';
 import {
   KnowledgeStatus,
   MemoryCategory,
@@ -1213,6 +1214,60 @@ agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) =>
     });
   }
 });
+
+/**
+ * POST /api/agent/whatsapp/send
+ * Dispatches trade alert via Twilio, Custom Webhook, or CallMeBot
+ */
+agentRouter.post('/whatsapp/send', async (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload || !payload.provider || !payload.messageText) {
+      res.status(400).json({
+        ok: false,
+        error: 'Missing required parameters: provider and messageText',
+      });
+      return;
+    }
+
+    const result = await whatsappNotificationService.sendAlert(payload);
+    res.json(result);
+  } catch (err: unknown) {
+    console.error('WhatsApp send error:', err);
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to send WhatsApp message',
+    });
+  }
+});
+
+/**
+ * POST /api/agent/whatsapp/test
+ * Sends a test ping to verify user API keys and connection
+ */
+agentRouter.post('/whatsapp/test', async (req: Request, res: Response) => {
+  try {
+    const { provider, twilioConfig, webhookConfig, callmebotConfig } = req.body;
+    const testMessage = `🤖 *TradePulse AI Agent* 🟢\n\n✅ WhatsApp alert connection verified successfully!\n⏰ Timestamp: ${new Date().toLocaleTimeString()}\n📡 Real-time trade signals and AI analysis alerts are now active.`;
+
+    const result = await whatsappNotificationService.sendAlert({
+      provider,
+      twilioConfig,
+      webhookConfig,
+      callmebotConfig,
+      messageText: testMessage,
+    });
+
+    res.json(result);
+  } catch (err: unknown) {
+    console.error('WhatsApp test error:', err);
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Test WhatsApp dispatch failed',
+    });
+  }
+});
+
 
 
 

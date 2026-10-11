@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build Android APK & Deploy Pages
 
 on:
   push:
@@ -8,16 +8,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
-  group: 'pages'
+  group: 'pages-and-apk'
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  # 1. Build and Deploy Web Application to GitHub Pages
+  build-and-deploy-web:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -54,3 +55,67 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # 2. Build Android APK & Release
+  build-android-apk:
+    name: Build Android APK (Debug / Release)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Web Dependencies
+        run: npm ci || npm install
+
+      - name: Build Web App & Sync Capacitor
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Build Android Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradePulse-Agent-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Create GitHub Release with APK
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: TradePulse Android App v1.0.${{ github.run_number }}
+          body: |
+            ## 🚀 TradePulse AI Screen Analyzer APK
+            - **Real-Time Cross-App Screen Capture**: MediaProjection Foreground Service
+            - **Native Floating HUD Overlay**: Displays UP / DOWN / WAIT & Expiry over other Trading Apps
+            - **AI Engine**: Gemini Vision & Anti-Stale Guard
+            
+            📲 ডাউনলোড করতে নিচের `TradePulse-Agent-v1.0.apk` ফাইলে ক্লিক করুন।
+          draft: false
+          prerelease: false
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk

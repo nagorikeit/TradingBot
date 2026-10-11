@@ -23,7 +23,7 @@ export interface ScreenVisionParsedData {
 
 export interface MarketVerificationResult {
   isVerified: boolean;
-  status: 'MATCHED' | 'PRICE_MISMATCH' | 'UNSUPPORTED_BROKER_FEED' | 'STALE_DATA' | 'SKIPPED';
+  status: 'MATCHED' | 'PRICE_MISMATCH' | 'UNSUPPORTED_BROKER_FEED' | 'BROKER_VISUAL_ACTION' | 'STALE_DATA' | 'SKIPPED';
   livePrice?: number;
   screenPrice?: number;
   priceDeltaPercent?: number;
@@ -38,6 +38,7 @@ export interface ScreenAnalysisFinalResult {
   direction: 'UP' | 'DOWN' | 'WAIT';
   confidence: number;
   verdictTitle: string;
+  suggestedExpiry?: string;
   reasoning: string[];
   visionData: ScreenVisionParsedData;
   marketVerification: MarketVerificationResult;

@@ -12,6 +12,7 @@ import { KrakenMarketDataProvider } from '../data/krakenMarketDataProvider';
 import { CoinbaseMarketDataProvider } from '../data/coinbaseMarketDataProvider';
 import { generateSignal } from '../strategy/signalEngine';
 import { evaluatePendingSignals } from '../strategy/signalEvaluator';
+import { whatsappAlertService } from './whatsappAlertService';
 
 const STORAGE_KEY_SIGNALS = 'tradepulse_signal_history_v1';
 const STORAGE_KEY_PROVIDER = 'tradepulse_provider_mode_v1';
@@ -345,6 +346,10 @@ export class MarketService {
           this.signalHistory.pop();
         }
         this.saveHistoryToStorage();
+        // Dispatch real-time WhatsApp alert if enabled
+        whatsappAlertService.sendTradeSignalAlert(signal).catch((err) => {
+          console.warn('[MarketService] WhatsApp alert dispatch error:', err);
+        });
       }
     }
   }
