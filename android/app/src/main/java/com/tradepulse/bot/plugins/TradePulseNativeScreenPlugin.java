@@ -104,21 +104,26 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     @PluginMethod
     public void startScreenCapture(PluginCall call) {
-        int intervalSec = call.getInt("intervalSeconds", 3);
-        this.captureIntervalMs = Math.max(2, intervalSec) * 1000;
+        try {
+            int intervalSec = call.getInt("intervalSeconds", 3);
+            this.captureIntervalMs = Math.max(2, intervalSec) * 1000;
 
-        if (projectionManager == null) {
-            call.reject("MediaProjectionManager not available on this device");
-            return;
+            if (projectionManager == null) {
+                call.reject("MediaProjectionManager not available on this device");
+                return;
+            }
+
+            // Prompt system dialog to capture screen
+            Intent captureIntent = projectionManager.createScreenCaptureIntent();
+            startActivityForResult(call, captureIntent, "handleProjectionResult");
+        } catch (Exception e) {
+            e.printStackTrace();
+            call.reject("Failed to request screen capture: " + e.getMessage());
         }
-
-        // Prompt system dialog to capture screen
-        Intent captureIntent = projectionManager.createScreenCaptureIntent();
-        startActivityForResult(call, captureIntent, "handleProjectionResult");
     }
 
     @ActivityCallback
-    private void handleProjectionResult(PluginCall call, ActivityResult result) {
+    public void handleProjectionResult(PluginCall call, ActivityResult result) {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
             call.reject("User declined screen projection permission");
             return;
@@ -136,18 +141,33 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             e.printStackTrace();
         }
 
-        mediaProjection = projectionManager.getMediaProjection(result.getResultCode(), result.getData());
-        if (mediaProjection == null) {
-            call.reject("Failed to obtain MediaProjection instance");
-            return;
+        try {
+            mediaProjection = projectionManager.getMediaProjection(result.getResultCode(), result.getData());
+            if (mediaProjection == null) {
+                call.reject("Failed to obtain MediaProjection instance");
+                return;
+            }
+
+            if (Build.VERSION.SDK_INT >= 34) {
+                mediaProjection.registerCallback(new MediaProjection.Callback() {
+                    @Override
+                    public void onStop() {
+                        super.onStop();
+                        mediaProjection = null;
+                    }
+                }, captureHandler);
+            }
+
+            setupVirtualDisplay();
+            startFrameCaptureLoop();
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            e.printStackTrace();
+            call.reject("Failed to initialize MediaProjection: " + e.getMessage());
         }
-
-        setupVirtualDisplay();
-        startFrameCaptureLoop();
-
-        JSObject res = new JSObject();
-        res.put("success", true);
-        call.resolve(res);
     }
 
     private void setupVirtualDisplay() {
@@ -177,11 +197,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     private void startFrameCaptureLoop() {
+        if (captureHandler != null && captureRunnable != null) {
+            captureHandler.removeCallbacks(captureRunnable);
+        }
         captureRunnable = new Runnable() {
             @Override
             public void run() {
-                captureAndEmitLatestFrame();
-                if (mediaProjection != null) {
+                try {
+                    captureAndEmitLatestFrame();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                // Never stop automatically - only stops on explicit stopScreenCapture
+                if (mediaProjection != null && captureHandler != null) {
                     captureHandler.postDelayed(this, captureIntervalMs);
                 }
             }

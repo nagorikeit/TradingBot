@@ -127,23 +127,43 @@ export class VoiceAssistantService {
    */
   public announceNoScreenCapture(): void {
     this.speak(
-      'আমি কোনো চার্ট দেখতে পাচ্ছি না। দয়া করে চার্টটি খুলুন এবং স্ক্রিন শেয়ার চালু করুন।',
+      'আমি কোনো চার্ট দেখতে পাচ্ছি না। দয়া করে স্ক্রিন শেয়ার চালু করুন।',
       'NO_SCREEN_CAPTURE'
     );
   }
 
   /**
-   * 2. Chart identified and frame analyzing
+   * 2. Searching for chart actively
+   */
+  public announceSearchingForChart(): void {
+    this.speak(
+      'চার্ট খোঁজা হচ্ছে। দয়া করে ট্রেডিং চার্টটি স্ক্রিনে রাখুন।',
+      'SEARCHING_FOR_CHART'
+    );
+  }
+
+  /**
+   * 3. Chart not found
+   */
+  public announceNoChartFound(): void {
+    this.speak(
+      'আমি চার্ট খুঁজে পাইনি। দয়া করে ট্রেডিং চার্টটি সামনে রাখুন।',
+      'NO_CHART_FOUND'
+    );
+  }
+
+  /**
+   * 4. Chart identified and frame analyzing
    */
   public announceChartFoundAnalyzing(): void {
     this.speak(
-      'আমি চার্ট খুঁজে পেয়েছি। এখন বিশ্লেষণ করছি। অনুগ্রহ করে অপেক্ষা করুন।',
+      'আমি চার্ট খুঁজে পেয়েছি। টেকনিক্যাল ইন্ডিকেটর ও ক্যান্ডেলস্টিক বিশ্লেষণ করছি। অনুগ্রহ করে অপেক্ষা করুন।',
       'CHART_FOUND_ANALYZING'
     );
   }
 
   /**
-   * 3. Image uploaded directly (for mobile or iframe environments)
+   * 5. Image uploaded directly (for mobile or iframe environments)
    */
   public announceImageUploaded(): void {
     this.speak(
@@ -153,39 +173,46 @@ export class VoiceAssistantService {
   }
 
   /**
-   * 4. Full analysis result announced
+   * 6. Full analysis result announced
    */
   public announceAnalysisResult(result: ScreenAnalysisFinalResult): void {
     if (!result) return;
 
     if (!result.visionData?.isClearTradingChart) {
-      this.speak(
-        'স্পষ্ট কোনো ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি। অনুগ্রহ করে চার্ট উইন্ডো সামনে রাখুন।',
-        'NO_CLEAR_CHART_DETECTED'
-      );
+      this.announceNoChartFound();
       return;
     }
 
     const { direction, confidence, marketVerification } = result;
     const dedupKey = `RESULT_${direction}_${marketVerification.status}_${confidence}`;
 
-    if (direction === 'UP' && marketVerification.isVerified && marketVerification.status === 'MATCHED') {
+    if (direction === 'UP') {
       this.speak(
-        `বিশ্লেষণ সম্পন্ন। আপ সিগন্যাল পাওয়া গেছে। কনফিডেন্স ${confidence} শতাংশ। মার্কেট ভেরিফাইড।`,
+        `বিশ্লেষণ সম্পন্ন। দিকনির্দেশনা: কল অথবা আপ ট্রেড। কনফিডেন্স ${confidence} শতাংশ। এক্সপায়ারি কাউন্টডাউন শুরু হয়েছে।`,
         dedupKey
       );
-    } else if (direction === 'DOWN' && marketVerification.isVerified && marketVerification.status === 'MATCHED') {
+    } else if (direction === 'DOWN') {
       this.speak(
-        `বিশ্লেষণ সম্পন্ন। ডাউন সিগন্যাল পাওয়া গেছে। কনফিডেন্স ${confidence} শতাংশ। মার্কেট ভেরিফাইড।`,
+        `বিশ্লেষণ সম্পন্ন। দিকনির্দেশনা: পুট অথবা ডাউন ট্রেড। কনফিডেন্স ${confidence} শতাংশ। এক্সপায়ারি কাউন্টডাউন শুরু হয়েছে।`,
         dedupKey
       );
     } else {
       // WAIT / Consolidation / Unsupported broker feed / Price mismatch / Stale data
       this.speak(
-        'বিশ্লেষণ সম্পন্ন। মার্কেট অসঙ্গতি বা আনভেরিফাইড ফিডের কারণে অপেক্ষা করার পরামর্শ দেওয়া হচ্ছে।',
+        'বিশ্লেষণ সম্পন্ন। মার্কেট সাইডওয়ে বা অনির্দিষ্ট থাকার কারণে অপেক্ষা করার পরামর্শ দেওয়া হচ্ছে।',
         dedupKey
       );
     }
+  }
+
+  /**
+   * 7. Candle timer expired
+   */
+  public announceCandleExpired(): void {
+    this.speak(
+      'ক্যান্ডেলের সময় শেষ হয়েছে। পরবর্তী ক্যান্ডেলের জন্য নতুন বিশ্লেষণ চলছে।',
+      'CANDLE_EXPIRED'
+    );
   }
 
   public stopSpeaking(): void {

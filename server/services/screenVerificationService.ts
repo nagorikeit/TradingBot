@@ -284,11 +284,12 @@ export class ScreenVerificationService {
         frameCapturedAt,
         direction: 'WAIT',
         confidence: 0,
-        verdictTitle: 'WAIT / অস্পষ্ট চার্ট (UNCLEAR)',
-        suggestedExpiry: 'N/A',
+        verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
+        suggestedExpiry: '01:00',
         reasoning: [
           'স্ক্রিনে স্পষ্ট কোনো ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।',
-          'অনুগ্রহ করে ট্রেডিং অ্যাপের চার্ট ভিউ সামনে রাখুন এবং জুম সমন্বয় করুন।',
+          'অনুগ্রহ করে ট্রেডিং অ্যাপের (Binomo, Quotex, MT4) চার্ট স্ক্রিনে রাখুন।',
+          'চার্ট খোঁজা অব্যাহত রয়েছে...',
         ],
         visionData,
         marketVerification: {

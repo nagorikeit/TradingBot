@@ -14,8 +14,6 @@ import {
   HelpCircle,
   Eye,
   Sliders,
-  Upload,
-  Image as ImageIcon,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -33,6 +31,9 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
   const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
 
+  const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
+  const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
+
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
       setStreamState(liveScreenService.getState());
@@ -40,6 +41,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setIsBusy(liveScreenService.isBusy());
       setIntervalSec(liveScreenService.getScanIntervalSeconds());
       setErrorMessage(liveScreenService.getErrorMessage());
+      setExpirySec(liveScreenService.getExpirySecondsLeft());
+      setIsChartFound(liveScreenService.isChartDetected());
     });
     return unsub;
   }, []);
@@ -61,50 +64,10 @@ export const LiveScreenAnalyzer: React.FC = () => {
     return () => clearInterval(ticker);
   }, []);
 
-  const isStale = !result || now - result.timestamp > 15000;
   const signalAgeSec = result ? Math.max(0, Math.floor((now - result.timestamp) / 1000)) : 0;
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  // Clipboard paste listener (Ctrl+V) for quick screenshot testing
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = async () => {
-              const base64 = reader.result as string;
-              if (base64) {
-                await liveScreenService.analyzeImageDirectly(base64);
-              }
-            };
-            reader.readAsDataURL(file);
-          }
-          break;
-        }
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, []);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
-      if (base64) {
-        await liveScreenService.analyzeImageDirectly(base64);
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
+  const countdownMin = Math.floor(expirySec / 60);
+  const countdownRemainderSec = expirySec % 60;
+  const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
   const handleConnect = async () => {
     await liveScreenService.connectScreen();
   };
@@ -216,33 +179,14 @@ export const LiveScreenAnalyzer: React.FC = () => {
             )}
 
             {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR' || streamState === 'CONNECTING') && (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleConnect}
-                  disabled={streamState === 'CONNECTING'}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
-                >
-                  <Monitor className="w-4 h-4" />
-                  <span>{streamState === 'CONNECTING' ? 'Connecting...' : 'Connect Live Screen'}</span>
-                </button>
-
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isBusy}
-                  className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
-                  title="Upload a TradingView or broker chart screenshot (Mobile/Desktop friendly)"
-                >
-                  <Upload className="w-4 h-4 text-emerald-400" />
-                  <span>Upload Chart Image</span>
-                </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                />
-              </div>
+              <button
+                onClick={handleConnect}
+                disabled={streamState === 'CONNECTING'}
+                className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+              >
+                <Monitor className="w-4 h-4" />
+                <span>{streamState === 'CONNECTING' ? 'Connecting...' : 'Connect Live Screen'}</span>
+              </button>
             )}
 
             {/* Voice Assistant Toggle Button */}
@@ -331,20 +275,11 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <span className="font-semibold">Notice:</span> {errorMessage}
               {errorMessage.includes('getDisplayMedia') && (
                 <div className="mt-1 text-slate-300 text-[11px] leading-relaxed">
-                  💡 <b>পরামর্শ:</b> মোবাইল ব্রাউজার (Android/iOS) বা আইফ্রেম প্রিভিউতে ব্রাউজার সিকিউরিটির কারণে স্ক্রিন শেয়ার সমর্থিত নয়। চার্টের ছবি দিয়ে তাৎক্ষণিক বিশ্লেষণ পেতে <b>"Upload Chart Image"</b> বাটন ব্যবহার করুন অথবা কিবোর্ড থেকে <b>Ctrl+V</b> দিয়ে সরাসরি পেস্ট করুন।
+                  💡 <b>পরামর্শ:</b> মোবাইল ব্রাউজারে স্ক্রিন শেয়ারের জন্য TradePulse Android APK ব্যবহার করুন অথবা ব্রাউজারের পারমিশন চালু করুন।
                 </div>
               )}
             </div>
           </div>
-          {errorMessage.includes('getDisplayMedia') && (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="shrink-0 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors shadow-sm self-start sm:self-auto"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Upload Image</span>
-            </button>
-          )}
         </div>
       )}
 
@@ -358,17 +293,16 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 Synthesized Signal
               </span>
               <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
-                <span>{signalAgeSec}s ago ({new Date(result.timestamp).toLocaleTimeString()})</span>
-                {isStale && <span className="text-amber-400 font-semibold ml-1">[EXPIRED &gt;15s]</span>}
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{formattedCountdown}</strong></span>
               </div>
             </div>
 
             {/* Big Direction Badge */}
             <div
-              className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1 ${
-                isStale
-                  ? 'bg-slate-950/80 border-slate-700/80 text-slate-400'
+              className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1.5 ${
+                !isChartFound
+                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
                   : result.direction === 'UP'
                   ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
                   : result.direction === 'DOWN'
@@ -377,28 +311,26 @@ export const LiveScreenAnalyzer: React.FC = () => {
               }`}
             >
               <div className="text-2xl font-black tracking-tight font-mono">
-                {isStale ? (
-                  <span className="text-slate-400">⏸ SIGNAL EXPIRED</span>
+                {!isChartFound ? (
+                  <span className="text-amber-300">⚠️ চার্ট খুঁজছি...</span>
                 ) : (
                   <>
-                    {result.direction === 'UP' && '▲ UP / CALL'}
-                    {result.direction === 'DOWN' && '▼ DOWN / PUT'}
-                    {result.direction === 'WAIT' && '⏸ WAIT'}
+                    {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
+                    {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
+                    {result.direction === 'WAIT' && '⏸ WAIT / অপেক্ষা'}
                   </>
                 )}
               </div>
               <div className="text-xs font-medium opacity-90">
-                {isStale ? 'Signal is older than 15s TTL. Awaiting fresh live frame.' : result.verdictTitle}
+                {!isChartFound ? 'আমি চার্ট খুঁজে পাইনি। ট্রেডিং চার্ট সামনে রাখুন।' : result.verdictTitle}
               </div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
-                  Confidence: {isStale ? 0 : result.confidence}%
+                  কনফিডেন্স: {result.confidence}%
                 </span>
-                {result.suggestedExpiry && (
-                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-indigo-950/70 border border-indigo-600/50 text-indigo-300">
-                    মেয়াদ: {result.suggestedExpiry}
-                  </span>
-                )}
+                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
+                  ⏱️ এক্সপায়ারি: {formattedCountdown}
+                </span>
               </div>
             </div>
 

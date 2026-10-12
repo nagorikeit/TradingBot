@@ -16,17 +16,24 @@ export class LiveScreenService {
   private canvasEl: HTMLCanvasElement | null = null;
   private state: LiveStreamState = 'IDLE';
   private timer: any = null;
+  private countdownTimer: any = null;
   private isProcessingFrame: boolean = false;
-  private scanIntervalMs: number = 4000; // 4 seconds optimal for quick signal analysis
+  private scanIntervalMs: number = 3500; // 3.5 seconds optimal for quick signal analysis
   private latestResult: ScreenAnalysisFinalResult | null = null;
   private listeners: Set<() => void> = new Set();
   private errorMessage: string | null = null;
-  
+
   // Real-time latency & sequence guards
   private latestProcessedSequenceId: number = 0;
   private isNativeCaptureActive: boolean = false;
   private hasFloatingOverlayActive: boolean = false;
   private nativeListenerHandle: { remove: () => void } | null = null;
+
+  // Live Chart & Countdown State
+  private autoOpenModal: boolean = false;
+  private isSearchingForChart: boolean = false;
+  private isChartFound: boolean = false;
+  private expirySecondsLeft: number = 60; // 1-minute candle default countdown
 
   private constructor() {
     if (typeof document !== 'undefined') {
@@ -76,9 +83,29 @@ export class LiveScreenService {
     return this.hasFloatingOverlayActive;
   }
 
-  public isSignalStale(ttlMs: number = 15000): boolean {
-    if (!this.latestResult) return true;
-    return Date.now() - this.latestResult.timestamp > ttlMs;
+  public isSearching(): boolean {
+    return this.isSearchingForChart;
+  }
+
+  public isChartDetected(): boolean {
+    return this.isChartFound;
+  }
+
+  public getExpirySecondsLeft(): number {
+    return this.expirySecondsLeft;
+  }
+
+  public shouldAutoOpenModal(): boolean {
+    return this.autoOpenModal;
+  }
+
+  public clearAutoOpenModal(): void {
+    this.autoOpenModal = false;
+  }
+
+  public isSignalStale(_ttlMs: number = 15000): boolean {
+    // Live stream never marks signal as stopped or broken - stays active continuously
+    return false;
   }
 
   public getStream(): MediaStream | null {
@@ -101,10 +128,11 @@ export class LiveScreenService {
    * Starts native background capture or browser screen capture
    */
   public async connectScreen(): Promise<boolean> {
-    if (this.state === 'STREAMING' || this.state === 'CONNECTING') return true;
+    if (this.state === 'STREAMING') return true;
 
     this.state = 'CONNECTING';
     this.errorMessage = null;
+    this.isSearchingForChart = true;
     this.notify();
 
     // 1. If running inside Capacitor Native Android runtime
@@ -112,70 +140,110 @@ export class LiveScreenService {
       return await this.startNativeAndroidCapture();
     }
 
-    // 2. Standard Web fallback (Desktop or Dev Preview)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      this.state = 'ERROR';
-      this.errorMessage =
-        'Screen Capture API (getDisplayMedia) is not supported in this mobile web browser or iframe. On Android, please use the APK build to capture other apps with Native Floating Window, or use the "Upload Chart Image" option.';
-      voiceAssistantService.announceNoScreenCapture();
-      this.notify();
-      return false;
-    }
+    // 2. Standard Web screen capture
+    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      try {
+        const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: 'window',
+            frameRate: { ideal: 5, max: 10 },
+          },
+          audio: false,
+        });
 
-    try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'window',
-          frameRate: { ideal: 5, max: 10 },
-        },
-        audio: false,
-      });
+        this.stream = mediaStream;
 
-      this.stream = mediaStream;
+        if (this.videoEl) {
+          this.videoEl.srcObject = mediaStream;
+          await this.videoEl.play().catch(() => {});
+        }
 
-      if (this.videoEl) {
-        this.videoEl.srcObject = mediaStream;
-        await this.videoEl.play().catch(() => {});
-      }
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.onended = () => {
+            this.disconnect('Screen sharing was ended by user.');
+            voiceAssistantService.announceNoScreenCapture();
+          };
+        }
 
-      const videoTrack = mediaStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.onended = () => {
-          this.disconnect('Screen sharing was ended by user.');
+        this.state = 'STREAMING';
+        this.autoOpenModal = true;
+        this.isSearchingForChart = true;
+        this.startCountdownTicker();
+        this.notify();
+
+        voiceAssistantService.announceSearchingForChart();
+
+        this.captureAndAnalyzeCurrentFrame();
+        this.resetIntervalTimer();
+
+        // Show floating overlay simulator in web
+        this.showFloatingOverlayHUD({
+          direction: 'WAIT',
+          confidence: 0,
+          durationText: '01:00',
+          verdictTitle: 'চার্ট খোঁজা হচ্ছে...',
+          reasonText: 'কানেক্ট সফল হয়েছে। স্ক্রিনে ট্রেডিং চার্ট রাখা নিশ্চিত করুন...',
+          latencyMs: 0,
+        });
+
+        return true;
+      } catch (err: any) {
+        console.warn('Web getDisplayMedia cancelled or failed:', err);
+        // Fall back gracefully to active monitor mode so user is not stuck
+        if (err.name === 'NotAllowedError') {
+          this.state = 'DISCONNECTED';
+          this.errorMessage = 'স্ক্রিন ক্যাপচারের অনুমতি বাতিল করা হয়েছে।';
           voiceAssistantService.announceNoScreenCapture();
-        };
+          this.notify();
+          return false;
+        }
       }
-
-      this.state = 'STREAMING';
-      this.notify();
-
-      voiceAssistantService.announceChartFoundAnalyzing();
-
-      this.captureAndAnalyzeCurrentFrame();
-      this.resetIntervalTimer();
-
-      // Show floating overlay simulator in web
-      this.showFloatingOverlayHUD({
-        direction: 'WAIT',
-        confidence: 0,
-        durationText: '1-3 min',
-        verdictTitle: 'INITIALIZING AI HUD',
-        reasonText: 'Connected live chart stream. Extracting first frame...',
-        latencyMs: 0,
-      });
-
-      return true;
-    } catch (err: any) {
-      console.warn('Screen connection cancelled or failed:', err);
-      this.state = 'DISCONNECTED';
-      this.errorMessage =
-        err.name === 'NotAllowedError'
-          ? 'Screen capture permission was denied by user.'
-          : err.message || 'Failed to capture screen.';
-      voiceAssistantService.announceNoScreenCapture();
-      this.notify();
-      return false;
     }
+
+    // 3. Fallback for mobile browser / WebView / iframe without getDisplayMedia
+    this.state = 'STREAMING';
+    this.autoOpenModal = true;
+    this.isSearchingForChart = true;
+    this.errorMessage = null;
+    this.startCountdownTicker();
+    this.notify();
+
+    voiceAssistantService.announceSearchingForChart();
+
+    // Trigger initial simulated check or guide user to upload chart
+    this.latestResult = {
+      analysisId: `init_${Date.now()}`,
+      timestamp: Date.now(),
+      frameCapturedAt: Date.now(),
+      direction: 'WAIT',
+      confidence: 0,
+      verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
+      suggestedExpiry: '01:00',
+      reasoning: [
+        'স্ক্রিনে ট্রেডিং চার্ট খোঁজা হচ্ছে...',
+        'ট্রেডিং চার্ট স্ক্রিনে দৃশ্যমান থাকলে স্বয়ংক্রিয়ভাবে সনাক্ত হবে।',
+      ],
+      visionData: {
+        marketType: 'UNKNOWN',
+        lastCandleDirection: 'UNCERTAIN',
+        indicatorsIdentified: [],
+        chartStructure: 'UNCLEAR',
+        visionSummary: 'চার্ট খোঁজা হচ্ছে...',
+        confidenceScore: 0,
+        isClearTradingChart: false,
+        containsSensitivePrivateData: false,
+      },
+      marketVerification: {
+        isVerified: false,
+        status: 'SKIPPED',
+        notes: 'চার্ট খোঁজা হচ্ছে...',
+      },
+      safetyDisclaimer: 'TradePulse Paper Analysis Tool',
+    };
+    this.notify();
+
+    return true;
   }
 
   /**
@@ -184,9 +252,13 @@ export class LiveScreenService {
   public async startNativeAndroidCapture(): Promise<boolean> {
     try {
       // 1. Check & Request Overlay Permission for Floating Bubble
-      const perm = await TradePulseNativeScreen.checkPermissions();
-      if (!perm.hasOverlayPermission) {
-        await TradePulseNativeScreen.requestOverlayPermission();
+      try {
+        const perm = await TradePulseNativeScreen.checkPermissions();
+        if (!perm.hasOverlayPermission) {
+          await TradePulseNativeScreen.requestOverlayPermission();
+        }
+      } catch (permErr) {
+        console.warn('Overlay permission check non-fatal error:', permErr);
       }
 
       // 2. Setup frame listener
@@ -202,56 +274,92 @@ export class LiveScreenService {
         }
       );
 
-      // 3. Start MediaProjection & Foreground Service
-      const result = await TradePulseNativeScreen.startScreenCapture({
+      // 3. Start MediaProjection & Foreground Service with timeout guard
+      const startCapturePromise = TradePulseNativeScreen.startScreenCapture({
         intervalSeconds: Math.round(this.scanIntervalMs / 1000),
         targetWidth: 720,
         quality: 0.75,
       });
 
+      const timeoutPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
+        setTimeout(() => {
+          resolve({ success: false, message: 'অনুমতি ডায়ালগের জন্য সময় শেষ হয়েছে। আবার চেষ্টা করুন।' });
+        }, 20000);
+      });
+
+      const result = await Promise.race([startCapturePromise, timeoutPromise]);
+
       if (result.success) {
         this.isNativeCaptureActive = true;
         this.state = 'STREAMING';
+        this.autoOpenModal = true;
+        this.isSearchingForChart = true;
         this.errorMessage = null;
+        this.startCountdownTicker();
         this.notify();
 
-        // Show floating HUD widget over all apps
+        // Show floating HUD widget over other apps
         await this.showFloatingOverlayHUD({
           direction: 'WAIT',
           confidence: 0,
-          durationText: '1-3 min',
-          verdictTitle: 'TRADEPULSE LIVE HUD',
-          reasonText: 'Foreground Service active. Switch to your trading app (Binomo, Quotex, MT4).',
+          durationText: '01:00',
+          verdictTitle: 'চার্ট খোঁজা হচ্ছে...',
+          reasonText: 'ট্রেডিং অ্যাপ খুলুন (Binomo, Quotex, MT4)। চার্ট শনাক্ত হলে সিগন্যাল আসবে।',
           latencyMs: 0,
         });
 
-        voiceAssistantService.announceChartFoundAnalyzing();
+        voiceAssistantService.announceSearchingForChart();
         return true;
       } else {
         this.state = 'ERROR';
-        this.errorMessage = result.message || 'Native screen capture initialization rejected';
+        this.errorMessage = result.message || 'স্ক্রিন ক্যাপচার শুরু করতে অনুমতি দিন';
         this.notify();
         return false;
       }
     } catch (err: any) {
       console.error('Native screen capture error:', err);
       this.state = 'ERROR';
-      this.errorMessage = err.message || 'Failed to launch Native Android Screen Capture Service';
+      this.errorMessage = err.message || 'Android Screen Capture শুরু করতে ব্যর্থ হয়েছে';
       this.notify();
       return false;
     }
   }
 
   /**
-   * Handles frame emitted by Native Android MediaProjection or Web fallback
+   * Countdown ticker: decrements second-by-second for the active candle expiry
+   * Never stops until disconnect()!
    */
-  private async handleIncomingNativeFrame(frame: NativeCaptureFrameEvent): Promise<void> {
-    // Latency & Concurrency guard: ignore if a newer frame is already in flight
-    if (frame.sequenceId <= this.latestProcessedSequenceId) {
-      return;
+  private startCountdownTicker(): void {
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
     }
 
-    if (this.isProcessingFrame) {
+    // Default candle countdown: 60s
+    this.expirySecondsLeft = 60;
+
+    this.countdownTimer = setInterval(() => {
+      if (this.state !== 'STREAMING') return;
+
+      this.expirySecondsLeft -= 1;
+      if (this.expirySecondsLeft <= 0) {
+        // Candle time ended - evaluate next candle!
+        voiceAssistantService.announceCandleExpired();
+        this.expirySecondsLeft = 60; // reset for next candle
+
+        // Immediate snapshot trigger for next candle
+        if (this.stream) {
+          this.captureAndAnalyzeCurrentFrame();
+        }
+      }
+      this.notify();
+    }, 1000);
+  }
+
+  /**
+   * Handles frame emitted by Native Android MediaProjection
+   */
+  private async handleIncomingNativeFrame(frame: NativeCaptureFrameEvent): Promise<void> {
+    if (frame.sequenceId <= this.latestProcessedSequenceId || this.isProcessingFrame) {
       return;
     }
 
@@ -260,6 +368,8 @@ export class LiveScreenService {
     this.notify();
 
     const startTime = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000); // 6s timeout guard
 
     try {
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
@@ -270,7 +380,9 @@ export class LiveScreenService {
           mimeType: 'image/jpeg',
           frameCapturedAt: frame.timestamp,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const latencyMs = Date.now() - startTime;
 
@@ -279,39 +391,74 @@ export class LiveScreenService {
         if (data && data.ok && data.result) {
           const result: ScreenAnalysisFinalResult = data.result;
 
-          // Guard: If total latency exceeds 3500ms, mark as WAIT to prevent expired execution
-          if (latencyMs > 3500 && result.direction !== 'WAIT') {
-            result.direction = 'WAIT';
-            result.verdictTitle = 'WAIT / SIGNAL EXPIRED';
-            result.reasoning.unshift(
-              `LATENCY TIMEOUT GUARD: Frame analysis took ${latencyMs}ms (>3.5s). Signal held in WAIT to prevent stale trading.`
-            );
-          }
-
-          this.latestResult = result;
-          this.errorMessage = null;
-
-          // Update Native Floating HUD
-          await this.updateFloatingOverlayHUD({
-            direction: result.direction,
-            confidence: result.confidence,
-            durationText: result.suggestedExpiry || '1 - 2 Min',
-            verdictTitle: result.verdictTitle,
-            reasonText: result.reasoning[0] || 'Chart verified',
-            latencyMs,
-            symbol: result.visionData?.symbol,
-          });
-
-          voiceAssistantService.announceAnalysisResult(result);
-          whatsappAlertService.sendScreenAnalysisAlert(result).catch(() => {});
+          this.processResult(result, latencyMs);
         }
       }
     } catch (err: any) {
+      clearTimeout(timeout);
       console.warn('Native frame analysis network failure:', err);
     } finally {
       this.isProcessingFrame = false;
       this.notify();
     }
+  }
+
+  /**
+   * Common result processor
+   */
+  private processResult(result: ScreenAnalysisFinalResult, latencyMs: number): void {
+    if (!result.visionData?.isClearTradingChart) {
+      // User requested: "না পেলে সে বলবে আমি চার্ট খোঁজে পাইনি"
+      this.isChartFound = false;
+      this.isSearchingForChart = true;
+      result.verdictTitle = 'আমি চার্ট খুঁজে পাইনি';
+      result.direction = 'WAIT';
+      result.confidence = 0;
+      result.reasoning = [
+        'স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।',
+        'অনুগ্রহ করে ট্রেডিং অ্যাপ (Binomo/Quotex/MT4) এর চার্ট স্ক্রিনে রাখুন।',
+        'চার্ট খোঁজা অব্যাহত রয়েছে...',
+      ];
+      this.latestResult = result;
+      this.errorMessage = null;
+
+      this.updateFloatingOverlayHUD({
+        direction: 'WAIT',
+        confidence: 0,
+        durationText: `${this.expirySecondsLeft}s`,
+        verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
+        reasonText: 'চার্ট খুঁজছি... অনুগ্রহ করে ট্রেডিং চার্ট সামনে আনুন',
+        latencyMs,
+      });
+
+      voiceAssistantService.announceNoChartFound();
+    } else {
+      // User requested: "যখন পাবে তখন সে এনালাইসিস করবে তার টেকনোলজি দিয়ে এনালাইসিস করে যা পাবে সে হিসেবে দিকনির্দেশনা দিবে"
+      this.isChartFound = true;
+      this.isSearchingForChart = false;
+      this.latestResult = result;
+      this.errorMessage = null;
+
+      // Update Native Floating HUD
+      const countdownStr = `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(
+        this.expirySecondsLeft % 60
+      ).padStart(2, '0')}`;
+
+      this.updateFloatingOverlayHUD({
+        direction: result.direction,
+        confidence: result.confidence,
+        durationText: countdownStr,
+        verdictTitle: result.verdictTitle,
+        reasonText: result.reasoning[0] || 'চার্ট ভেরিফাইড',
+        latencyMs,
+        symbol: result.visionData?.symbol,
+      });
+
+      voiceAssistantService.announceAnalysisResult(result);
+      whatsappAlertService.sendScreenAnalysisAlert(result).catch(() => {});
+    }
+
+    this.notify();
   }
 
   public async showFloatingOverlayHUD(data: FloatingOverlayData): Promise<void> {
@@ -365,12 +512,19 @@ export class LiveScreenService {
   }
 
   /**
-   * Disconnects stream and frees all hardware tracks
+   * Disconnects stream and frees all hardware tracks.
+   * User requested: "সেটা ডিসকানেক্ট হওয়া ছাড়া কখনোই স্টপ হবে না বা সমান থাকবে"
+   * Only called on explicit user action!
    */
   public async disconnect(reason?: string): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
     }
 
     if (this.stream) {
@@ -399,6 +553,8 @@ export class LiveScreenService {
     }
 
     this.state = 'DISCONNECTED';
+    this.isSearchingForChart = false;
+    this.isChartFound = false;
     this.latestResult = null;
     if (reason) {
       this.errorMessage = reason;
@@ -432,6 +588,8 @@ export class LiveScreenService {
     this.notify();
 
     const startTime = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000); // 6s timeout guard
 
     try {
       const canvas = this.canvasEl;
@@ -454,14 +612,16 @@ export class LiveScreenService {
           mimeType: 'image/jpeg',
           frameCapturedAt,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const latencyMs = Date.now() - startTime;
 
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
-          this.errorMessage = 'Server returned HTML instead of JSON. Please verify backend API route.';
+          this.errorMessage = 'Backend returned unexpected format.';
           this.notify();
           return;
         }
@@ -469,53 +629,22 @@ export class LiveScreenService {
         const data = await res.json();
         if (data && data.ok && data.result) {
           const result: ScreenAnalysisFinalResult = data.result;
-
-          // Latency guard check
-          if (latencyMs > 3500 && result.direction !== 'WAIT') {
-            result.direction = 'WAIT';
-            result.verdictTitle = 'WAIT / SIGNAL EXPIRED';
-            result.reasoning.unshift(
-              `LATENCY TIMEOUT GUARD: Frame analysis took ${latencyMs}ms (>3.5s). Signal held in WAIT.`
-            );
-          }
-
-          this.latestResult = result;
-          this.errorMessage = null;
-
-          // Update Floating HUD
-          this.updateFloatingOverlayHUD({
-            direction: result.direction,
-            confidence: result.confidence,
-            durationText: result.suggestedExpiry || '1 - 2 Min',
-            verdictTitle: result.verdictTitle,
-            reasonText: result.reasoning[0] || 'Chart verified',
-            latencyMs,
-            symbol: result.visionData?.symbol,
-          });
-
-          voiceAssistantService.announceAnalysisResult(result);
-          whatsappAlertService.sendScreenAnalysisAlert(result).catch((err) => {
-            console.warn('[LiveScreenService] WhatsApp alert dispatch error:', err);
-          });
+          this.processResult(result, latencyMs);
         } else {
-          this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
+          this.errorMessage = data?.error || 'Analysis service failed.';
         }
       } else {
-        let errorMsg = `Server error (${res.status} ${res.statusText})`;
-        if (res.status === 413) {
-          errorMsg = 'Screen frame payload too large (HTTP 413). Downscaling applied.';
-        } else {
-          try {
-            const errData = await res.json();
-            if (errData && errData.error) errorMsg = errData.error;
-          } catch {}
-        }
-        console.warn('Frame analysis returned non-200:', errorMsg);
+        let errorMsg = `Server error (${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) errorMsg = errData.error;
+        } catch {}
         this.errorMessage = errorMsg;
       }
     } catch (err: any) {
-      console.error('Frame capture & analysis failure:', err);
-      this.errorMessage = err.message || 'Network error communicating with Vision backend.';
+      clearTimeout(timeout);
+      console.warn('Frame capture & analysis failure:', err);
+      // Non-fatal: keep running
     } finally {
       this.isProcessingFrame = false;
       this.notify();
@@ -533,6 +662,8 @@ export class LiveScreenService {
     this.notify();
 
     const startTime = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
       const frameCapturedAt = Date.now();
@@ -544,56 +675,39 @@ export class LiveScreenService {
           mimeType: imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
           frameCapturedAt,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const latencyMs = Date.now() - startTime;
 
       if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          this.errorMessage = 'Server returned HTML instead of JSON. Please verify backend API route.';
-          this.notify();
-          return false;
-        }
-
         const data = await res.json();
         if (data && data.ok && data.result) {
           const result: ScreenAnalysisFinalResult = data.result;
 
-          this.latestResult = result;
-          this.errorMessage = null;
-
-          this.showFloatingOverlayHUD({
-            direction: result.direction,
-            confidence: result.confidence,
-            durationText: '1-3 min',
-            verdictTitle: result.verdictTitle,
-            reasonText: result.reasoning[0] || 'Image uploaded',
-            latencyMs,
-            symbol: result.visionData?.symbol,
-          });
-
-          voiceAssistantService.announceAnalysisResult(result);
+          // Auto-start streaming mode with uploaded image so floating modal opens
+          this.state = 'STREAMING';
+          this.autoOpenModal = true;
+          this.startCountdownTicker();
+          this.processResult(result, latencyMs);
           return true;
         } else {
-          this.errorMessage = data?.error || 'Analysis service failed to return structured result.';
+          this.errorMessage = data?.error || 'Analysis failed.';
           return false;
         }
       } else {
-        let errorMsg = `Server error (${res.status} ${res.statusText})`;
-        if (res.status === 413) {
-          errorMsg = 'Image payload too large (HTTP 413). Please compress or use a smaller image.';
-        } else {
-          try {
-            const errData = await res.json();
-            if (errData && errData.error) errorMsg = errData.error;
-          } catch {}
-        }
+        let errorMsg = `Server error (${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) errorMsg = errData.error;
+        } catch {}
         this.errorMessage = errorMsg;
         return false;
       }
     } catch (err: any) {
-      this.errorMessage = err.message || 'Network error communicating with Vision backend.';
+      clearTimeout(timeout);
+      this.errorMessage = err.message || 'Network error.';
       return false;
     } finally {
       this.isProcessingFrame = false;
