@@ -42,6 +42,15 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
 
+  // Diagnostic Status Panel Tracking (Rules 4, 5, 6, 7)
+  const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
+  const [lastFrameTime, setLastFrameTime] = useState<number>(liveScreenService.getLastFrameTimestamp());
+  const [resolution, setResolution] = useState<string>(liveScreenService.getResolution());
+  const [apiLatency, setApiLatency] = useState<number>(liveScreenService.getApiLatency());
+  const [aiState, setAiState] = useState<string>(liveScreenService.getAiState());
+  const [captureState, setCaptureState] = useState<string>(liveScreenService.getCaptureState());
+  const [lastErrorReason, setLastErrorReason] = useState<string | null>(liveScreenService.getLastErrorReason());
+
   // Subscribe to singleton liveScreenService updates
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
@@ -52,6 +61,14 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       setErrorMessage(liveScreenService.getErrorMessage());
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
+
+      setFrameCount(liveScreenService.getFrameCount());
+      setLastFrameTime(liveScreenService.getLastFrameTimestamp());
+      setResolution(liveScreenService.getResolution());
+      setApiLatency(liveScreenService.getApiLatency());
+      setAiState(liveScreenService.getAiState());
+      setCaptureState(liveScreenService.getCaptureState());
+      setLastErrorReason(liveScreenService.getLastErrorReason());
 
       // Auto-open floating modal upon connecting (as explicitly requested by user)
       if (liveScreenService.shouldAutoOpenModal() || (state === 'STREAMING' && !isOpen)) {
@@ -395,6 +412,119 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 লাইভ স্ক্রিন বর্তমানে ডিসকানেক্টেড।
               </div>
             )}
+
+            {/* Real-Time Diagnostic Status Panel (Rules 4, 5, 6, 7) */}
+            <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 text-[11px] space-y-1.5 font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Screen Capture:</span>
+                <span
+                  className={
+                    captureState === 'RUNNING' || isStreaming
+                      ? 'text-emerald-400 font-bold'
+                      : captureState === 'PAUSED'
+                      ? 'text-amber-400 font-bold'
+                      : 'text-slate-500'
+                  }
+                >
+                  {captureState === 'RUNNING' || isStreaming
+                    ? '● চলছে (Active)'
+                    : captureState === 'PAUSED'
+                    ? '⏸ স্থগিত (Paused)'
+                    : '○ বন্ধ (Stopped)'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Latest Frame:</span>
+                <span className="text-cyan-300 font-semibold">
+                  {frameCount > 0
+                    ? `#${frameCount} • ${lastFrameTime ? new Date(lastFrameTime).toLocaleTimeString() : '--'} (${resolution})`
+                    : 'অপেক্ষমাণ...'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Image Status:</span>
+                <span className={frameCount > 0 ? 'text-emerald-400' : 'text-slate-400'}>
+                  {frameCount > 0 ? '✓ ছবি পাওয়া গেছে' : 'ছবি পাওয়া যায়নি'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Chart Detection:</span>
+                <span
+                  className={
+                    isChartFound
+                      ? 'text-emerald-400 font-bold'
+                      : isStreaming
+                      ? 'text-amber-400'
+                      : 'text-slate-500'
+                  }
+                >
+                  {isChartFound
+                    ? '✓ চার্ট পাওয়া গেছে'
+                    : isStreaming
+                    ? '● শনাক্ত হচ্ছে...'
+                    : 'শনাক্ত করা যায়নি'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">AI Analysis:</span>
+                <span
+                  className={
+                    aiState === 'READY'
+                      ? 'text-emerald-400 font-bold'
+                      : aiState === 'ANALYZING'
+                      ? 'text-amber-400 animate-pulse'
+                      : aiState === 'ERROR' || aiState === 'TIMEOUT'
+                      ? 'text-rose-400 font-bold'
+                      : 'text-slate-400'
+                  }
+                >
+                  {aiState === 'ANALYZING'
+                    ? `বিশ্লেষণ চলছে... (${apiLatency > 0 ? apiLatency + 'ms' : ''})`
+                    : aiState === 'READY'
+                    ? `সম্পন্ন (${apiLatency}ms)`
+                    : aiState === 'TIMEOUT'
+                    ? 'টাইমআউট'
+                    : aiState === 'ERROR'
+                    ? 'ব্যর্থ'
+                    : 'অপেক্ষমাণ'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-slate-800/80 pt-1.5 mt-1">
+                <span className="text-slate-400">Result:</span>
+                <span
+                  className={
+                    isChartFound && result?.direction === 'UP'
+                      ? 'text-emerald-400 font-black'
+                      : isChartFound && result?.direction === 'DOWN'
+                      ? 'text-rose-400 font-black'
+                      : 'text-amber-400 font-bold'
+                  }
+                >
+                  {isChartFound && result
+                    ? result.direction === 'UP'
+                      ? '▲ BUY / CALL'
+                      : result.direction === 'DOWN'
+                      ? '▼ SELL / PUT'
+                      : '⏸ WAIT'
+                    : '⏸ WAIT'}
+                </span>
+              </div>
+
+              {(errorMessage || lastErrorReason) && (
+                <div className="flex items-start gap-1.5 text-rose-300 bg-rose-950/70 p-2 rounded-xl border border-rose-800/60 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-[10px] leading-tight break-all">
+                    <span className="font-bold">ত্রুটি: </span>
+                    {errorMessage || lastErrorReason}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Action Button Bar */}

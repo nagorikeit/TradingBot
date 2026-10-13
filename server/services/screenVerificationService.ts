@@ -360,7 +360,13 @@ export class ScreenVerificationService {
       score += bullishIndicators;
       score -= bearishIndicators;
 
-      if (score >= 2) {
+      if (visionData.lastCandleDirection === 'UNCERTAIN' || visionData.confidenceScore === 0) {
+        direction = 'WAIT';
+        confidence = 0;
+        verdictTitle = `WAIT (${assetName})`;
+        suggestedExpiry = 'N/A';
+        reasoning.push(visionData.visionSummary || 'ক্যান্ডেলস্টিক দিকনির্দেশনা অনিশ্চিত—অনুমানভিত্তিক ট্রেড স্থগিত, WAIT রাখা হয়েছে।');
+      } else if (score >= 2) {
         direction = 'UP';
         confidence = Math.min(92, 60 + score * 7);
         verdictTitle = `UP / CALL (${assetName})`;
@@ -372,10 +378,10 @@ export class ScreenVerificationService {
         reasoning.push(`টেকনিক্যাল বায়াস বেয়ারিশ (স্কোর: ${score})। ডাউনট্রেন্ড কাঠামো ও শক্তিশালী বিক্রয় চাপ।`);
       } else {
         direction = 'WAIT';
-        confidence = 40;
+        confidence = 0;
         verdictTitle = `WAIT / কনসোলিডেশন (${assetName})`;
         suggestedExpiry = 'N/A';
-        reasoning.push(`মার্কেট পার্শ্ববর্তী বা পরস্পরবিরোধী ক্যান্ডেল প্যাটার্নে রয়েছে। ব্রেকআউটের জন্য অপেক্ষা করুন।`);
+        reasoning.push(`মার্কেট পার্শ্ববর্তী বা নিরপেক্ষ ক্যান্ডেল প্যাটার্নে রয়েছে। নিশ্চিত ব্রেকআউটের জন্য অপেক্ষা করুন।`);
       }
 
       if (visionData.candlestickPattern) {

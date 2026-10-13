@@ -35,6 +35,16 @@ export class LiveScreenService {
   private isChartFound: boolean = false;
   private expirySecondsLeft: number = 60; // 1-minute candle default countdown
 
+  // Diagnostic Status Panel Tracking (Rules 4, 5, 6, 7)
+  private latestFrameCount: number = 0;
+  private latestFrameTimestamp: number = 0;
+  private latestResolution: string = '720p';
+  private latestApiLatencyMs: number = 0;
+  private aiState: 'IDLE' | 'ANALYZING' | 'READY' | 'ERROR' | 'TIMEOUT' = 'IDLE';
+  private captureState: 'RUNNING' | 'STOPPED' | 'PAUSED' | 'PERMISSION_REQ' = 'STOPPED';
+  private consecutiveNetworkFailures: number = 0;
+  private lastErrorReason: string | null = null;
+
   private constructor() {
     if (typeof document !== 'undefined') {
       this.videoEl = document.createElement('video');
@@ -106,6 +116,34 @@ export class LiveScreenService {
   public isSignalStale(_ttlMs: number = 15000): boolean {
     // Live stream never marks signal as stopped or broken - stays active continuously
     return false;
+  }
+
+  public getFrameCount(): number {
+    return this.latestFrameCount;
+  }
+
+  public getLastFrameTimestamp(): number {
+    return this.latestFrameTimestamp;
+  }
+
+  public getResolution(): string {
+    return this.latestResolution;
+  }
+
+  public getApiLatency(): number {
+    return this.latestApiLatencyMs;
+  }
+
+  public getAiState(): 'IDLE' | 'ANALYZING' | 'READY' | 'ERROR' | 'TIMEOUT' {
+    return this.aiState;
+  }
+
+  public getCaptureState(): 'RUNNING' | 'STOPPED' | 'PAUSED' | 'PERMISSION_REQ' {
+    return this.captureState;
+  }
+
+  public getLastErrorReason(): string | null {
+    return this.lastErrorReason;
   }
 
   public getStream(): MediaStream | null {
@@ -387,20 +425,48 @@ export class LiveScreenService {
   }
 
   /**
+   * Helper to dispatch immediate error status to the floating overlay and frontend
+   */
+  private notifyOverlayError(errorMsg: string, latencyMs: number = 0): void {
+    this.updateFloatingOverlayHUD({
+      direction: 'WAIT',
+      confidence: 0,
+      durationText: '--:--',
+      verdictTitle: '⚠️ ' + errorMsg,
+      reasonText: 'পরবর্তী ফ্রেম অপেক্ষা...',
+      latencyMs,
+      frameCount: this.latestFrameCount,
+      lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
+      resolution: this.latestResolution,
+      captureState: this.captureState,
+      aiState: this.aiState,
+      errorReason: errorMsg,
+    });
+  }
+
+  /**
    * Handles frame emitted by Native Android MediaProjection
    */
   private async handleIncomingNativeFrame(frame: NativeCaptureFrameEvent): Promise<void> {
+    this.latestFrameCount = frame.sequenceId;
+    this.latestFrameTimestamp = frame.timestamp;
+    this.latestResolution = `${frame.width}x${frame.height}`;
+    this.captureState = 'RUNNING';
+
+    // Rule 7: Discard old frame sequence or concurrent ongoing frame
     if (frame.sequenceId <= this.latestProcessedSequenceId || this.isProcessingFrame) {
       return;
     }
 
     this.latestProcessedSequenceId = frame.sequenceId;
     this.isProcessingFrame = true;
+    this.aiState = 'ANALYZING';
     this.notify();
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000); // 6s timeout guard
+    // 10-second timeout guard for reliable mobile network transport
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
@@ -416,18 +482,54 @@ export class LiveScreenService {
       clearTimeout(timeout);
 
       const latencyMs = Date.now() - startTime;
+      this.latestApiLatencyMs = latencyMs;
 
       if (res.ok) {
         const data = await res.json();
         if (data && data.ok && data.result) {
           const result: ScreenAnalysisFinalResult = data.result;
-
+          this.consecutiveNetworkFailures = 0;
+          this.lastErrorReason = null;
+          this.errorMessage = null;
+          this.aiState = 'READY';
           this.processResult(result, latencyMs);
+        } else {
+          this.aiState = 'ERROR';
+          const errMsg = data?.error || 'সার্ভার রেসপন্স ব্যর্থ হয়েছে';
+          this.lastErrorReason = errMsg;
+          this.errorMessage = errMsg;
+          this.notifyOverlayError(errMsg, latencyMs);
         }
+      } else {
+        let errText = `সার্ভার এরর (${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) errText = errData.error;
+        } catch {}
+        this.consecutiveNetworkFailures++;
+        this.aiState = 'ERROR';
+        this.lastErrorReason = errText;
+        this.errorMessage = errText;
+        this.notifyOverlayError(errText, latencyMs);
       }
     } catch (err: any) {
       clearTimeout(timeout);
-      console.warn('Native frame analysis network failure:', err);
+      const latencyMs = Date.now() - startTime;
+      this.latestApiLatencyMs = latencyMs;
+      this.consecutiveNetworkFailures++;
+
+      const isTimeout = err.name === 'AbortError';
+      const errorMsg = isTimeout
+        ? 'নেটওয়ার্ক টাইমআউট (১০ সে.)'
+        : (err.message || 'নেটওয়ার্ক সংযোগ বিচ্ছিন্ন');
+
+      this.aiState = isTimeout ? 'TIMEOUT' : 'ERROR';
+      this.lastErrorReason = errorMsg;
+      this.errorMessage = errorMsg;
+      console.warn('Native frame analysis network failure:', errorMsg);
+
+      // Rule 5: Show clear error immediately instead of endless scanning
+      this.notifyOverlayError(errorMsg, latencyMs);
     } finally {
       this.isProcessingFrame = false;
       this.notify();
@@ -439,7 +541,6 @@ export class LiveScreenService {
    */
   private processResult(result: ScreenAnalysisFinalResult, latencyMs: number): void {
     if (!result.visionData?.isClearTradingChart) {
-      // User requested: "না পেলে সে বলবে আমি চার্ট খোঁজে পাইনি"
       this.isChartFound = false;
       this.isSearchingForChart = true;
       if (this.countdownTimer) {
@@ -463,14 +564,18 @@ export class LiveScreenService {
         direction: 'WAIT',
         confidence: 0,
         durationText: '--:--',
-        verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+        verdictTitle: 'চার্ট পাওয়া যায়নি',
         reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
         latencyMs,
+        frameCount: this.latestFrameCount,
+        lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
+        resolution: this.latestResolution,
+        captureState: this.captureState,
+        aiState: this.aiState,
       });
 
       voiceAssistantService.announceNoChartFound();
     } else {
-      // User requested: "ক্যান্ডেল এনালাইসিস করার পর তখন শুরু হবে যে ক্যান্ডেলটি কত সময় পর্যন্ত বিদ্যমান থাকতে পারে"
       this.isChartFound = true;
       this.isSearchingForChart = false;
       this.latestResult = result;
@@ -485,7 +590,7 @@ export class LiveScreenService {
         this.expirySecondsLeft % 60
       ).padStart(2, '0')}`;
 
-      // Update Native Floating HUD with sleek, compact, high-impact data
+      // Update Native Floating HUD with full diagnostic context
       this.updateFloatingOverlayHUD({
         direction: result.direction,
         confidence: result.confidence,
@@ -502,6 +607,11 @@ export class LiveScreenService {
           'মোমেন্টাম নিশ্চিত',
         latencyMs,
         symbol: result.visionData?.symbol || 'AUD/CHF',
+        frameCount: this.latestFrameCount,
+        lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
+        resolution: this.latestResolution,
+        captureState: this.captureState,
+        aiState: this.aiState,
       });
 
       voiceAssistantService.announceAnalysisResult(result);
@@ -543,11 +653,28 @@ export class LiveScreenService {
   public pause(): void {
     if (this.state !== 'STREAMING') return;
     this.state = 'PAUSED';
+    this.captureState = 'PAUSED';
+    this.aiState = 'IDLE';
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
     this.notify();
+
+    // Immediately reflect pause state on native floating overlay
+    this.updateFloatingOverlayHUD({
+      direction: 'WAIT',
+      confidence: 0,
+      durationText: '--:--',
+      verdictTitle: '⏸ PAUSED',
+      reasonText: 'ক্যাপচার স্থগিত করা হয়েছে',
+      latencyMs: 0,
+      frameCount: this.latestFrameCount,
+      resolution: this.latestResolution,
+      captureState: 'PAUSED',
+      aiState: 'IDLE',
+      errorReason: '',
+    });
   }
 
   /**
@@ -556,7 +683,24 @@ export class LiveScreenService {
   public resume(): void {
     if (this.state !== 'PAUSED') return;
     this.state = 'STREAMING';
+    this.captureState = 'RUNNING';
     this.notify();
+
+    // Immediately reflect resume state on native floating overlay
+    this.updateFloatingOverlayHUD({
+      direction: 'WAIT',
+      confidence: 0,
+      durationText: '--:--',
+      verdictTitle: '● চার্ট স্ক্যান হচ্ছে...',
+      reasonText: 'ক্যাপচার পুনরায় সক্রিয়',
+      latencyMs: 0,
+      frameCount: this.latestFrameCount,
+      resolution: this.latestResolution,
+      captureState: 'RUNNING',
+      aiState: 'ANALYZING',
+      errorReason: '',
+    });
+
     this.captureAndAnalyzeCurrentFrame();
     this.resetIntervalTimer();
   }
@@ -603,6 +747,8 @@ export class LiveScreenService {
     }
 
     this.state = 'DISCONNECTED';
+    this.captureState = 'STOPPED';
+    this.aiState = 'IDLE';
     this.isSearchingForChart = false;
     this.isChartFound = false;
     this.latestResult = null;

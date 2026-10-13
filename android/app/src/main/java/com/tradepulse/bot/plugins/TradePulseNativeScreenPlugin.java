@@ -425,11 +425,21 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         String reasonText = call.getString("reasonText", "");
         String symbol = call.getString("symbol", "CHART");
 
+        int frameCount = call.getInt("frameCount", sequenceCounter);
+        String lastFrameTime = call.getString("lastFrameTime", "");
+        String resolution = call.getString("resolution", "720p");
+        int latencyMs = call.getInt("latencyMs", 0);
+        String errorReason = call.getString("errorReason", "");
+        String aiState = call.getString("aiState", "IDLE");
+
         TextView dirView = overlayView.findViewWithTag("directionText");
         TextView detView = overlayView.findViewWithTag("detailsText");
 
+        boolean hasError = errorReason != null && !errorReason.trim().isEmpty();
+
         int strokeColor = 0xFFF59E0B; // Amber
-        if ("UP".equalsIgnoreCase(direction)) strokeColor = 0xFF10B981; // Emerald Green
+        if (hasError) strokeColor = 0xFFEF4444; // Rose Red
+        else if ("UP".equalsIgnoreCase(direction)) strokeColor = 0xFF10B981; // Emerald Green
         else if ("DOWN".equalsIgnoreCase(direction)) strokeColor = 0xFFEF4444; // Rose Red
 
         // Update rounded shape border dynamically
@@ -441,21 +451,30 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         overlayView.setBackground(shape);
 
         if (dirView != null && detView != null) {
-            // When still searching for chart: single compact pill line, zero clutter
-            if ("WAIT".equalsIgnoreCase(direction) && (confidence <= 0 || "--:--".equals(durationText))) {
+            if (hasError) {
+                // Rule 5: Show clear error state on overlay instead of endless scanning
+                dirView.setTextColor(0xFFEF4444);
+                dirView.setText("⚠️ " + errorReason);
+                detView.setVisibility(View.VISIBLE);
+                detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
+            } else if ("WAIT".equalsIgnoreCase(direction) && (confidence <= 0 || "--:--".equals(durationText))) {
+                // Live chart scan state with frame count and resolution visible
                 dirView.setTextColor(0xFFF59E0B);
                 dirView.setText("● চার্ট স্ক্যান হচ্ছে...");
-                detView.setVisibility(View.GONE);
+                detView.setVisibility(View.VISIBLE);
+                String meta = "Frame #" + frameCount + " (" + resolution + ")";
+                if (latencyMs > 0) meta += " • ⚡ " + latencyMs + "ms";
+                detView.setText(meta);
             } else {
-                // When chart analyzed: ultra-sleek 2-line pill format
+                // When chart analyzed: ultra-sleek 2-line pill format with signal, countdown, and metrics
                 detView.setVisibility(View.VISIBLE);
                 String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (UP)" : "DOWN".equalsIgnoreCase(direction) ? "▼ PUT (DOWN)" : "● WAIT";
                 dirView.setTextColor(strokeColor);
                 dirView.setText(badgeText + "  •  ⏱ " + durationText + " (" + confidence + "%)");
 
-                String shortReason = reasonText.length() > 30 ? reasonText.substring(0, 28) + ".." : reasonText;
-                if (shortReason.isEmpty()) shortReason = "মোমেন্টাম সিগন্যাল";
-                detView.setText(symbol + " • " + shortReason);
+                String shortReason = reasonText.length() > 28 ? reasonText.substring(0, 26) + ".." : reasonText;
+                if (shortReason.isEmpty()) shortReason = "মোমেন্টাম নিশ্চিত";
+                detView.setText(symbol + " • " + shortReason + " [#" + frameCount + " • " + latencyMs + "ms]");
             }
         }
     }

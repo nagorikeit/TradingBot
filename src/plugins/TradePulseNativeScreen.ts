@@ -15,6 +15,12 @@ export interface FloatingOverlayData {
   latencyMs: number;
   symbol?: string;
   isStale?: boolean;
+  frameCount?: number;
+  lastFrameTime?: string;
+  resolution?: string;
+  captureState?: 'RUNNING' | 'STOPPED' | 'PAUSED' | 'PERMISSION_REQ';
+  aiState?: 'IDLE' | 'ANALYZING' | 'READY' | 'ERROR' | 'TIMEOUT';
+  errorReason?: string;
 }
 
 export interface NativeCaptureFrameEvent {

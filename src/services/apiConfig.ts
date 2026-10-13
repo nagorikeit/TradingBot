@@ -56,3 +56,41 @@ export function getCustomApiUrl(): string {
   if (typeof window === 'undefined') return '';
   return localStorage.getItem(STORAGE_KEY_BACKEND_URL) || '';
 }
+
+/**
+ * Checks backend health and returns latency, reachable status, or failure cause
+ */
+export async function checkBackendHealth(timeoutMs: number = 6000): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  url: string;
+  error?: string;
+}> {
+  const startTime = Date.now();
+  const targetUrl = getApiUrl('/api/health');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const latencyMs = Date.now() - startTime;
+    if (res.ok) {
+      return { ok: true, latencyMs, url: targetUrl };
+    }
+    return { ok: false, latencyMs, url: targetUrl, error: `HTTP ${res.status}` };
+  } catch (err: any) {
+    clearTimeout(timer);
+    const latencyMs = Date.now() - startTime;
+    return {
+      ok: false,
+      latencyMs,
+      url: targetUrl,
+      error: err.name === 'AbortError' ? 'Connection timeout' : (err.message || 'Network unreachable'),
+    };
+  }
+}

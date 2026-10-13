@@ -32,17 +32,8 @@ export class VisionAnalysisService {
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
 
     if (!process.env.GEMINI_API_KEY) {
-      // Graceful fallback simulation if GEMINI_API_KEY is not configured
-      return {
-        isClearTradingChart: false,
-        marketType: 'UNKNOWN',
-        lastCandleDirection: 'UNCERTAIN',
-        chartStructure: 'UNCLEAR',
-        indicatorsIdentified: [],
-        visionSummary: 'GEMINI_API_KEY is not configured in server environment.',
-        confidenceScore: 0,
-        containsSensitivePrivateData: false,
-      };
+      // Rule 8: When API key is not configured, do not guess BUY/SELL; use heuristic detector for frame presence but return WAIT
+      return this.heuristicChartDetector(cleanBase64);
     }
 
     const ai = this.ai || new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -67,90 +58,110 @@ CRITICAL RULES:
 
     try {
       if (process.env.GEMINI_API_KEY) {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: [
-            {
-              role: 'user',
-              parts: [
+        let response = null;
+        let lastErr: any = null;
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            response = await ai.models.generateContent({
+              model: 'gemini-3.8-flash',
+              contents: [
                 {
-                  inlineData: {
-                    mimeType: resolvedMimeType,
-                    data: cleanBase64,
-                  },
-                },
-                {
-                  text: 'Examine this live trading chart screen capture. Detect the asset symbol, timeframe, candlestick patterns, price action direction (UP/CALL or DOWN/PUT), and confirm isClearTradingChart is true.',
+                  role: 'user',
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: resolvedMimeType,
+                        data: cleanBase64,
+                      },
+                    },
+                    {
+                      text: 'Examine this live trading chart screen capture. Detect the asset symbol, timeframe, candlestick patterns, price action direction (UP/CALL or DOWN/PUT), and confirm isClearTradingChart is true.',
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                symbol: { type: Type.STRING, description: 'Asset symbol e.g. AUD/CHF, EUR/USD, BTC/USDT' },
-                timeframe: { type: Type.STRING, description: 'Timeframe e.g. 1m, 5m, 15m, 1h' },
-                marketType: {
-                  type: Type.STRING,
-                  description: 'CRYPTO, FOREX, STOCKS, COMMODITY, or UNKNOWN',
-                },
-                lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest candle price visible on chart' },
-                lastCandleDirection: {
-                  type: Type.STRING,
-                  description: 'BULLISH, BEARISH, DOJI, or UNCERTAIN',
-                },
-                candlestickPattern: { type: Type.STRING, description: 'Identified pattern name' },
-                chartStructure: {
-                  type: Type.STRING,
-                  description: 'UPTREND, DOWNTREND, RANGING, BREAKOUT, CONSOLIDATION, or UNCLEAR',
-                },
-                indicatorsIdentified: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      description: { type: Type.STRING },
-                      bias: { type: Type.STRING, description: 'BULLISH, BEARISH, or NEUTRAL' },
-                    },
-                    required: ['name', 'description', 'bias'],
-                  },
-                },
-                keyLevels: {
+              config: {
+                systemInstruction: systemPrompt,
+                responseMimeType: 'application/json',
+                responseSchema: {
                   type: Type.OBJECT,
                   properties: {
-                    support: { type: Type.NUMBER },
-                    resistance: { type: Type.NUMBER },
+                    symbol: { type: Type.STRING, description: 'Asset symbol e.g. AUD/CHF, EUR/USD, BTC/USDT' },
+                    timeframe: { type: Type.STRING, description: 'Timeframe e.g. 1m, 5m, 15m, 1h' },
+                    marketType: {
+                      type: Type.STRING,
+                      description: 'CRYPTO, FOREX, STOCKS, COMMODITY, or UNKNOWN',
+                    },
+                    lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest candle price visible on chart' },
+                    lastCandleDirection: {
+                      type: Type.STRING,
+                      description: 'BULLISH, BEARISH, DOJI, or UNCERTAIN',
+                    },
+                    candlestickPattern: { type: Type.STRING, description: 'Identified pattern name' },
+                    chartStructure: {
+                      type: Type.STRING,
+                      description: 'UPTREND, DOWNTREND, RANGING, BREAKOUT, CONSOLIDATION, or UNCLEAR',
+                    },
+                    indicatorsIdentified: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name: { type: Type.STRING },
+                          description: { type: Type.STRING },
+                          bias: { type: Type.STRING, description: 'BULLISH, BEARISH, or NEUTRAL' },
+                        },
+                        required: ['name', 'description', 'bias'],
+                      },
+                    },
+                    keyLevels: {
+                      type: Type.OBJECT,
+                      properties: {
+                        support: { type: Type.NUMBER },
+                        resistance: { type: Type.NUMBER },
+                      },
+                    },
+                    visionSummary: { type: Type.STRING, description: 'Brief 1-2 sentence visual technical summary' },
+                    confidenceScore: { type: Type.NUMBER, description: 'Visual recognition confidence 0.0 to 1.0' },
+                    isClearTradingChart: { type: Type.BOOLEAN, description: 'Whether the image is a legible trading chart' },
+                    containsSensitivePrivateData: { type: Type.BOOLEAN, description: 'True ONLY if passwords or credit cards were visible' },
                   },
+                  required: [
+                    'marketType',
+                    'lastCandleDirection',
+                    'chartStructure',
+                    'indicatorsIdentified',
+                    'visionSummary',
+                    'confidenceScore',
+                    'isClearTradingChart',
+                    'containsSensitivePrivateData',
+                  ],
                 },
-                visionSummary: { type: Type.STRING, description: 'Brief 1-2 sentence visual technical summary' },
-                confidenceScore: { type: Type.NUMBER, description: 'Visual recognition confidence 0.0 to 1.0' },
-                isClearTradingChart: { type: Type.BOOLEAN, description: 'Whether the image is a legible trading chart' },
-                containsSensitivePrivateData: { type: Type.BOOLEAN, description: 'True ONLY if passwords or credit cards were visible' },
               },
-              required: [
-                'marketType',
-                'lastCandleDirection',
-                'chartStructure',
-                'indicatorsIdentified',
-                'visionSummary',
-                'confidenceScore',
-                'isClearTradingChart',
-                'containsSensitivePrivateData',
-              ],
-            },
-          },
-        });
+            });
+            break;
+          } catch (modelErr: any) {
+            lastErr = modelErr;
+            const errStr = String(modelErr?.message || modelErr);
+            if (attempt < 2 && (errStr.includes('503') || errStr.includes('demand') || errStr.includes('fetch failed'))) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              continue;
+            }
+            break;
+          }
+        }
 
-        const text = response.text?.trim() || '{}';
-        const parsed: ScreenVisionParsedData = JSON.parse(text);
+        if (response) {
+          const text = response.text?.trim() || '{}';
+          const parsed: ScreenVisionParsedData = JSON.parse(text);
 
-        // If Gemini successfully parsed a chart, return it
-        if (parsed.isClearTradingChart) {
-          return parsed;
+          // If Gemini successfully parsed a chart, return it
+          if (parsed.isClearTradingChart) {
+            return parsed;
+          }
+        } else if (lastErr) {
+          console.warn('[VisionAnalysisService] Gemini Vision call failure:', lastErr.message || lastErr);
         }
       }
     } catch (err: any) {
@@ -192,43 +203,31 @@ CRITICAL RULES:
       else if (bufferStr.includes('BTC') || bufferStr.includes('btc')) detectedSymbol = 'BTC/USDT';
       else if (bufferStr.includes('AUD') || bufferStr.includes('aud')) detectedSymbol = 'AUD/CHF';
 
-      // Candlestick pattern heuristic analysis
+      // STRICT USER RULE 8: When Gemini API fails or key is missing,
+      // DO NOT guess BUY/SELL with local heuristics; return WAIT with explicit reason!
       return {
         isClearTradingChart: true,
         symbol: detectedSymbol,
         timeframe: '1m',
         marketType: 'FOREX',
-        lastVisiblePrice: 0.58071,
-        lastCandleDirection: 'BULLISH',
-        candlestickPattern: 'Bullish Continuation / Higher Highs',
-        chartStructure: 'UPTREND',
-        indicatorsIdentified: [
-          {
-            name: 'Price Action & Support Breakout',
-            description: 'ক্যান্ডেলস্টিক চার্টে রেজিস্ট্যান্স স্তর অতিক্রম করে শক্তিশালী ঊর্ধ্বমুখী গতিবিধি।',
-            bias: 'BULLISH',
-          },
-        ],
-        keyLevels: {
-          support: 0.5805,
-          resistance: 0.58075,
-        },
-        visionSummary: `${detectedSymbol} চার্টে স্পষ্ট গ্রিন ক্যান্ডেলস্টিক এবং আপট্রেন্ড দৃশ্যমান। বুলিশ মোমেন্টাম বজায় রয়েছে।`,
-        confidenceScore: 0.88,
+        lastVisiblePrice: 0,
+        lastCandleDirection: 'UNCERTAIN',
+        chartStructure: 'UNCLEAR',
+        candlestickPattern: 'Gemini AI অফলাইন (অপেক্ষমাণ)',
+        indicatorsIdentified: [],
+        visionSummary: 'স্ক্রিন ফ্রেম গৃহীত হয়েছে কিন্তু Gemini AI ভিশন সংযোগ পাওয়া যায়নি। অনুমানভিত্তিক ট্রেড নিষিদ্ধ—WAIT রাখা হয়েছে।',
+        confidenceScore: 0,
         containsSensitivePrivateData: false,
       };
     } catch {
       return {
-        isClearTradingChart: true,
-        symbol: 'AUD/CHF',
-        timeframe: '1m',
-        marketType: 'FOREX',
-        lastVisiblePrice: 0.58071,
-        lastCandleDirection: 'BULLISH',
-        chartStructure: 'UPTREND',
+        isClearTradingChart: false,
+        marketType: 'UNKNOWN',
+        lastCandleDirection: 'UNCERTAIN',
+        chartStructure: 'UNCLEAR',
         indicatorsIdentified: [],
-        visionSummary: 'লাইভ ক্যান্ডেলস্টিক চার্ট শনাক্ত হয়েছে।',
-        confidenceScore: 0.82,
+        visionSummary: 'ফ্রেম প্রসেসিং ব্যর্থ হয়েছে।',
+        confidenceScore: 0,
         containsSensitivePrivateData: false,
       };
     }
