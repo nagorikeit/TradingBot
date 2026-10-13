@@ -169,7 +169,8 @@ export class LiveScreenService {
         this.state = 'STREAMING';
         this.autoOpenModal = true;
         this.isSearchingForChart = true;
-        this.startCountdownTicker();
+        this.isChartFound = false;
+        this.expirySecondsLeft = 0;
         this.notify();
 
         voiceAssistantService.announceSearchingForChart();
@@ -181,9 +182,9 @@ export class LiveScreenService {
         this.showFloatingOverlayHUD({
           direction: 'WAIT',
           confidence: 0,
-          durationText: '01:00',
-          verdictTitle: 'চার্ট খোঁজা হচ্ছে...',
-          reasonText: 'কানেক্ট সফল হয়েছে। স্ক্রিনে ট্রেডিং চার্ট রাখা নিশ্চিত করুন...',
+          durationText: '--:--',
+          verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+          reasonText: 'ট্রেডিং চার্ট স্ক্রিনে রাখুন',
           latencyMs: 0,
         });
 
@@ -205,8 +206,9 @@ export class LiveScreenService {
     this.state = 'STREAMING';
     this.autoOpenModal = true;
     this.isSearchingForChart = true;
+    this.isChartFound = false;
     this.errorMessage = null;
-    this.startCountdownTicker();
+    this.expirySecondsLeft = 0;
     this.notify();
 
     voiceAssistantService.announceSearchingForChart();
@@ -295,16 +297,19 @@ export class LiveScreenService {
         this.autoOpenModal = true;
         this.isSearchingForChart = true;
         this.errorMessage = null;
-        this.startCountdownTicker();
+        this.autoOpenModal = true;
+        this.isSearchingForChart = true;
+        this.isChartFound = false;
+        this.expirySecondsLeft = 0;
         this.notify();
 
-        // Show floating HUD widget over other apps
+        // Show floating HUD widget over other apps with smart compact format
         await this.showFloatingOverlayHUD({
           direction: 'WAIT',
           confidence: 0,
-          durationText: '01:00',
-          verdictTitle: 'চার্ট খোঁজা হচ্ছে...',
-          reasonText: 'ট্রেডিং অ্যাপ খুলুন (Binomo, Quotex, MT4)। চার্ট শনাক্ত হলে সিগন্যাল আসবে।',
+          durationText: '--:--',
+          verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+          reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
           latencyMs: 0,
         });
 
@@ -326,25 +331,51 @@ export class LiveScreenService {
   }
 
   /**
-   * Countdown ticker: decrements second-by-second for the active candle expiry
-   * Never stops until disconnect()!
+   * Countdown ticker: starts ONLY after candle analysis is complete!
+   * Counts down remaining time of the candle, then re-evaluates the next candle.
    */
   private startCountdownTicker(): void {
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
     }
 
-    // Default candle countdown: 60s
+    // Default candle countdown duration: 60 seconds
     this.expirySecondsLeft = 60;
 
     this.countdownTimer = setInterval(() => {
-      if (this.state !== 'STREAMING') return;
+      if (this.state !== 'STREAMING' || !this.isChartFound) return;
 
       this.expirySecondsLeft -= 1;
+
+      // Update overlay HUD countdown every second
+      const countdownStr = `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(
+        this.expirySecondsLeft % 60
+      ).padStart(2, '0')}`;
+
+      if (this.latestResult) {
+        this.updateFloatingOverlayHUD({
+          direction: this.latestResult.direction,
+          confidence: this.latestResult.confidence,
+          durationText: countdownStr,
+          verdictTitle:
+            this.latestResult.direction === 'UP'
+              ? 'CALL (UP)'
+              : this.latestResult.direction === 'DOWN'
+              ? 'PUT (DOWN)'
+              : 'WAIT',
+          reasonText:
+            this.latestResult.visionData?.candlestickPattern ||
+            this.latestResult.reasoning[0] ||
+            'মোমেন্টাম নিশ্চিত',
+          latencyMs: 0,
+          symbol: this.latestResult.visionData?.symbol,
+        });
+      }
+
       if (this.expirySecondsLeft <= 0) {
-        // Candle time ended - evaluate next candle!
+        // Candle time ended - announce and evaluate next candle
         voiceAssistantService.announceCandleExpired();
-        this.expirySecondsLeft = 60; // reset for next candle
+        this.expirySecondsLeft = 60;
 
         // Immediate snapshot trigger for next candle
         if (this.stream) {
@@ -411,6 +442,12 @@ export class LiveScreenService {
       // User requested: "না পেলে সে বলবে আমি চার্ট খোঁজে পাইনি"
       this.isChartFound = false;
       this.isSearchingForChart = true;
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
+      }
+      this.expirySecondsLeft = 0;
+
       result.verdictTitle = 'আমি চার্ট খুঁজে পাইনি';
       result.direction = 'WAIT';
       result.confidence = 0;
@@ -425,33 +462,46 @@ export class LiveScreenService {
       this.updateFloatingOverlayHUD({
         direction: 'WAIT',
         confidence: 0,
-        durationText: `${this.expirySecondsLeft}s`,
-        verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
-        reasonText: 'চার্ট খুঁজছি... অনুগ্রহ করে ট্রেডিং চার্ট সামনে আনুন',
+        durationText: '--:--',
+        verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+        reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
         latencyMs,
       });
 
       voiceAssistantService.announceNoChartFound();
     } else {
-      // User requested: "যখন পাবে তখন সে এনালাইসিস করবে তার টেকনোলজি দিয়ে এনালাইসিস করে যা পাবে সে হিসেবে দিকনির্দেশনা দিবে"
+      // User requested: "ক্যান্ডেল এনালাইসিস করার পর তখন শুরু হবে যে ক্যান্ডেলটি কত সময় পর্যন্ত বিদ্যমান থাকতে পারে"
       this.isChartFound = true;
       this.isSearchingForChart = false;
       this.latestResult = result;
       this.errorMessage = null;
 
-      // Update Native Floating HUD
+      // Start the countdown timer only now after analysis!
+      if (!this.countdownTimer || this.expirySecondsLeft <= 0) {
+        this.startCountdownTicker();
+      }
+
       const countdownStr = `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(
         this.expirySecondsLeft % 60
       ).padStart(2, '0')}`;
 
+      // Update Native Floating HUD with sleek, compact, high-impact data
       this.updateFloatingOverlayHUD({
         direction: result.direction,
         confidence: result.confidence,
         durationText: countdownStr,
-        verdictTitle: result.verdictTitle,
-        reasonText: result.reasoning[0] || 'চার্ট ভেরিফাইড',
+        verdictTitle:
+          result.direction === 'UP'
+            ? 'CALL (UP)'
+            : result.direction === 'DOWN'
+            ? 'PUT (DOWN)'
+            : 'WAIT',
+        reasonText:
+          result.visionData?.candlestickPattern ||
+          result.reasoning[0] ||
+          'মোমেন্টাম নিশ্চিত',
         latencyMs,
-        symbol: result.visionData?.symbol,
+        symbol: result.visionData?.symbol || 'AUD/CHF',
       });
 
       voiceAssistantService.announceAnalysisResult(result);

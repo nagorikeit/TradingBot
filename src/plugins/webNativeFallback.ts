@@ -170,6 +170,8 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
       });
     }
 
+    const isScanning = data.direction === 'WAIT' && (data.confidence <= 0 || data.durationText === '--:--');
+
     const badgeColor =
       data.direction === 'UP'
         ? '#10b981'
@@ -179,28 +181,37 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
 
     const bgGradient =
       data.direction === 'UP'
-        ? 'linear-gradient(135deg, rgba(6, 78, 59, 0.95), rgba(4, 47, 46, 0.95))'
+        ? 'linear-gradient(135deg, rgba(6, 78, 59, 0.95), rgba(15, 23, 42, 0.95))'
         : data.direction === 'DOWN'
-        ? 'linear-gradient(135deg, rgba(127, 29, 29, 0.95), rgba(88, 28, 28, 0.95))'
-        : 'linear-gradient(135deg, rgba(120, 53, 15, 0.95), rgba(69, 26, 3, 0.95))';
+        ? 'linear-gradient(135deg, rgba(127, 29, 29, 0.95), rgba(15, 23, 42, 0.95))'
+        : 'linear-gradient(135deg, rgba(120, 53, 15, 0.95), rgba(15, 23, 42, 0.95))';
 
-    this.overlayElement.innerHTML = `
-      <div style="background: ${bgGradient}; border: 1.5px solid ${badgeColor}; border-radius: 12px; padding: 10px 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); backdrop-filter: blur(8px); min-width: 200px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <span style="font-size: 14px; font-weight: 800; color: ${badgeColor}; letter-spacing: 0.5px;">${data.direction}</span>
-            <span style="font-size: 11px; background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 4px; color: #e2e8f0;">${data.confidence}% Conf</span>
+    const symbolText = data.symbol || 'AUD/CHF';
+    const shortReason = data.reasonText && data.reasonText.length > 28
+      ? data.reasonText.substring(0, 26) + '..'
+      : data.reasonText || 'মোমেন্টাম নিশ্চিত';
+
+    if (isScanning) {
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid ${badgeColor}; border-radius: 9999px; padding: 8px 18px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); display: flex; align-items: center; gap: 8px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeColor}; box-shadow: 0 0 10px ${badgeColor}; animation: pulse 1.5s infinite;"></span>
+          <span style="font-size: 13px; font-weight: 700; color: #fef08a; letter-spacing: 0.3px;">চার্ট স্ক্যান হচ্ছে...</span>
+        </div>
+      `;
+    } else {
+      const dirText = data.direction === 'UP' ? '▲ CALL (UP)' : data.direction === 'DOWN' ? '▼ PUT (DOWN)' : '● WAIT';
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid ${badgeColor}; border-radius: 20px; padding: 10px 16px; box-shadow: 0 14px 35px rgba(0,0,0,0.7); backdrop-filter: blur(14px); min-width: 200px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px;">
+            <span style="font-size: 13px; font-weight: 900; color: ${badgeColor}; letter-spacing: 0.4px;">${dirText}</span>
+            <span style="font-size: 11px; font-weight: 700; background: rgba(0,0,0,0.5); padding: 1px 7px; border-radius: 10px; color: #38bdf8; font-mono: monospace;">⏱ ${data.durationText || '01:00'}</span>
           </div>
-          <span style="font-size: 10px; color: #94a3b8; font-family: monospace;">${data.latencyMs}ms</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1;">
+            <span><b>${symbolText}</b> • ${shortReason}</span>
+            <span style="font-size: 10px; color: #94a3b8; margin-left: 6px;">${data.confidence}%</span>
+          </div>
         </div>
-        <div style="font-size: 12px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;">
-          ${data.verdictTitle || 'Analyzing...'}
-        </div>
-        <div style="font-size: 11px; color: #cbd5e1; line-height: 1.3; max-width: 190px;">
-          ⏱ <b>Expiry:</b> ${data.durationText || '1-3 min'}<br/>
-          💡 <span style="opacity: 0.9;">${data.reasonText ? data.reasonText.substring(0, 75) + '...' : 'Evaluating chart pattern'}</span>
-        </div>
-      </div>
-    `;
+      `;
+    }
   }
 }

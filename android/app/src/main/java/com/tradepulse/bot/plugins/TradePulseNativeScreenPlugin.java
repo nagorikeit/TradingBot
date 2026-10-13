@@ -362,12 +362,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         // Dynamic simple programmatically constructed card view
         final android.widget.LinearLayout layout = new android.widget.LinearLayout(getContext());
         layout.setOrientation(android.widget.LinearLayout.VERTICAL);
-        layout.setPadding(30, 24, 30, 24);
-        layout.setBackgroundColor(0xE60F172A); // Dark slate
+        layout.setPadding(36, 20, 36, 20);
+
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        shape.setCornerRadius(42f);
+        shape.setColor(0xF50F172A);
+        shape.setStroke(3, 0xFF38BDF8);
+        layout.setBackground(shape);
+        layout.setElevation(30f);
 
         TextView titleView = new TextView(getContext());
         titleView.setId(android.view.View.generateViewId());
-        titleView.setTextSize(14);
+        titleView.setTextSize(13);
         titleView.setTextColor(0xFF38BDF8);
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         titleView.setTag("directionText");
@@ -375,8 +382,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         TextView detailsView = new TextView(getContext());
         detailsView.setId(android.view.View.generateViewId());
-        detailsView.setTextSize(12);
-        detailsView.setTextColor(0xFFE2E8F0);
+        detailsView.setTextSize(11);
+        detailsView.setTextColor(0xFFCBD5E1);
         detailsView.setTag("detailsText");
         layout.addView(detailsView);
 
@@ -413,25 +420,43 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         String direction = call.getString("direction", "WAIT");
         int confidence = call.getInt("confidence", 0);
-        String durationText = call.getString("durationText", "1-3 min");
+        String durationText = call.getString("durationText", "--:--");
         String verdictTitle = call.getString("verdictTitle", "ANALYZING");
         String reasonText = call.getString("reasonText", "");
-        int latencyMs = call.getInt("latencyMs", 0);
+        String symbol = call.getString("symbol", "CHART");
 
         TextView dirView = overlayView.findViewWithTag("directionText");
         TextView detView = overlayView.findViewWithTag("detailsText");
 
-        if (dirView != null) {
-            int color = 0xFFF59E0B; // Yellow for WAIT
-            if ("UP".equalsIgnoreCase(direction)) color = 0xFF10B981; // Green
-            if ("DOWN".equalsIgnoreCase(direction)) color = 0xFFEF4444; // Red
-            dirView.setTextColor(color);
-            dirView.setText("● " + direction + " (" + confidence + "% Conf) • " + latencyMs + "ms");
-        }
+        int strokeColor = 0xFFF59E0B; // Amber
+        if ("UP".equalsIgnoreCase(direction)) strokeColor = 0xFF10B981; // Emerald Green
+        else if ("DOWN".equalsIgnoreCase(direction)) strokeColor = 0xFFEF4444; // Rose Red
 
-        if (detView != null) {
-            String shortReason = reasonText.length() > 60 ? reasonText.substring(0, 57) + "..." : reasonText;
-            detView.setText(verdictTitle + "\nExpiry: " + durationText + "\n" + shortReason);
+        // Update rounded shape border dynamically
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        shape.setCornerRadius(42f);
+        shape.setColor(0xF50F172A);
+        shape.setStroke(3, strokeColor);
+        overlayView.setBackground(shape);
+
+        if (dirView != null && detView != null) {
+            // When still searching for chart: single compact pill line, zero clutter
+            if ("WAIT".equalsIgnoreCase(direction) && (confidence <= 0 || "--:--".equals(durationText))) {
+                dirView.setTextColor(0xFFF59E0B);
+                dirView.setText("● চার্ট স্ক্যান হচ্ছে...");
+                detView.setVisibility(View.GONE);
+            } else {
+                // When chart analyzed: ultra-sleek 2-line pill format
+                detView.setVisibility(View.VISIBLE);
+                String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (UP)" : "DOWN".equalsIgnoreCase(direction) ? "▼ PUT (DOWN)" : "● WAIT";
+                dirView.setTextColor(strokeColor);
+                dirView.setText(badgeText + "  •  ⏱ " + durationText + " (" + confidence + "%)");
+
+                String shortReason = reasonText.length() > 30 ? reasonText.substring(0, 28) + ".." : reasonText;
+                if (shortReason.isEmpty()) shortReason = "মোমেন্টাম সিগন্যাল";
+                detView.setText(symbol + " • " + shortReason);
+            }
         }
     }
 }

@@ -294,7 +294,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </span>
               <div className="flex items-center gap-1.5 text-slate-400 text-xs">
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{formattedCountdown}</strong></span>
+                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{isChartFound ? formattedCountdown : '--:--'}</strong></span>
               </div>
             </div>
 
@@ -312,7 +312,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
             >
               <div className="text-2xl font-black tracking-tight font-mono">
                 {!isChartFound ? (
-                  <span className="text-amber-300">⚠️ চার্ট খুঁজছি...</span>
+                  <span className="text-amber-300">⚠️ চার্ট স্ক্যান হচ্ছে...</span>
                 ) : (
                   <>
                     {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
@@ -322,15 +322,17 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 )}
               </div>
               <div className="text-xs font-medium opacity-90">
-                {!isChartFound ? 'আমি চার্ট খুঁজে পাইনি। ট্রেডিং চার্ট সামনে রাখুন।' : result.verdictTitle}
+                {!isChartFound ? 'ট্রেডিং চার্ট সামনে রাখুন। শনাক্ত হলে সিগন্যাল শুরু হবে।' : result.verdictTitle}
               </div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
                   কনফিডেন্স: {result.confidence}%
                 </span>
-                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                  ⏱️ এক্সপায়ারি: {formattedCountdown}
-                </span>
+                {isChartFound && (
+                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
+                    ⏱️ এক্সপায়ারি: {formattedCountdown}
+                  </span>
+                )}
               </div>
             </div>
 

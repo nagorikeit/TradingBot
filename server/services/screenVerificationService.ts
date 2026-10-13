@@ -252,8 +252,8 @@ export class ScreenVerificationService {
       suggestedExpiry = 'Daily Close';
     }
 
-    // SAFETY GUARD 1: Sensitive Private Data Detection
-    if (visionData.containsSensitivePrivateData) {
+    // SAFETY GUARD 1: Sensitive Private Data Detection (Only blocks if NO chart was detected)
+    if (visionData.containsSensitivePrivateData && !visionData.isClearTradingChart) {
       return {
         analysisId,
         timestamp: now,
@@ -263,14 +263,14 @@ export class ScreenVerificationService {
         verdictTitle: 'WAIT / সংবেদনশীল তথ্য শনাক্ত (PRIVACY)',
         suggestedExpiry: 'N/A',
         reasoning: [
-          'নিরাপত্তা সতর্কতা: স্ক্রিনে ব্যালেন্স, ওয়ালেট বা ব্যক্তিগত তথ্য শনাক্ত হয়েছে।',
+          'নিরাপত্তা সতর্কতা: স্ক্রিনে ব্যালেন্স বা ব্যক্তিগত তথ্য শনাক্ত হয়েছে।',
           'ব্যবহারকারীর তহবিলের নিরাপত্তার স্বার্থে তাৎক্ষণিক সিগন্যাল স্থগিত করা হয়েছে।',
         ],
         visionData,
         marketVerification: {
           isVerified: false,
           status: 'SKIPPED',
-          notes: 'Sensitive user private data detected on chart.',
+          notes: 'Sensitive user private data detected on non-chart screen.',
         },
         safetyDisclaimer: 'Privacy Guard: Private user details were masked from analysis.',
       };
@@ -301,8 +301,8 @@ export class ScreenVerificationService {
       };
     }
 
-    // SAFETY GUARD 3: High Latency / Stale Frame Guard
-    if (latencyMs > 8000) {
+    // SAFETY GUARD 3: High Latency / Stale Frame Guard (> 18s)
+    if (latencyMs > 18000) {
       return {
         analysisId,
         timestamp: now,
@@ -312,14 +312,14 @@ export class ScreenVerificationService {
         verdictTitle: 'WAIT / অতিরিক্ত বিলম্ব (HIGH LATENCY)',
         suggestedExpiry: 'N/A',
         reasoning: [
-          `বিলম্ব গার্ড: ফ্রেম প্রসেসিংয়ে ${latencyMs}ms (>8s) সময় লেগেছে।`,
+          `বিলম্ব গার্ড: ফ্রেম প্রসেসিংয়ে ${latencyMs}ms সময় লেগেছে।`,
           'মার্কেট ক্যান্ডেল পরিবর্তিত হয়ে থাকতে পারে। পুরোনো ফ্রেমের তথ্যে ট্রেড নেওয়া ঝুঁকিপূর্ণ।',
         ],
         visionData,
         marketVerification: {
           isVerified: false,
           status: 'STALE_DATA',
-          notes: `Processing delay of ${latencyMs}ms exceeds 8000ms threshold.`,
+          notes: `Processing delay of ${latencyMs}ms exceeds 18000ms threshold.`,
         },
         safetyDisclaimer: 'Stale frames are held in WAIT to protect against slippage.',
       };

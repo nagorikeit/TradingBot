@@ -182,14 +182,14 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                     >
                       {result.direction === 'UP' ? '▲ CALL / UP' : result.direction === 'DOWN' ? '▼ PUT / DOWN' : '⏸ WAIT'}
                     </span>
-                    <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/60">
-                      {formattedCountdown}
+                    <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded-full border border-cyan-700/60">
+                      ⏱ {formattedCountdown}
                     </span>
                   </span>
                 ) : (
-                  <span className="text-amber-300 font-medium flex items-center gap-1">
-                    <span>চার্ট খুঁজছি...</span>
-                    <span className="text-[10px] text-slate-400">({formattedCountdown})</span>
+                  <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span>চার্ট স্ক্যান হচ্ছে...</span>
                   </span>
                 )
               ) : isPaused ? (
@@ -204,75 +204,59 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         </button>
       )}
 
-      {/* 2. Expanded Floating Mini Modal / Control Panel (Auto-opens on Connect & Stays Active) */}
+      {/* 2. Expanded Floating Mini Modal / Control Panel (Smart Rounded System) */}
       {isOpen && (
-        <div className="w-84 sm:w-96 rounded-2xl bg-[#0b101d]/98 border border-slate-700/80 shadow-2xl backdrop-blur-2xl p-4 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-80 sm:w-92 rounded-3xl bg-[#090e1a]/95 border border-slate-700/80 shadow-2xl backdrop-blur-2xl p-4 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
-            <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
+            <div className="flex items-center gap-2">
               <div
-                className={`w-8 h-8 rounded-xl flex items-center justify-center border ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center border ${
                   isStreaming
                     ? isChartFound
-                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 ring-2 ring-emerald-500/20'
-                      : 'bg-amber-500/15 border-amber-500/40 text-amber-400 ring-2 ring-amber-500/20'
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                      : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
                     : isConnecting
-                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
                     : 'bg-slate-800 border-slate-700 text-slate-400'
                 }`}
               >
                 {isStreaming ? (
-                  <Radar className={`w-4 h-4 ${isChartFound ? 'animate-spin' : 'animate-pulse'}`} style={{ animationDuration: '4s' }} />
+                  <Radar className={`w-3.5 h-3.5 ${isChartFound ? 'animate-spin' : 'animate-pulse'}`} style={{ animationDuration: '4s' }} />
                 ) : (
-                  <Monitor className="w-4 h-4" />
+                  <Monitor className="w-3.5 h-3.5" />
                 )}
               </div>
               <div>
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-bold text-white tracking-wide">Live AI Trading Assistant</h3>
-                  <span className="text-[10px] bg-cyan-950 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-800/60 font-mono">
-                    HUD
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span
-                    className={`text-[10px] font-mono font-semibold flex items-center gap-1 ${
-                      isStreaming
-                        ? isChartFound
-                          ? 'text-emerald-400'
-                          : 'text-amber-400'
-                        : isPaused
-                        ? 'text-amber-400'
-                        : isConnecting
-                        ? 'text-cyan-400'
-                        : 'text-slate-400'
-                    }`}
-                  >
-                    {isStreaming
+                <h3 className="text-xs font-bold text-white tracking-wide">
+                  {isStreaming ? (isChartFound ? 'TradePulse AI' : 'চার্ট স্ক্যানিং') : 'Live AI Assistant'}
+                </h3>
+                <span
+                  className={`text-[10px] font-mono flex items-center gap-1 ${
+                    isStreaming
                       ? isChartFound
-                        ? '● চার্ট সক্রিয় (ACTIVE)'
-                        : '● চার্ট খোঁজা হচ্ছে...'
-                      : isPaused
-                      ? '⏸ PAUSED'
-                      : isConnecting
-                      ? 'কানেক্ট হচ্ছে...'
-                      : 'ডিসকানেক্টেড'}
-                  </span>
-                  {isStreaming && (
-                    <span className="text-[10px] font-mono text-slate-400">
-                      • {liveScreenService.isNativeActive() ? 'Android Native' : 'Screen Sync'}
-                    </span>
-                  )}
-                </div>
+                        ? 'text-emerald-400 font-bold'
+                        : 'text-amber-400'
+                      : 'text-slate-400'
+                  }`}
+                >
+                  {isStreaming
+                    ? isChartFound
+                      ? '● সিগন্যাল সক্রিয়'
+                      : '● চার্ট খোঁজা হচ্ছে'
+                    : isConnecting
+                    ? 'কানেক্ট হচ্ছে...'
+                    : 'ডিসকানেক্টেড'}
+                </span>
               </div>
             </div>
 
             <div className="flex items-center gap-1">
               <button
                 onClick={handleToggleVoice}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-1.5 rounded-full transition-colors ${
                   isVoiceOn
-                    ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/50'
+                    ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/50 border border-emerald-800/60'
                     : 'text-slate-500 hover:text-slate-400 bg-slate-800/60'
                 }`}
                 title={isVoiceOn ? 'ভয়েস সহকারী বন্ধ করুন' : 'ভয়েস সহকারী চালু করুন'}
@@ -281,166 +265,134 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               </button>
               <button
                 onClick={handleOpenFullScreen}
-                className="p-1.5 text-slate-400 hover:text-cyan-300 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors"
-                title="Open Full Screen Analysis"
+                className="p-1.5 text-slate-400 hover:text-cyan-300 bg-slate-800/60 rounded-full transition-colors"
+                title="ফুল স্ক্রিন ড্যাশবোর্ড"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors"
-                title="মিনিমাইজ করুন (ভাসমান থাকবে)"
+                className="p-1.5 text-slate-400 hover:text-slate-200 bg-slate-800/60 rounded-full transition-colors"
+                title="মিনিমাইজ করুন"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Voice Speech Live Notification Banner */}
+          {/* Voice Notification (Compact pill) */}
           {voiceNotification && (
-            <div className="mt-2.5 p-2 rounded-lg bg-cyan-950/50 border border-cyan-800/60 flex items-center gap-2 text-[11px] text-cyan-200 animate-in fade-in">
-              <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
-              <div className="line-clamp-2 leading-tight">🗣️ {voiceNotification}</div>
+            <div className="mt-2 px-2.5 py-1.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center gap-2 text-[10px] text-cyan-200">
+              <Volume2 className="w-3 h-3 text-cyan-400 shrink-0 animate-pulse" />
+              <div className="truncate">🗣️ {voiceNotification}</div>
             </div>
           )}
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="mt-2.5 p-2.5 rounded-lg bg-red-950/50 border border-red-800/60 flex items-start gap-2 text-[11px] text-red-200">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-              <div className="line-clamp-2">{errorMessage}</div>
+            <div className="mt-2 p-2 rounded-xl bg-red-950/50 border border-red-800/60 flex items-center gap-2 text-[11px] text-red-200">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              <div className="truncate">{errorMessage}</div>
             </div>
           )}
 
           {/* Countdown & Status Body */}
-          <div className="mt-3 space-y-2.5">
-            {/* Active Expiry Countdown Header Bar (Always ticking and visible during stream) */}
-            {isStreaming && (
-              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-cyan-400 animate-pulse" />
-                  <span className="text-xs font-semibold text-slate-300 font-sans">
-                    ক্যান্ডেল এক্সপায়ারি কাউন্টডাউন:
+          <div className="mt-2.5 space-y-2">
+            {/* Active Candle Countdown: ONLY visible AFTER chart is detected and analyzed! */}
+            {isStreaming && isChartFound && result && (
+              <div className="px-3 py-2 rounded-2xl bg-slate-950/90 border border-cyan-800/50 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                  <span className="text-[11px] font-semibold text-slate-300">
+                    ক্যান্ডেল ভ্যালিডিটি:
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div className="w-14 bg-slate-800 rounded-full h-1.5 overflow-hidden">
                     <div
                       className="bg-cyan-400 h-1.5 transition-all duration-1000 rounded-full"
                       style={{ width: `${countdownPercent}%` }}
                     />
                   </div>
-                  <span className="text-sm font-black font-mono text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/80">
-                    {formattedCountdown}
+                  <span className="text-xs font-black font-mono text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded-full border border-cyan-700/60">
+                    ⏱ {formattedCountdown}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Case 1: Streaming and Chart Found -> Display Guidance */}
+            {/* Case 1: Chart Analyzed -> Smart, Sleek Direction Pill */}
             {isStreaming && isChartFound && result ? (
               <div
-                className={`p-3.5 rounded-xl border flex flex-col gap-2 transition-all ${
+                className={`p-3 rounded-2xl border flex flex-col gap-2 transition-all ${
                   result.direction === 'UP'
-                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200 shadow-lg shadow-emerald-950/40'
+                    ? 'bg-emerald-950/30 border-emerald-500/60 text-emerald-200'
                     : result.direction === 'DOWN'
-                    ? 'bg-rose-950/40 border-rose-500/50 text-rose-200 shadow-lg shadow-rose-950/40'
-                    : 'bg-amber-950/40 border-amber-500/50 text-amber-200 shadow-lg shadow-amber-950/40'
+                    ? 'bg-rose-950/30 border-rose-500/60 text-rose-200'
+                    : 'bg-amber-950/30 border-amber-500/60 text-amber-200'
                 }`}
               >
-                {/* Symbol & Direction */}
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="font-bold text-white px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700">
-                    {result.visionData?.symbol || 'CHART ASSET'}
-                  </span>
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-900/90 border border-slate-700 text-cyan-300">
-                    {result.confidence}% Confidence
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
+                {/* Symbol & Direction Row */}
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    {result.direction === 'UP' && (
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400">
-                        <TrendingUp className="w-5 h-5" />
+                    {result.direction === 'UP' ? (
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400">
+                        <TrendingUp className="w-4 h-4" />
                       </div>
-                    )}
-                    {result.direction === 'DOWN' && (
-                      <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400">
-                        <TrendingDown className="w-5 h-5" />
+                    ) : result.direction === 'DOWN' ? (
+                      <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400">
+                        <TrendingDown className="w-4 h-4" />
                       </div>
-                    )}
-                    {result.direction === 'WAIT' && (
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400">
-                        <Clock className="w-5 h-5" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400">
+                        <Clock className="w-4 h-4" />
                       </div>
                     )}
                     <div>
-                      <div className="text-base font-black tracking-tight font-mono">
-                        {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
-                        {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
-                        {result.direction === 'WAIT' && '⏸ WAIT / অপেক্ষা'}
+                      <div className="text-sm font-black font-mono">
+                        {result.direction === 'UP' && '▲ CALL (UP)'}
+                        {result.direction === 'DOWN' && '▼ PUT (DOWN)'}
+                        {result.direction === 'WAIT' && '⏸ WAIT'}
                       </div>
-                      <div className="text-[10px] text-slate-300 font-sans">
-                        দিকনির্দেশনা: {result.direction === 'UP' ? 'পরবর্তী ক্যান্ডেলে BUY' : result.direction === 'DOWN' ? 'পরবর্তী ক্যান্ডেলে SELL' : 'মার্কেট সাইডওয়ে'}
+                      <div className="text-[10px] text-slate-300">
+                        {result.direction === 'UP' ? 'পরবর্তী ক্যান্ডেলে BUY' : result.direction === 'DOWN' ? 'পরবর্তী ক্যান্ডেলে SELL' : 'অপেক্ষা করুন'}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-white font-mono bg-slate-900/80 px-2 py-0.5 rounded-full border border-slate-700">
+                      {result.visionData?.symbol || 'AUD/CHF'}
+                    </div>
+                    <div className="text-[10px] text-cyan-300 font-semibold mt-0.5">
+                      {result.confidence}% কনফিডেন্স
                     </div>
                   </div>
                 </div>
 
-                {/* Technical Strategy Rationale */}
-                <div className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
-                  <div className="font-semibold text-slate-200 text-[10px] mb-0.5 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-cyan-400" />
-                    <span>প্রযুক্তিগত বিশ্লেষণ যুক্তি:</span>
-                  </div>
-                  <div className="line-clamp-2">{result.reasoning[0] || 'ক্যান্ডেলস্টিক ও ইন্ডিকেটর কনফার্মেশন প্রাপ্ত হয়েছে।'}</div>
-                </div>
-
-                {/* Market Price & Status */}
-                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/80 font-mono">
-                  <div className="flex items-center gap-1">
-                    <span>মার্কেট:</span>
-                    <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" />
-                      {result.marketVerification.status === 'MATCHED' ? 'ভেরিফাইড' : result.marketVerification.status}
-                    </span>
-                  </div>
-                  {result.visionData?.lastVisiblePrice && (
-                    <span>প্রাইস: ${result.visionData.lastVisiblePrice}</span>
-                  )}
+                {/* Short Pattern Summary */}
+                <div className="text-[10px] text-slate-300 bg-slate-950/50 px-2.5 py-1.5 rounded-xl border border-slate-800/70 truncate">
+                  💡 {result.visionData?.candlestickPattern || result.reasoning[0] || 'মোমেন্টাম নিশ্চিত'}
                 </div>
               </div>
             ) : isStreaming && !isChartFound ? (
-              /* Case 2: Streaming Active, But Chart Not Detected Yet -> "আমি চার্ট খুঁজে পাইনি" */
-              <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 text-amber-200 flex flex-col gap-2 animate-in fade-in">
-                <div className="flex items-center gap-2">
-                  <Radar className="w-5 h-5 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
-                  <div>
-                    <div className="text-xs font-bold text-amber-300">⚠️ আমি চার্ট খুঁজে পাইনি</div>
-                    <div className="text-[10px] text-amber-200/80">চার্ট খোঁজা হচ্ছে... (Searching Screen)</div>
+              /* Case 2: Streaming, Scanning for Chart (Smart Rounded, No Long Clutter) */
+              <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 text-amber-200 flex flex-col items-center text-center gap-2 animate-in fade-in">
+                <Radar className="w-6 h-6 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
+                <div>
+                  <div className="text-xs font-bold text-amber-300">চার্ট স্ক্যানিং চলছে...</div>
+                  <div className="text-[10px] text-slate-300 mt-1 max-w-[240px]">
+                    ট্রেডিং চার্ট স্ক্রিনে দৃশ্যমান রাখুন। চার্ট পেলেই স্বয়ংক্রিয়ভাবে সিগন্যাল ও কাউন্টডাউন শুরু হবে।
                   </div>
-                </div>
-
-                <div className="text-[11px] text-slate-300 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 leading-relaxed">
-                  অনুগ্রহ করে আপনার ট্রেডিং অ্যাপের (Binomo, Quotex, Pocket Option, MT4 বা TradingView) ক্যান্ডেলস্টিক চার্টটি স্ক্রিনে রাখুন। অ্যাপটি স্বয়ংক্রিয়ভাবে চার্ট শনাক্ত করে সিগন্যাল দিবে।
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-0.5">
-                  <span className="flex items-center gap-1 text-emerald-400">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    স্ক্যানার সক্রিয়
-                  </span>
-                  <span>কাউন্টডাউন: {formattedCountdown}</span>
                 </div>
               </div>
             ) : isConnecting ? (
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-cyan-800/60 text-center text-xs text-cyan-300 font-mono animate-pulse">
-                স্ক্রিনের সাথে কানেক্ট হচ্ছে... অনুগ্রহ করে অনুমতি নিশ্চিত করুন
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-cyan-800/60 text-center text-xs text-cyan-300 font-mono animate-pulse">
+                স্ক্রিনের সাথে কানেক্ট হচ্ছে...
               </div>
             ) : (
-              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-400">
-                লাইভ স্ক্রিন বর্তমানে ডিসকানেক্টেড আছে। নিচে "Connect Screen" বাটনে চাপুন।
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-400">
+                লাইভ স্ক্রিন বর্তমানে ডিসকানেক্টেড।
               </div>
             )}
           </div>
