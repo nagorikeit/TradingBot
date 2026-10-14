@@ -174,13 +174,13 @@ export class LiveScreenService {
     this.isSearchingForChart = true;
     this.notify();
 
-    // 1. If running inside Capacitor Native Android runtime
+    // 1. If running inside Capacitor Native Android runtime (APK on mobile device)
     if (Capacitor.isNativePlatform()) {
       return await this.startNativeAndroidCapture();
     }
 
     // 2. Standard Web screen capture
-    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
       try {
         const mediaStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
@@ -210,6 +210,7 @@ export class LiveScreenService {
         this.isSearchingForChart = true;
         this.isChartFound = false;
         this.expirySecondsLeft = 0;
+        this.errorMessage = null;
         this.notify();
 
         voiceAssistantService.announceSearchingForChart();
@@ -229,60 +230,99 @@ export class LiveScreenService {
 
         return true;
       } catch (err: any) {
-        console.warn('Web getDisplayMedia cancelled or failed:', err);
-        // Fall back gracefully to active monitor mode so user is not stuck
-        if (err.name === 'NotAllowedError') {
-          this.state = 'DISCONNECTED';
-          this.errorMessage = 'স্ক্রিন ক্যাপচারের অনুমতি বাতিল করা হয়েছে।';
-          voiceAssistantService.announceNoScreenCapture();
-          this.notify();
-          return false;
+        console.warn('Web getDisplayMedia error:', err);
+        const isNotAllowed = err.name === 'NotAllowedError';
+        const isIframeBlocked = err.name === 'SecurityError' || String(err).includes('permissions policy');
+
+        this.state = 'DISCONNECTED';
+        if (isNotAllowed) {
+          this.errorMessage = 'স্ক্রিন শেয়ার ডায়ালগ বাতিল করা হয়েছে। স্ক্রিন শেয়ার করতে পুরো স্ক্রিন বা ট্রেডিং উইন্ডো নির্বাচন করুন।';
+        } else if (isIframeBlocked) {
+          this.errorMessage = 'ব্রাউজার প্রিভিউ আইফ্রেমে স্ক্রিন শেয়ার সীমাবদ্ধ করেছে। উপরে "নতুন ট্যাবে খুলুন" বাটনে ক্লিক করুন অথবা ডেমো টেস্ট মোড ব্যবহার করুন।';
+        } else {
+          this.errorMessage = err.message || 'স্ক্রিন শেয়ার শুরু করা যায়নি।';
         }
+        this.notify();
+        return false;
       }
     }
 
-    // 3. Fallback for mobile browser / WebView / iframe without getDisplayMedia
+    // 3. Fallback for environments without getDisplayMedia
+    this.state = 'DISCONNECTED';
+    this.errorMessage = 'আপনার ব্রাউজার বা ডিভাইসে স্ক্রিন শেয়ারিং এপিআই সমর্থিত নয়। অনুগ্রহ করে TradePulse Android APK বা Chrome/Edge ব্রাউজার ব্যবহার করুন।';
+    this.notify();
+    return false;
+  }
+
+  /**
+   * Starts a dynamic live trading chart simulation stream for testing
+   * Runs the full analysis pipeline, floating pill, candle countdown, and voice announcements
+   */
+  public async startDemoTestStream(): Promise<boolean> {
+    this.disconnect();
     this.state = 'STREAMING';
     this.autoOpenModal = true;
-    this.isSearchingForChart = true;
-    this.isChartFound = false;
+    this.isSearchingForChart = false;
+    this.isChartFound = true;
     this.errorMessage = null;
-    this.expirySecondsLeft = 0;
-    this.notify();
+    this.expirySecondsLeft = 52;
 
-    voiceAssistantService.announceSearchingForChart();
+    const sampleSymbols = ['AUD/CHF OTC', 'EUR/USD OTC', 'BTC/USDT', 'GBP/USD OTC'];
+    const randomSymbol = sampleSymbols[Math.floor(Math.random() * sampleSymbols.length)];
+    const directions: ('UP' | 'DOWN')[] = ['UP', 'DOWN'];
+    const randomDir = directions[Math.floor(Math.random() * directions.length)];
 
-    // Trigger initial simulated check or guide user to upload chart
     this.latestResult = {
-      analysisId: `init_${Date.now()}`,
+      analysisId: `demo_${Date.now()}`,
       timestamp: Date.now(),
       frameCapturedAt: Date.now(),
-      direction: 'WAIT',
-      confidence: 0,
-      verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
+      direction: randomDir,
+      confidence: 88,
+      verdictTitle: randomDir === 'UP' ? 'CALL (UP) সিগন্যাল' : 'PUT (DOWN) সিগন্যাল',
       suggestedExpiry: '01:00',
       reasoning: [
-        'স্ক্রিনে ট্রেডিং চার্ট খোঁজা হচ্ছে...',
-        'ট্রেডিং চার্ট স্ক্রিনে দৃশ্যমান থাকলে স্বয়ংক্রিয়ভাবে সনাক্ত হবে।',
+        `${randomSymbol} মোমেন্টাম ক্যান্ডেল সাপোর্ট/রেজিস্ট্যান্স টেস্ট করছে।`,
+        randomDir === 'UP' ? 'বুলিশ প্রেসার ও ভলিউম বৃদ্ধি পেয়েছে।' : 'বিয়ারিশ রিজেকশন ক্যান্ডেল তৈরি হয়েছে।',
+        '১ মিনিট এক্সপায়ারি ট্রেডের অনুকূল পরিস্থিতি।'
       ],
       visionData: {
-        marketType: 'UNKNOWN',
-        lastCandleDirection: 'UNCERTAIN',
-        indicatorsIdentified: [],
-        chartStructure: 'UNCLEAR',
-        visionSummary: 'চার্ট খোঁজা হচ্ছে...',
-        confidenceScore: 0,
-        isClearTradingChart: false,
+        symbol: randomSymbol,
+        timeframe: '1m',
+        marketType: 'FOREX',
+        lastCandleDirection: randomDir === 'UP' ? 'BULLISH' : 'BEARISH',
+        candlestickPattern: randomDir === 'UP' ? 'Bullish Engulfing' : 'Bearish Engulfing',
+        indicatorsIdentified: [
+          { name: 'EMA 20', description: 'Trend filter', bias: randomDir === 'UP' ? 'BULLISH' : 'BEARISH' },
+          { name: 'RSI 14', description: 'Momentum oscillator', bias: randomDir === 'UP' ? 'BULLISH' : 'BEARISH' },
+        ],
+        chartStructure: randomDir === 'UP' ? 'UPTREND' : 'DOWNTREND',
+        visionSummary: `${randomSymbol} চার্টে স্পষ্ট ক্যান্ডেলস্টিক প্যাটার্ন সনাক্ত হয়েছে।`,
+        confidenceScore: 0.88,
+        isClearTradingChart: true,
         containsSensitivePrivateData: false,
       },
       marketVerification: {
-        isVerified: false,
-        status: 'SKIPPED',
-        notes: 'চার্ট খোঁজা হচ্ছে...',
+        isVerified: true,
+        status: 'MATCHED',
+        notes: 'Multi-exchange OTC market verified',
       },
       safetyDisclaimer: 'TradePulse Paper Analysis Tool',
     };
+
     this.notify();
+    this.startCountdownTicker();
+
+    voiceAssistantService.announceAnalysisResult(this.latestResult);
+
+    this.showFloatingOverlayHUD({
+      direction: randomDir,
+      confidence: 88,
+      durationText: '00:52',
+      verdictTitle: randomDir === 'UP' ? 'CALL (UP)' : 'PUT (DOWN)',
+      reasonText: `${randomSymbol} - মোমেন্টাম নিশ্চিত`,
+      latencyMs: 12,
+      symbol: randomSymbol,
+    });
 
     return true;
   }
@@ -292,19 +332,20 @@ export class LiveScreenService {
    */
   public async startNativeAndroidCapture(): Promise<boolean> {
     try {
-      // 1. Check & Request Overlay Permission for Floating Bubble
+      // 1. Check Permissions status first
+      let hasOverlay = false;
       try {
         const perm = await TradePulseNativeScreen.checkPermissions();
-        if (!perm.hasOverlayPermission) {
-          await TradePulseNativeScreen.requestOverlayPermission();
-        }
+        hasOverlay = Boolean(perm?.hasOverlayPermission);
       } catch (permErr) {
         console.warn('Overlay permission check non-fatal error:', permErr);
       }
 
       // 2. Setup frame listener
       if (this.nativeListenerHandle) {
-        this.nativeListenerHandle.remove();
+        try {
+          this.nativeListenerHandle.remove();
+        } catch {}
         this.nativeListenerHandle = null;
       }
 
@@ -316,6 +357,7 @@ export class LiveScreenService {
       );
 
       // 3. Start MediaProjection & Foreground Service with timeout guard
+      // Note: Screen capture prompt MUST be launched while MainActivity is foregrounded
       const startCapturePromise = TradePulseNativeScreen.startScreenCapture({
         intervalSeconds: Math.round(this.scanIntervalMs / 1000),
         targetWidth: 720,
@@ -325,44 +367,44 @@ export class LiveScreenService {
       const timeoutPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
         setTimeout(() => {
           resolve({ success: false, message: 'অনুমতি ডায়ালগের জন্য সময় শেষ হয়েছে। আবার চেষ্টা করুন।' });
-        }, 20000);
+        }, 15000);
       });
 
       const result = await Promise.race([startCapturePromise, timeoutPromise]);
 
-      if (result.success) {
+      if (result && result.success) {
         this.isNativeCaptureActive = true;
         this.state = 'STREAMING';
         this.autoOpenModal = true;
         this.isSearchingForChart = true;
-        this.errorMessage = null;
-        this.autoOpenModal = true;
-        this.isSearchingForChart = true;
         this.isChartFound = false;
+        this.errorMessage = null;
         this.expirySecondsLeft = 0;
         this.notify();
 
-        // Show floating HUD widget over other apps with smart compact format
-        await this.showFloatingOverlayHUD({
-          direction: 'WAIT',
-          confidence: 0,
-          durationText: '--:--',
-          verdictTitle: 'চার্ট পাওয়া যায়নি',
-          reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
-          latencyMs: 0,
-        });
+        // 4. Show Floating HUD widget over other apps if overlay permission is present
+        if (hasOverlay) {
+          await this.showFloatingOverlayHUD({
+            direction: 'WAIT',
+            confidence: 0,
+            durationText: '--:--',
+            verdictTitle: 'চার্ট পাওয়া যায়নি',
+            reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
+            latencyMs: 0,
+          });
+        }
 
         voiceAssistantService.announceSearchingForChart();
         return true;
       } else {
-        this.state = 'ERROR';
-        this.errorMessage = result.message || 'স্ক্রিন ক্যাপচার শুরু করতে অনুমতি দিন';
+        this.state = 'DISCONNECTED';
+        this.errorMessage = result?.message || 'স্ক্রিন ক্যাপচার শুরু করতে "Start now" অনুমতি দিন।';
         this.notify();
         return false;
       }
     } catch (err: any) {
       console.error('Native screen capture error:', err);
-      this.state = 'ERROR';
+      this.state = 'DISCONNECTED';
       this.errorMessage = err.message || 'Android Screen Capture শুরু করতে ব্যর্থ হয়েছে';
       this.notify();
       return false;

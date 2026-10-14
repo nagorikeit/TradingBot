@@ -20,6 +20,9 @@ import {
   Wifi,
   WifiOff,
   Settings,
+  ExternalLink,
+  Sparkles,
+  Smartphone,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -33,6 +36,7 @@ import {
 } from '../services/apiConfig';
 
 export const LiveScreenAnalyzer: React.FC = () => {
+  const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
   const [result, setResult] = useState<ScreenAnalysisFinalResult | null>(liveScreenService.getLatestResult());
   const [isBusy, setIsBusy] = useState<boolean>(liveScreenService.isBusy());
@@ -217,13 +221,40 @@ export const LiveScreenAnalyzer: React.FC = () => {
             )}
 
             {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR') && (
-              <button
-                onClick={handleConnect}
-                className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 active:scale-95 rounded-lg flex items-center gap-2 shadow-sm transition-all"
-              >
-                <Monitor className="w-4 h-4" />
-                <span>Connect Live Screen</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleConnect}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 active:scale-95 rounded-lg flex items-center gap-2 shadow-sm transition-all"
+                  title="লাইভ স্ক্রিন শেয়ারিং ও রিয়েল-টাইম ট্রেডিং সিগন্যাল ইঞ্জিন চালু করুন"
+                >
+                  <Monitor className="w-4 h-4" />
+                  <span>Connect Live Screen</span>
+                </button>
+
+                <button
+                  onClick={() => liveScreenService.startDemoTestStream()}
+                  className="px-3.5 py-2 text-xs font-semibold text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/40 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
+                  title="স্ক্রিন শেয়ার ছাড়া ইনস্ট্যান্ট ডেমো চার্ট দিয়ে এআই সিগন্যাল ও ফ্লোটিং বাবল টেস্ট করুন"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>ডেমো টেস্ট স্ট্রিম</span>
+                </button>
+
+                {isInsideIframe && (
+                  <button
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        window.open(window.location.href, '_blank');
+                      }
+                    }}
+                    className="px-3 py-2 text-xs font-semibold text-amber-300 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
+                    title="নতুন ব্রাউজার উইন্ডো/ট্যাবে খুললে ব্রাউজার কোনো বাধা ছাড়াই সম্পূর্ণ ডিসপ্লে শেয়ার অনুমতি দেয়"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                    <span>নতুন ট্যাবে খুলুন</span>
+                  </button>
+                )}
+              </div>
             )}
 
             {streamState === 'CONNECTING' && (
@@ -337,6 +368,31 @@ export const LiveScreenAnalyzer: React.FC = () => {
             <span className="text-[11px]">
               Privacy Protected: Account balance and login credentials are automatically redacted.
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Visual Step-by-Step Guide for Switching to other Trading Apps */}
+      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs space-y-2 shadow-sm">
+        <div className="flex items-center justify-between text-slate-300 font-semibold">
+          <div className="flex items-center gap-2 text-cyan-400">
+            <Smartphone className="w-4 h-4" />
+            <span>অন্যান্য অ্যাপ্লিকেশনে (Quotex / Pocket Option) ট্রেড করার নিয়ম:</span>
+          </div>
+          <span className="text-[11px] font-normal text-slate-400 hidden sm:inline">রিয়েল-টাইম স্ক্রিন এআই</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] text-slate-400 pt-1">
+          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
+            <div className="font-semibold text-slate-200">১. স্ক্রিন শেয়ার কানেক্ট করুন</div>
+            <p className="text-slate-400">উপরে <b>"Connect Live Screen"</b> চাপুন এবং স্ক্রিন ক্যাপচার ডায়ালগে "Start now" বা ডিসপ্লে সিলেক্ট করুন।</p>
+          </div>
+          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
+            <div className="font-semibold text-slate-200">২. ফ্লোটিং বাবল ভেসে উঠবে</div>
+            <p className="text-slate-400">কানেক্ট হলেই স্ক্রিনে ভাসমান সিগন্যাল বাবল (HUD) চালু হবে যা ড্র্যাগ করে যেকোনো পাশে সরানো যায়।</p>
+          </div>
+          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
+            <div className="font-semibold text-slate-200">৩. ট্রেডিং অ্যাপে যান</div>
+            <p className="text-slate-400">হোম চেপে ব্রোকার অ্যাপ খুলুন। বাবলটি স্ক্রিনে থাকবে এবং লাইভ চার্ট রিড করে CALL/PUT সিগন্যাল ও বাংলা ভয়েস দিকনির্দেশনা দেবে।</p>
           </div>
         </div>
       </div>
@@ -691,7 +747,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
               />
               <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>ডিফল্ট: Cloud Run Hosted Proxy</span>
+                <span>ডিফল্ট: ফুলস্ট্যাক ওয়েব প্রক্সি (/api)</span>
                 <button
                   type="button"
                   onClick={() => {

@@ -62,7 +62,16 @@ public class ScreenCaptureService extends Service {
         // we can safely obtain the MediaProjection without SecurityException.
         if (intent != null && intent.hasExtra("resultCode")) {
             int resultCode = intent.getIntExtra("resultCode", -1);
-            Intent resultData = intent.getParcelableExtra("resultData");
+            Intent resultData = null;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    resultData = intent.getParcelableExtra("resultData", Intent.class);
+                } else {
+                    resultData = intent.getParcelableExtra("resultData");
+                }
+            } catch (Exception e) {
+                resultData = intent.getParcelableExtra("resultData");
+            }
 
             if (resultCode != -1 && resultData != null) {
                 try {
