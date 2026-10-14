@@ -171,7 +171,16 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
     }
 
     const hasError = Boolean(data.errorReason || data.aiState === 'ERROR' || data.aiState === 'TIMEOUT');
-    const isScanning = !hasError && data.direction === 'WAIT' && (data.confidence <= 0 || data.durationText === '--:--');
+    const isChartNotFound = !hasError && data.direction === 'WAIT' && (
+      (data.verdictTitle && (
+        data.verdictTitle.includes('পাওয়া যায়নি') ||
+        data.verdictTitle.includes('খুঁজে পাইনি') ||
+        data.verdictTitle.includes('নেই') ||
+        data.verdictTitle.includes('NOT_FOUND')
+      )) || data.confidence <= 0 || data.durationText === '--:--'
+    );
+
+    const isActivelyAnalyzing = !hasError && data.aiState === 'ANALYZING' && !isChartNotFound;
 
     const badgeColor = hasError
       ? '#ef4444'
@@ -207,19 +216,42 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
           </div>
         </div>
       `;
-    } else if (isScanning) {
+    } else if (isChartNotFound) {
+      const headerTitle = data.verdictTitle && data.verdictTitle !== 'ANALYZING'
+        ? data.verdictTitle
+        : 'চার্ট পাওয়া যায়নি';
+      const reasonSub = data.reasonText || 'ট্রেডিং চার্ট সামনে রাখুন';
+
       this.overlayElement.innerHTML = `
-        <div style="background: ${bgGradient}; border: 2px solid ${badgeColor}; border-radius: 18px; padding: 8px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); min-width: 220px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+        <div style="background: ${bgGradient}; border: 2px solid #f59e0b; border-radius: 18px; padding: 10px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); min-width: 240px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: ${badgeColor}; box-shadow: 0 0 8px ${badgeColor}; animation: pulse 1.5s infinite;"></span>
-              <span style="font-size: 12px; font-weight: 700; color: #fef08a;">চার্ট স্ক্যান হচ্ছে...</span>
+              <span style="font-size: 12px; font-weight: 800; color: #fbbf24;">⏸ ${headerTitle}</span>
+            </div>
+            <span style="font-size: 10px; font-family: monospace; color: #94a3b8; background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 8px;">${frameStr}</span>
+          </div>
+          <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${reasonSub}
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #94a3b8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 3px;">
+            <span>${resStr}</span>
+            <span style="color: #f59e0b; font-weight: 700;">WAIT (0%)</span>
+          </div>
+        </div>
+      `;
+    } else if (isActivelyAnalyzing) {
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid #38bdf8; border-radius: 18px; padding: 8px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); min-width: 220px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8; animation: pulse 1.5s infinite;"></span>
+              <span style="font-size: 12px; font-weight: 700; color: #bae6fd;">ফ্রেম বিশ্লেষণ হচ্ছে...</span>
             </div>
             <span style="font-size: 10px; font-family: monospace; color: #94a3b8; background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 8px;">${frameStr}</span>
           </div>
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 3px;">
             <span>${resStr}</span>
-            <span>AI: ${data.aiState || 'ANALYZING'}</span>
+            <span>AI: ANALYZING</span>
           </div>
         </div>
       `;
@@ -246,5 +278,27 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
         </div>
       `;
     }
+  }
+
+  public async speak(options: { text: string }): Promise<{ success: boolean; message?: string }> {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return { success: false, message: 'Web SpeechSynthesis not supported' };
+    }
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(options.text);
+      utterance.lang = 'bn-BD';
+      window.speechSynthesis.speak(utterance);
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Speech error' };
+    }
+  }
+
+  public async stopSpeaking(): Promise<{ success: boolean }> {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    return { success: true };
   }
 }

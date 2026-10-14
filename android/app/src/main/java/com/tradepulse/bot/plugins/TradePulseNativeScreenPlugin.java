@@ -16,8 +16,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -34,6 +36,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.Locale;
 
 /**
  * TradePulseNativeScreenPlugin
@@ -41,6 +44,7 @@ import java.nio.ByteBuffer;
  * 1. Android MediaProjection continuous background capture (Foreground Service)
  * 2. SYSTEM_ALERT_WINDOW floating draggable HUD overlay showing UP/DOWN/WAIT, Duration & Reasons
  * 3. Real-time frame streaming into TradePulse Vision AI engine
+ * 4. Android Native TextToSpeech engine for loud voice directions over floating HUD
  */
 @CapacitorPlugin(name = "TradePulseNativeScreen")
 public class TradePulseNativeScreenPlugin extends Plugin {
@@ -60,6 +64,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private View overlayView;
     private WindowManager.LayoutParams overlayParams;
 
+    // Android Native Text-To-Speech engine for floating overlay audio guidance
+    private TextToSpeech textToSpeech;
+    private boolean isTtsInitialized = false;
+
     @Override
     public void load() {
         super.load();
@@ -67,6 +75,87 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         projectionManager = (MediaProjectionManager) context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         captureHandler = new Handler(Looper.getMainLooper());
+        initTextToSpeech(context);
+    }
+
+    private void initTextToSpeech(final Context context) {
+        try {
+            textToSpeech = new TextToSpeech(context.getApplicationContext(), new TextToSpeech.OnInitListener() {
+                @Override
+                public void onInit(int status) {
+                    if (status == TextToSpeech.SUCCESS && textToSpeech != null) {
+                        isTtsInitialized = true;
+                        try {
+                            Locale bn = new Locale("bn", "BD");
+                            int res = textToSpeech.setLanguage(bn);
+                            if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                                textToSpeech.setLanguage(Locale.US);
+                            }
+                        } catch (Exception ignored) {
+                            textToSpeech.setLanguage(Locale.US);
+                        }
+                    }
+                }
+            });
+        } catch (Exception e) {
+            Log.w("TradePulseNativeScreen", "Failed to initialize TextToSpeech: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void speak(final PluginCall call) {
+        final String text = call.getString("text", "");
+        if (text == null || text.trim().isEmpty()) {
+            call.reject("Text cannot be empty");
+            return;
+        }
+
+        if (textToSpeech != null && isTtsInitialized) {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "TradePulseTTS_" + System.currentTimeMillis());
+                        } else {
+                            textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        call.resolve(res);
+                    } catch (Exception e) {
+                        call.reject("Speech playback failed: " + e.getMessage());
+                    }
+                }
+            });
+        } else {
+            // Re-init if needed and resolve gracefully
+            if (textToSpeech == null) {
+                initTextToSpeech(getContext());
+            }
+            call.resolve(new JSObject().put("success", false).put("message", "TTS initializing"));
+        }
+    }
+
+    @PluginMethod
+    public void stopSpeaking(PluginCall call) {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+        }
+        call.resolve(new JSObject().put("success", true));
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (textToSpeech != null) {
+            try {
+                textToSpeech.stop();
+                textToSpeech.shutdown();
+            } catch (Exception ignored) {}
+            textToSpeech = null;
+            isTtsInitialized = false;
+        }
+        super.handleOnDestroy();
     }
 
     @PluginMethod
@@ -482,14 +571,33 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 dirView.setText("⚠️ " + errorReason);
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
-            } else if ("WAIT".equalsIgnoreCase(direction) && (confidence <= 0 || "--:--".equals(durationText))) {
-                // Live chart scan state with frame count and resolution visible
+            } else if ("WAIT".equalsIgnoreCase(direction)) {
                 dirView.setTextColor(0xFFF59E0B);
-                dirView.setText("● চার্ট স্ক্যান হচ্ছে...");
-                detView.setVisibility(View.VISIBLE);
-                String meta = "Frame #" + frameCount + " (" + resolution + ")";
-                if (latencyMs > 0) meta += " • ⚡ " + latencyMs + "ms";
-                detView.setText(meta);
+                boolean isChartNotFound = (confidence <= 0 || "--:--".equals(durationText)) || (verdictTitle != null && (
+                        verdictTitle.contains("খুঁজে পাইনি") ||
+                        verdictTitle.contains("পাওয়া যায়নি") ||
+                        verdictTitle.contains("NOT_FOUND") ||
+                        verdictTitle.contains("নেই") ||
+                        verdictTitle.contains("WAIT")
+                ));
+
+                boolean isActivelyAnalyzing = "ANALYZING".equalsIgnoreCase(aiState);
+
+                if (isActivelyAnalyzing && !isChartNotFound) {
+                    dirView.setText("● ফ্রেম বিশ্লেষণ হচ্ছে...");
+                    detView.setVisibility(View.VISIBLE);
+                    String meta = "Frame #" + frameCount + " (" + resolution + ")";
+                    if (latencyMs > 0) meta += " • ⚡ " + latencyMs + "ms";
+                    detView.setText(meta);
+                } else {
+                    dirView.setText("⏸ চার্ট পাওয়া যায়নি");
+                    detView.setVisibility(View.VISIBLE);
+                    String sub = (reasonText != null && !reasonText.trim().isEmpty() && !reasonText.contains("স্ক্যান"))
+                            ? reasonText
+                            : "ট্রেডিং চার্ট সামনে রাখুন";
+                    if (sub.length() > 30) sub = sub.substring(0, 28) + "..";
+                    detView.setText(sub + " [#" + frameCount + " • State: WAIT]");
+                }
             } else {
                 // When chart analyzed: ultra-sleek 2-line pill format with signal, countdown, and metrics
                 detView.setVisibility(View.VISIBLE);

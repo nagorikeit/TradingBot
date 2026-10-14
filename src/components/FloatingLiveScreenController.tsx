@@ -71,7 +71,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       setLastErrorReason(liveScreenService.getLastErrorReason());
 
       // Auto-open floating modal upon connecting (as explicitly requested by user)
-      if (liveScreenService.shouldAutoOpenModal() || (state === 'STREAMING' && !isOpen)) {
+      if (liveScreenService.shouldAutoOpenModal() || ((state === 'STREAMING' || state === 'CONNECTING') && !isOpen)) {
         setIsOpen(true);
         liveScreenService.clearAutoOpenModal();
       }
@@ -138,11 +138,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
   const countdownPercent = Math.max(0, Math.min(100, Math.round((expirySec / 60) * 100)));
 
-  // If user is already on the dedicated live-screen tab and modal is closed, keep out of way
-  if (currentTab === 'live-screen' && !isOpen) {
-    return null;
-  }
-
   return (
     <div className="fixed bottom-5 right-5 z-50 select-none">
       {/* 1. Collapsed Floating Pill/Button (Always floating and visible) */}
@@ -205,8 +200,8 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                   </span>
                 ) : (
                   <span className="text-amber-300 font-semibold flex items-center gap-1.5">
-                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    <span>চার্ট স্ক্যান হচ্ছে...</span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+                    <span>⏸ চার্ট পাওয়া যায়নি</span>
                   </span>
                 )
               ) : isPaused ? (
@@ -393,19 +388,32 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 </div>
               </div>
             ) : isStreaming && !isChartFound ? (
-              /* Case 2: Streaming, Scanning for Chart (Smart Rounded, No Long Clutter) */
+              /* Case 2: Streaming, Chart not found (WAIT state) */
               <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 text-amber-200 flex flex-col items-center text-center gap-2 animate-in fade-in">
-                <Radar className="w-6 h-6 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
+                <Radar className="w-6 h-6 text-amber-400" />
                 <div>
-                  <div className="text-xs font-bold text-amber-300">চার্ট স্ক্যানিং চলছে...</div>
+                  <div className="text-xs font-bold text-amber-300">⏸ চার্ট পাওয়া যায়নি (State: WAIT)</div>
                   <div className="text-[10px] text-slate-300 mt-1 max-w-[240px]">
-                    ট্রেডিং চার্ট স্ক্রিনে দৃশ্যমান রাখুন। চার্ট পেলেই স্বয়ংক্রিয়ভাবে সিগন্যাল ও কাউন্টডাউন শুরু হবে।
+                    ট্রেডিং চার্ট (Binomo/Quotex/TradingView) স্ক্রিনে দৃশ্যমান রাখুন। চার্ট পেলেই স্বয়ংক্রিয় এনালাইসিস শুরু হবে।
                   </div>
                 </div>
               </div>
             ) : isConnecting ? (
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-cyan-800/60 text-center text-xs text-cyan-300 font-mono animate-pulse">
-                স্ক্রিনের সাথে কানেক্ট হচ্ছে...
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-cyan-800/60 text-center text-xs text-cyan-300 font-mono space-y-2">
+                <div className="animate-pulse flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                  <span>স্ক্রিনের সাথে কানেক্ট হচ্ছে...</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    liveScreenService.cancelConnecting();
+                  }}
+                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold rounded-lg border border-slate-700 transition-colors"
+                >
+                  বাতিল করুন (Cancel)
+                </button>
               </div>
             ) : (
               <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-400">

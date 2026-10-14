@@ -216,15 +216,33 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </>
             )}
 
-            {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR' || streamState === 'CONNECTING') && (
+            {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR') && (
               <button
                 onClick={handleConnect}
-                disabled={streamState === 'CONNECTING'}
-                className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 active:scale-95 rounded-lg flex items-center gap-2 shadow-sm transition-all"
               >
                 <Monitor className="w-4 h-4" />
-                <span>{streamState === 'CONNECTING' ? 'Connecting...' : 'Connect Live Screen'}</span>
+                <span>Connect Live Screen</span>
               </button>
+            )}
+
+            {streamState === 'CONNECTING' && (
+              <div className="flex items-center gap-2">
+                <button
+                  disabled
+                  className="px-3.5 py-2 text-xs font-semibold text-cyan-200 bg-cyan-950/80 border border-cyan-500/40 rounded-lg flex items-center gap-2 shadow-sm"
+                >
+                  <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
+                  <span>Connecting...</span>
+                </button>
+                <button
+                  onClick={() => liveScreenService.cancelConnecting()}
+                  className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+                  title="কানেকশন বাতিল বা রিসেট করুন"
+                >
+                  রিসেট (Cancel)
+                </button>
+              </div>
             )}
 
             {/* Voice Assistant Toggle Button */}

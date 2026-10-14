@@ -169,6 +169,7 @@ export class LiveScreenService {
     if (this.state === 'STREAMING') return true;
 
     this.state = 'CONNECTING';
+    this.autoOpenModal = true;
     this.errorMessage = null;
     this.isSearchingForChart = true;
     this.notify();
@@ -221,7 +222,7 @@ export class LiveScreenService {
           direction: 'WAIT',
           confidence: 0,
           durationText: '--:--',
-          verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+          verdictTitle: 'চার্ট পাওয়া যায়নি',
           reasonText: 'ট্রেডিং চার্ট স্ক্রিনে রাখুন',
           latencyMs: 0,
         });
@@ -346,7 +347,7 @@ export class LiveScreenService {
           direction: 'WAIT',
           confidence: 0,
           durationText: '--:--',
-          verdictTitle: 'চার্ট স্ক্যান হচ্ছে...',
+          verdictTitle: 'চার্ট পাওয়া যায়নি',
           reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
           latencyMs: 0,
         });
@@ -691,8 +692,8 @@ export class LiveScreenService {
       direction: 'WAIT',
       confidence: 0,
       durationText: '--:--',
-      verdictTitle: '● চার্ট স্ক্যান হচ্ছে...',
-      reasonText: 'ক্যাপচার পুনরায় সক্রিয়',
+      verdictTitle: this.isChartFound ? 'WAIT' : 'চার্ট পাওয়া যায়নি',
+      reasonText: this.isChartFound ? 'পরবর্তী ক্যান্ডেল অপেক্ষা' : 'ট্রেডিং চার্ট সামনে রাখুন',
       latencyMs: 0,
       frameCount: this.latestFrameCount,
       resolution: this.latestResolution,
@@ -703,6 +704,21 @@ export class LiveScreenService {
 
     this.captureAndAnalyzeCurrentFrame();
     this.resetIntervalTimer();
+  }
+
+  /**
+   * Allows the user to immediately cancel an in-progress connection attempt
+   */
+  public cancelConnecting(): void {
+    if (this.state === 'CONNECTING') {
+      this.state = 'DISCONNECTED';
+      this.captureState = 'STOPPED';
+      this.aiState = 'IDLE';
+      this.isSearchingForChart = false;
+      this.isChartFound = false;
+      this.errorMessage = 'কানেকশন বাতিল করা হয়েছে। পুনরায় চেষ্টা করুন।';
+      this.notify();
+    }
   }
 
   /**

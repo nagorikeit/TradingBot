@@ -4,7 +4,7 @@ const STORAGE_KEY_BACKEND_URL = 'tradepulse_backend_api_url';
 
 // Default production cloud URL where the Express backend and Gemini Vision proxy are hosted
 export const DEFAULT_HOSTED_BACKEND_URL =
-  'https://ais-pre-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app';
+  'https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app';
 
 /**
  * Returns the base URL for API requests.

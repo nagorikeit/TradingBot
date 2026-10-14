@@ -82,6 +82,17 @@ export interface TradePulseNativeScreenPlugin {
     eventName: 'onFrameCaptured',
     listenerFunc: (frame: NativeCaptureFrameEvent) => void
   ): Promise<{ remove: () => void }>;
+
+  /**
+   * Synthesizes and plays spoken Bengali/English audio via Native OS Text-To-Speech engine
+   * Works in background over other apps even when app is minimized or hidden.
+   */
+  speak(options: { text: string }): Promise<{ success: boolean; message?: string }>;
+
+  /**
+   * Stops any currently playing native audio speech
+   */
+  stopSpeaking(): Promise<{ success: boolean }>;
 }
 
 export const TradePulseNativeScreen = registerPlugin<TradePulseNativeScreenPlugin>(

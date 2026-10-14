@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import { TradePulseNativeScreen } from '../plugins/TradePulseNativeScreen';
 import { ScreenAnalysisFinalResult } from '../types/screenTypes';
 
 export type VoiceNotificationListener = (text: string, isSupported: boolean) => void;
@@ -15,9 +17,11 @@ export class VoiceAssistantService {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('tradingbot_voice_enabled');
       this.isEnabled = stored !== null ? stored === 'true' : true;
-      this.isSpeechSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+      this.isSpeechSupported =
+        Capacitor.isNativePlatform() ||
+        ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window);
 
-      if (this.isSpeechSupported) {
+      if ('speechSynthesis' in window && window.speechSynthesis) {
         this.initVoice();
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
           window.speechSynthesis.onvoiceschanged = () => this.initVoice();
@@ -62,8 +66,13 @@ export class VoiceAssistantService {
     this.isEnabled = enabled;
     if (typeof window !== 'undefined') {
       localStorage.setItem('tradingbot_voice_enabled', String(enabled));
-      if (!enabled && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+      if (!enabled) {
+        if (Capacitor.isNativePlatform()) {
+          TradePulseNativeScreen.stopSpeaking().catch(() => {});
+        }
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
       }
     }
     this.notify(enabled ? 'ভয়েস সহকারী চালু করা হয়েছে' : 'ভয়েস সহকারী বন্ধ করা হয়েছে');
@@ -80,6 +89,8 @@ export class VoiceAssistantService {
 
   /**
    * Core speaking engine with de-duplication and cooldown
+   * Directs speech to Native Android OS TextToSpeech if on device,
+   * enabling background voice playback even while floating overlay is on top of broker apps.
    */
   public speak(text: string, dedupKey?: string, force: boolean = false): void {
     const now = Date.now();
@@ -96,14 +107,35 @@ export class VoiceAssistantService {
     // Always broadcast notification to UI listeners
     this.notify(text);
 
-    if (!this.isEnabled || !this.isSpeechSupported || typeof window === 'undefined') {
+    if (!this.isEnabled || typeof window === 'undefined') {
       return;
     }
 
-    try {
-      // Clear pending speech queue to avoid backlog delay
-      window.speechSynthesis.cancel();
+    // 1. Android Native Text-To-Speech (background capable over Binomo/Quotex)
+    if (Capacitor.isNativePlatform()) {
+      TradePulseNativeScreen.speak({ text })
+        .then((res) => {
+          if (!res.success && 'speechSynthesis' in window && window.speechSynthesis) {
+            this.speakViaWebSynthesis(text);
+          }
+        })
+        .catch(() => {
+          if ('speechSynthesis' in window && window.speechSynthesis) {
+            this.speakViaWebSynthesis(text);
+          }
+        });
+      return;
+    }
 
+    // 2. Standard Web Browser Speech Synthesis
+    if ('speechSynthesis' in window && window.speechSynthesis) {
+      this.speakViaWebSynthesis(text);
+    }
+  }
+
+  private speakViaWebSynthesis(text: string): void {
+    try {
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       if (this.selectedVoice) {
         utterance.voice = this.selectedVoice;
@@ -111,11 +143,9 @@ export class VoiceAssistantService {
       } else {
         utterance.lang = 'bn-BD';
       }
-
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
-
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       console.warn('[VoiceAssistant] Speech synthesis error:', err);
