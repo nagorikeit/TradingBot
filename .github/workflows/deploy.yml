@@ -79,7 +79,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-34 platforms;android-36 build-tools;34.0.0'
+          packages: 'platform-tools platforms;android-34 platforms;android-35 build-tools;35.0.0'
 
       - name: Accept Android SDK Licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -101,20 +101,25 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Prepare Named APK
+        run: |
+          mkdir -p release-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/TradePulse-Agent-v1.0.apk
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TradePulse-Agent-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: release-apk/TradePulse-Agent-v1.0.apk
           retention-days: 14
 
       - name: Create GitHub Release with APK
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
-        continue-on-error: true
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: TradePulse Android App v1.0.${{ github.run_number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             ## 🚀 TradePulse AI Screen Analyzer APK
             - **Real-Time Cross-App Screen Capture**: MediaProjection Foreground Service
@@ -125,4 +130,4 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
+            release-apk/TradePulse-Agent-v1.0.apk
