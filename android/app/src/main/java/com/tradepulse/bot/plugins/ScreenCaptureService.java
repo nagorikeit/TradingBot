@@ -1,5 +1,6 @@
 package com.tradepulse.bot.plugins;
 
+import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -61,7 +62,7 @@ public class ScreenCaptureService extends Service {
         // Now that the service is running in the foreground with FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
         // we can safely obtain the MediaProjection without SecurityException.
         if (intent != null && intent.hasExtra("resultCode")) {
-            int resultCode = intent.getIntExtra("resultCode", -1);
+            int resultCode = intent.getIntExtra("resultCode", Activity.RESULT_CANCELED);
             Intent resultData = null;
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -73,7 +74,7 @@ public class ScreenCaptureService extends Service {
                 resultData = intent.getParcelableExtra("resultData");
             }
 
-            if (resultCode != -1 && resultData != null) {
+            if (resultCode == Activity.RESULT_OK && resultData != null) {
                 try {
                     MediaProjectionManager projectionManager =
                             (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -92,6 +93,8 @@ public class ScreenCaptureService extends Service {
                         sCallback.onProjectionFailed(e);
                     }
                 }
+            } else if (sCallback != null) {
+                sCallback.onProjectionFailed(new Exception("Invalid result code: " + resultCode));
             }
         }
 

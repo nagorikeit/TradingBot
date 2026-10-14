@@ -366,8 +366,8 @@ export class LiveScreenService {
 
       const timeoutPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
         setTimeout(() => {
-          resolve({ success: false, message: 'অনুমতি ডায়ালগের জন্য সময় শেষ হয়েছে। আবার চেষ্টা করুন।' });
-        }, 15000);
+          resolve({ success: false, message: 'অনুমতি ডায়ালগের জন্য সময় শেষ হয়েছে। আবার "Connect Live Screen" চাপুন এবং "Start now" নির্বাচন করুন।' });
+        }, 60000);
       });
 
       const result = await Promise.race([startCapturePromise, timeoutPromise]);
