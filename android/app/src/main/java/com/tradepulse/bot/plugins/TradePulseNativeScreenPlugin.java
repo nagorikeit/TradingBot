@@ -123,15 +123,67 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     @ActivityCallback
-    public void handleProjectionResult(PluginCall call, ActivityResult result) {
+    public void handleProjectionResult(final PluginCall call, final ActivityResult result) {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
             call.reject("User declined screen projection permission");
             return;
         }
 
-        // Start Foreground Service with MEDIA_PROJECTION type (Android 14+ requires consent prior to service start)
+        // Set callback to receive the active MediaProjection from ScreenCaptureService
+        // strictly AFTER startForeground() has been executed on the foreground service.
+        ScreenCaptureService.setCallback(new ScreenCaptureService.ProjectionCallback() {
+            @Override
+            public void onProjectionCreated(final MediaProjection projection) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            mediaProjection = projection;
+                            if (mediaProjection == null) {
+                                call.reject("Failed to obtain MediaProjection instance");
+                                return;
+                            }
+
+                            if (Build.VERSION.SDK_INT >= 34) {
+                                mediaProjection.registerCallback(new MediaProjection.Callback() {
+                                    @Override
+                                    public void onStop() {
+                                        super.onStop();
+                                        mediaProjection = null;
+                                    }
+                                }, captureHandler);
+                            }
+
+                            setupVirtualDisplay();
+                            startFrameCaptureLoop();
+
+                            JSObject res = new JSObject();
+                            res.put("success", true);
+                            call.resolve(res);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            call.reject("Failed during virtual display setup: " + e.getMessage());
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onProjectionFailed(final Exception error) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        call.reject("Failed to initialize MediaProjection: " + error.getMessage());
+                    }
+                });
+            }
+        });
+
+        // Start Foreground Service with MEDIA_PROJECTION type and pass intent extras
         try {
             Intent serviceIntent = new Intent(getContext(), ScreenCaptureService.class);
+            serviceIntent.putExtra("resultCode", result.getResultCode());
+            serviceIntent.putExtra("resultData", result.getData());
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getContext().startForegroundService(serviceIntent);
             } else {
@@ -139,34 +191,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
         } catch (Exception e) {
             e.printStackTrace();
-        }
-
-        try {
-            mediaProjection = projectionManager.getMediaProjection(result.getResultCode(), result.getData());
-            if (mediaProjection == null) {
-                call.reject("Failed to obtain MediaProjection instance");
-                return;
-            }
-
-            if (Build.VERSION.SDK_INT >= 34) {
-                mediaProjection.registerCallback(new MediaProjection.Callback() {
-                    @Override
-                    public void onStop() {
-                        super.onStop();
-                        mediaProjection = null;
-                    }
-                }, captureHandler);
-            }
-
-            setupVirtualDisplay();
-            startFrameCaptureLoop();
-
-            JSObject res = new JSObject();
-            res.put("success", true);
-            call.resolve(res);
-        } catch (Exception e) {
-            e.printStackTrace();
-            call.reject("Failed to initialize MediaProjection: " + e.getMessage());
+            call.reject("Failed to start ScreenCaptureService: " + e.getMessage());
         }
     }
 

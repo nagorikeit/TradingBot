@@ -16,10 +16,21 @@ import {
   Sliders,
   Volume2,
   VolumeX,
+  Server,
+  Wifi,
+  WifiOff,
+  Settings,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
+import {
+  getApiBaseUrl,
+  getCustomApiUrl,
+  setCustomApiUrl,
+  checkBackendHealth,
+  DEFAULT_HOSTED_BACKEND_URL,
+} from '../services/apiConfig';
 
 export const LiveScreenAnalyzer: React.FC = () => {
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
@@ -33,6 +44,33 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
+
+  // Backend Connection Health & Settings Modal State
+  const [showServerModal, setShowServerModal] = useState<boolean>(false);
+  const [serverStatus, setServerStatus] = useState<{
+    tested: boolean;
+    ok: boolean;
+    latencyMs: number;
+    error?: string;
+  }>({ tested: false, ok: false, latencyMs: 0 });
+  const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
+  const [customUrlInput, setCustomUrlInput] = useState<string>(getCustomApiUrl());
+
+  const runHealthCheck = async () => {
+    setIsTestingServer(true);
+    const res = await checkBackendHealth(5000);
+    setServerStatus({
+      tested: true,
+      ok: res.ok,
+      latencyMs: res.latencyMs,
+      error: res.error,
+    });
+    setIsTestingServer(false);
+  };
+
+  useEffect(() => {
+    runHealthCheck();
+  }, []);
 
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
@@ -225,6 +263,37 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <Layers className="w-4 h-4 text-cyan-400" />
               <span>ফ্লোটিং HUD</span>
             </button>
+
+            {/* Backend Server Settings Button */}
+            <button
+              onClick={() => {
+                setShowServerModal(true);
+                runHealthCheck();
+              }}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors shadow-sm ${
+                serverStatus.tested && serverStatus.ok
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/40'
+                  : serverStatus.tested && !serverStatus.ok
+                  ? 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-900/40'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+              }`}
+              title="ব্যাকএন্ড সার্ভার কানেকশন ও API সেটিংস"
+            >
+              {serverStatus.tested && serverStatus.ok ? (
+                <Wifi className="w-4 h-4 text-emerald-400" />
+              ) : serverStatus.tested && !serverStatus.ok ? (
+                <WifiOff className="w-4 h-4 text-rose-400" />
+              ) : (
+                <Server className="w-4 h-4 text-cyan-400" />
+              )}
+              <span>
+                {serverStatus.tested && serverStatus.ok
+                  ? `সার্ভার সক্রিয় (${serverStatus.latencyMs}ms)`
+                  : serverStatus.tested && !serverStatus.ok
+                  ? 'সার্ভার অফলাইন'
+                  : 'সার্ভার চেক'}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -272,14 +341,43 @@ export const LiveScreenAnalyzer: React.FC = () => {
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold">Notice:</span> {errorMessage}
-              {errorMessage.includes('getDisplayMedia') && (
-                <div className="mt-1 text-slate-300 text-[11px] leading-relaxed">
-                  💡 <b>পরামর্শ:</b> মোবাইল ব্রাউজারে স্ক্রিন শেয়ারের জন্য TradePulse Android APK ব্যবহার করুন অথবা ব্রাউজারের পারমিশন চালু করুন।
-                </div>
-              )}
+              <div className="font-semibold text-red-300">
+                {errorMessage.includes('Failed to fetch')
+                  ? '⚠️ সার্ভার সংযোগ বিচ্ছিন্ন (Failed to fetch)'
+                  : errorMessage.includes('MediaProjection')
+                  ? '⚠️ স্ক্রিন ক্যাপচার পারমিশন এরর'
+                  : `Notice: ${errorMessage}`}
+              </div>
+              <div className="mt-1 text-slate-300 text-[11px] leading-relaxed">
+                {errorMessage.includes('Failed to fetch') && (
+                  <span>
+                    মোবাইল ইন্টারনেট বা ক্লাউড সার্ভারের সংযোগ পাওয়া যাচ্ছে না। নিচের <b>সার্ভার কনফিগারেশন</b> বাটনে ক্লিক করে সঠিক Backend URL দিন অথবা ইন্টারনেট সংযোগ চেক করুন।
+                  </span>
+                )}
+                {errorMessage.includes('MediaProjection') && (
+                  <span>
+                    অ্যান্ড্রয়েড 14/15-এর Foreground Service পারমিশন সংশোধন করা হয়েছে। নতুন বিল্ডের APK ডাউনলোড করে আপডেট করুন।
+                  </span>
+                )}
+                {errorMessage.includes('getDisplayMedia') && (
+                  <span>
+                    মোবাইল ব্রাউজারে স্ক্রিন শেয়ারের জন্য TradePulse Android APK ব্যবহার করুন অথবা ব্রাউজারের পারমিশন চালু করুন।
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+          {errorMessage.includes('Failed to fetch') && (
+            <button
+              onClick={() => {
+                setShowServerModal(true);
+                runHealthCheck();
+              }}
+              className="px-3 py-1.5 bg-red-900/60 hover:bg-red-800/80 border border-red-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap self-start sm:self-center"
+            >
+              ⚙️ সার্ভার কনফিগার করুন
+            </button>
+          )}
         </div>
       )}
 
@@ -503,6 +601,118 @@ export const LiveScreenAnalyzer: React.FC = () => {
           <p className="text-xs text-slate-400 max-w-md mx-auto">
             Click <strong>"Connect Live Screen"</strong> above and choose your TradingView, broker chart, or Binance tab to start continuous visual analysis.
           </p>
+        </div>
+      )}
+
+      {/* Server Settings Modal */}
+      {showServerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <Server className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Backend Server Settings</h3>
+                  <p className="text-[11px] text-slate-400">AI Vision & Trading Engine Connectivity</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowServerModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Connection Status Card */}
+            <div className={`p-3.5 rounded-xl border flex items-start gap-3 ${
+              serverStatus.tested && serverStatus.ok
+                ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                : serverStatus.tested && !serverStatus.ok
+                ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
+            }`}>
+              {serverStatus.tested && serverStatus.ok ? (
+                <Wifi className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              ) : serverStatus.tested && !serverStatus.ok ? (
+                <WifiOff className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              ) : (
+                <RefreshCw className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5 animate-spin" />
+              )}
+              <div className="flex-1 text-xs space-y-1">
+                <div className="font-semibold flex items-center justify-between">
+                  <span>{serverStatus.tested ? (serverStatus.ok ? 'সার্ভার সক্রিয় ও সংযুক্ত' : 'সার্ভার অফলাইন / সংযোগ ব্যর্থ') : 'যাচাই করা হচ্ছে...'}</span>
+                  {serverStatus.tested && serverStatus.ok && (
+                    <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                      {serverStatus.latencyMs} ms
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  {serverStatus.tested && serverStatus.ok
+                    ? 'AI Vision API এবং ট্রেডিং এনালাইজার সঠিকভাবে রেসপন্স করছে।'
+                    : serverStatus.error
+                    ? `কারণ: ${serverStatus.error}`
+                    : 'সার্ভার স্টেটাস রিফ্রেশ করুন।'}
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Backend URL Input */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Backend Server URL
+              </label>
+              <input
+                type="text"
+                placeholder="https://your-backend.run.app অথবা http://192.168.1.X:3000"
+                value={customUrlInput}
+                onChange={(e) => setCustomUrlInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>ডিফল্ট: Cloud Run Hosted Proxy</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomUrlInput('');
+                    setCustomApiUrl('');
+                    runHealthCheck();
+                  }}
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  ডিফল্ট এ ফিরিয়ে আনুন
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={runHealthCheck}
+                disabled={isTestingServer}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingServer ? 'animate-spin text-cyan-400' : ''}`} />
+                <span>টেস্ট পিং (Ping)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomApiUrl(customUrlInput);
+                  runHealthCheck();
+                  setShowServerModal(false);
+                }}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+              >
+                সেভ করুন (Save)
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
