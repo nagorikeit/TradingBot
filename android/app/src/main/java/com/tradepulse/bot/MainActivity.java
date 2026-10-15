@@ -21,6 +21,7 @@ public class MainActivity extends BridgeActivity {
         super.onPause();
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().onResume();
+            getBridge().getWebView().resumeTimers();
         }
     }
 
@@ -29,6 +30,7 @@ public class MainActivity extends BridgeActivity {
         super.onStop();
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().onResume();
+            getBridge().getWebView().resumeTimers();
         }
     }
 }

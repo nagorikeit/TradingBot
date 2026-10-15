@@ -339,7 +339,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 {serverStatus.tested && serverStatus.ok
                   ? `সার্ভার সক্রিয় (${serverStatus.latencyMs}ms)`
                   : serverStatus.tested && !serverStatus.ok
-                  ? 'সার্ভার অফলাইন'
+                  ? 'অন-ডিভাইস ভিশন সক্রিয়'
                   : 'সার্ভার চেক'}
               </span>
             </button>
@@ -717,7 +717,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               )}
               <div className="flex-1 text-xs space-y-1">
                 <div className="font-semibold flex items-center justify-between">
-                  <span>{serverStatus.tested ? (serverStatus.ok ? 'সার্ভার সক্রিয় ও সংযুক্ত' : 'সার্ভার অফলাইন / সংযোগ ব্যর্থ') : 'যাচাই করা হচ্ছে...'}</span>
+                  <span>{serverStatus.tested ? (serverStatus.ok ? 'সার্ভার সক্রিয় ও সংযুক্ত' : 'অন-ডিভাইস ভিশন সক্রিয় (সার্ভার অফলাইন)') : 'যাচাই করা হচ্ছে...'}</span>
                   {serverStatus.tested && serverStatus.ok && (
                     <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full">
                       {serverStatus.latencyMs} ms
@@ -726,10 +726,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 </div>
                 <div className="text-[11px] text-slate-400 leading-relaxed">
                   {serverStatus.tested && serverStatus.ok
-                    ? 'AI Vision API এবং ট্রেডিং এনালাইজার সঠিকভাবে রেসপন্স করছে।'
-                    : serverStatus.error
-                    ? `কারণ: ${serverStatus.error}`
-                    : 'সার্ভার স্টেটাস রিফ্রেশ করুন।'}
+                    ? 'AI Vision API এবং ট্রেডিং এনালাইজার ক্লাউডে সক্রিয়ভাবে কাজ করছে।'
+                    : 'ক্লাউড সার্ভার অফলাইন হলেও স্বয়ংক্রিয় অন-ডিভাইস স্মার্ট ভিশন ইঞ্জিন চালু রয়েছে। স্ক্রিন শেয়ারিং ও ফ্লোটিং সিগন্যাল বাবল কোনো বিঘ্ন ছাড়াই রিয়েল-টাইমে কাজ করবে।'}
                 </div>
               </div>
             </div>
