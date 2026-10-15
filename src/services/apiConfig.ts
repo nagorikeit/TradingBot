@@ -2,31 +2,20 @@ import { Capacitor } from '@capacitor/core';
 
 const STORAGE_KEY_BACKEND_URL = 'tradepulse_backend_api_url';
 
-// Default hosted backend URL - if unset or broken, relative path /api is used
-export const DEFAULT_HOSTED_BACKEND_URL = '';
+// Default hosted backend URL - automatically used by Android APK
+export const DEFAULT_HOSTED_BACKEND_URL = 'https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app';
 
 /**
  * Returns the base URL for API requests.
- * Automatically purges expired/broken internal dev URLs.
  * On Web, always uses relative path ('') which routes to Express server on port 3000.
- * On Android APK, uses user-configured URL, VITE_BACKEND_URL, or local loopback.
+ * On Android APK, uses user-configured URL, VITE_BACKEND_URL, or DEFAULT_HOSTED_BACKEND_URL.
  */
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return '';
 
   const stored = localStorage.getItem(STORAGE_KEY_BACKEND_URL);
 
-  // Auto-purge old broken internal dev URL if present in localStorage
-  if (
-    stored &&
-    (stored.includes('ais-dev-2mn2ktc74egyugovwwvzoy') ||
-      stored.includes('634716608323') ||
-      stored.includes('undefined'))
-  ) {
-    try {
-      localStorage.removeItem(STORAGE_KEY_BACKEND_URL);
-    } catch {}
-  } else if (stored && stored.trim()) {
+  if (stored && stored.trim() && stored !== 'undefined') {
     return stored.trim().replace(/\/+$/, '');
   }
 
@@ -36,11 +25,10 @@ export function getApiBaseUrl(): string {
     if (envUrl && envUrl.trim()) {
       return envUrl.trim().replace(/\/+$/, '');
     }
-    // If running in Android emulator or local network
-    return '';
+    return DEFAULT_HOSTED_BACKEND_URL;
   }
 
-  // On Web (AI Studio preview, Chrome, mobile browser), relative path /api connects directly to Express backend
+  // On Web (AI Studio preview, Chrome, mobile browser), relative path '' routes to Express backend
   return '';
 }
 

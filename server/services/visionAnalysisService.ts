@@ -46,6 +46,7 @@ CRITICAL RULES:
 1. TRADING SCREEN IDENTIFICATION:
    - If the screen displays candlestick bars (green/red candles), price axes, trendlines, or binary/forex broker trading interface (with Buy/Call/Up, Sell/Put/Down buttons), "isClearTradingChart" MUST BE TRUE.
    - Even if there are background watermarks (e.g. "DEMO"), headers ("Demo account ৳1,500,000.00", "Deposit"), floating overlay widgets, or dark broker themes, RECOGNIZE THE CHART and set "isClearTradingChart": true.
+   - STRICT NEGATIVE RULE: If the screen is NOT an active trading terminal or candlestick chart (for example: mobile home screen, app launcher, messenger/chat, settings, YouTube, general website, social media, or blank screen), you MUST set "isClearTradingChart": false, "confidenceScore": 0, "lastCandleDirection": "UNCERTAIN", and "visionSummary": "স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।". DO NOT guess or fabricate trades on non-trading screens!
 2. PRIVACY & SAFETY:
    - Standard broker headers, Demo account labels, and virtual balances are NORMAL trading UI elements and MUST NOT be flagged as sensitive private data. Set "containsSensitivePrivateData": false for all standard broker screens. Only set true if real personal credentials (passwords, credit card numbers, government IDs) are visible.
 3. TECHNICAL DETAIL EXTRACTION:
@@ -203,19 +204,19 @@ CRITICAL RULES:
       else if (bufferStr.includes('BTC') || bufferStr.includes('btc')) detectedSymbol = 'BTC/USDT';
       else if (bufferStr.includes('AUD') || bufferStr.includes('aud')) detectedSymbol = 'AUD/CHF';
 
-      // STRICT USER RULE 8: When Gemini API fails or key is missing,
-      // DO NOT guess BUY/SELL with local heuristics; return WAIT with explicit reason!
+      // When Gemini API is unavailable or offline, strictly return isClearTradingChart: false
+      // to prevent false trade signals on non-chart screens!
       return {
-        isClearTradingChart: true,
+        isClearTradingChart: false,
         symbol: detectedSymbol,
         timeframe: '1m',
         marketType: 'FOREX',
         lastVisiblePrice: 0,
         lastCandleDirection: 'UNCERTAIN',
         chartStructure: 'UNCLEAR',
-        candlestickPattern: 'Gemini AI অফলাইন (অপেক্ষমাণ)',
+        candlestickPattern: 'চার্ট অনুসন্ধান চলছে',
         indicatorsIdentified: [],
-        visionSummary: 'স্ক্রিন ফ্রেম গৃহীত হয়েছে কিন্তু Gemini AI ভিশন সংযোগ পাওয়া যায়নি। অনুমানভিত্তিক ট্রেড নিষিদ্ধ—WAIT রাখা হয়েছে।',
+        visionSummary: 'স্ক্রিন ফ্রেম গৃহীত হয়েছে কিন্তু চার্ট নিশ্চিতকরণ পেন্ডিং। অনুমানভিত্তিক ট্রেড নিষিদ্ধ—WAIT রাখা হয়েছে।',
         confidenceScore: 0,
         containsSensitivePrivateData: false,
       };
