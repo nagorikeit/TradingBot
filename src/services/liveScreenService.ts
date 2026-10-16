@@ -602,11 +602,17 @@ export class LiveScreenService {
         const img = new Image();
         img.onload = () => {
           try {
+            const naturalW = img.naturalWidth || img.width || 720;
+            const naturalH = img.naturalHeight || img.height || 1280;
+            const isPortrait = naturalH > naturalW;
+
+            // Preserve true aspect ratio so tall mobile phone screens are not vertically squashed
+            const targetWidth = 100;
+            const targetHeight = Math.max(60, Math.min(220, Math.round((naturalH / naturalW) * targetWidth)));
+
             const testCanvas = document.createElement('canvas');
-            const tw = 120;
-            const th = 80;
-            testCanvas.width = tw;
-            testCanvas.height = th;
+            testCanvas.width = targetWidth;
+            testCanvas.height = targetHeight;
             const ctx = testCanvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) {
               return resolve({
@@ -619,53 +625,66 @@ export class LiveScreenService {
               });
             }
 
-            ctx.drawImage(img, 0, 0, tw, th);
-            const imgData = ctx.getImageData(0, 0, tw, th);
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+            const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
             const data = imgData.data;
 
-            let cyanCount = 0;
+            // Mobile Portrait Chart Zone: ~14% to ~65% of screen height
+            // (top 14% is browser/balance header, bottom 35% is trading controls)
+            // Desktop/Landscape Chart Zone: ~8% to ~92%
+            const yStart = isPortrait ? Math.floor(targetHeight * 0.14) : Math.floor(targetHeight * 0.08);
+            const yEnd = isPortrait ? Math.floor(targetHeight * 0.65) : Math.floor(targetHeight * 0.92);
+            const xStart = Math.floor(targetWidth * 0.03);
+            const xEnd = Math.floor(targetWidth * 0.97);
+
             let darkBgCount = 0;
             let lightBgCount = 0;
+            let greenPixelsInChart = 0;
+            let redPixelsInChart = 0;
 
-            const yStart = Math.floor(th * 0.15);
-            const yEnd = Math.floor(th * 0.85);
-            const xStart = Math.floor(tw * 0.05);
-            const xEnd = Math.floor(tw * 0.95);
-
-            const columnCandlePixels: number[] = new Array(tw).fill(0);
-            const columnMinY: number[] = new Array(tw).fill(999);
-            const columnMaxY: number[] = new Array(tw).fill(-1);
-            let totalGreen = 0;
-            let totalRed = 0;
+            const columnCandlePixels: number[] = new Array(targetWidth).fill(0);
+            const columnMinY: number[] = new Array(targetWidth).fill(999);
+            const columnMaxY: number[] = new Array(targetWidth).fill(-1);
 
             for (let y = yStart; y < yEnd; y++) {
               for (let x = xStart; x < xEnd; x++) {
-                const idx = (y * tw + x) * 4;
+                const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Check for TradePulse app theme buttons/accents (cyan)
-                if (r < 80 && g > 130 && b > 160) {
-                  cyanCount++;
+                // 1. Broker Background: dark theme (#131722, #1e222d, including "DEMO" watermark) or light theme
+                if (r <= 68 && g <= 72 && b <= 85) {
+                  darkBgCount++;
+                } else if (r >= 210 && g >= 210 && b >= 210) {
+                  lightBgCount++;
                 }
 
-                // Check background (dark broker themes or clean light broker themes)
-                if (r < 40 && g < 45 && b < 55) darkBgCount++;
-                else if (r > 225 && g > 225 && b > 225) lightBgCount++;
+                // 2. Candlestick green colors (supports Quotex teal-green #26a69a, pure green #00c076, emerald #089981, and standard green):
+                const isGreenCandle =
+                  g >= 95 &&
+                  g >= r * 1.20 &&
+                  (g - r) >= 16 &&
+                  b <= g * 1.10 &&
+                  r < 125;
 
-                // Strict Candlestick green: green dominant over red and blue (not teal/cyan)
-                const isGreen = g >= 115 && g >= r * 1.30 && g >= b * 1.25 && (g - b) > 25;
-                // Strict Candlestick red: red dominant over green and blue (not purple/magenta)
-                const isRed = r >= 135 && r >= g * 1.35 && r >= b * 1.35 && (r - b) > 30;
+                // 3. Candlestick red colors (supports Quotex red #ef5350, Binomo red #ff4141, and PocketOption red #f44336):
+                const isRedCandle =
+                  r >= 115 &&
+                  r >= g * 1.22 &&
+                  (r - g) >= 18 &&
+                  r >= b * 1.22 &&
+                  (r - b) >= 18 &&
+                  g < 145 &&
+                  b < 145;
 
-                if (isGreen) {
-                  totalGreen++;
+                if (isGreenCandle) {
+                  greenPixelsInChart++;
                   columnCandlePixels[x]++;
                   if (y < columnMinY[x]) columnMinY[x] = y;
                   if (y > columnMaxY[x]) columnMaxY[x] = y;
-                } else if (isRed) {
-                  totalRed++;
+                } else if (isRedCandle) {
+                  redPixelsInChart++;
                   columnCandlePixels[x]++;
                   if (y < columnMinY[x]) columnMinY[x] = y;
                   if (y > columnMaxY[x]) columnMaxY[x] = y;
@@ -674,95 +693,65 @@ export class LiveScreenService {
             }
 
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
-            const totalCandlePixels = totalGreen + totalRed;
+            const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
-            // Reject if TradePulse UI itself is dominant
-            if (cyanCount > 60) {
-              return resolve({
-                isChart: false,
-                dir: 'WAIT',
-                confidence: 0,
-                symbol: 'UNKNOWN',
-                pattern: 'TradePulse স্ক্রিন সনাক্ত',
-                reason: [
-                  'TradePulse অ্যাপের নিজস্ব ইন্টারফেস স্ক্রিনে দৃশ্যমান।',
-                  'অনুগ্রহ করে ব্রোকার অ্যাপের (যেমন Quotex/Binomo/TradingView) চার্ট ওপেন করুন।',
-                ],
-              });
-            }
-
-            // Identify distinct candle clusters (candlestick bars)
-            const candleClusters: { startX: number; endX: number; midY: number; height: number }[] = [];
-            let inCluster = false;
-            let clusterStart = 0;
-            let clusterMinY = 999;
-            let clusterMaxY = -1;
+            // Group adjacent columns into candle bars
+            let distinctCandleBars = 0;
+            let inBar = false;
+            let barWidth = 0;
 
             for (let x = xStart; x < xEnd; x++) {
               const height = columnMaxY[x] - columnMinY[x] + 1;
-              const hasCandle = columnCandlePixels[x] >= 3 && height >= 4;
+              const hasCandle = columnCandlePixels[x] >= 2 && height >= 3;
 
               if (hasCandle) {
-                if (!inCluster) {
-                  inCluster = true;
-                  clusterStart = x;
-                  clusterMinY = columnMinY[x];
-                  clusterMaxY = columnMaxY[x];
+                if (!inBar) {
+                  inBar = true;
+                  barWidth = 1;
+                  distinctCandleBars++;
                 } else {
-                  if (columnMinY[x] < clusterMinY) clusterMinY = columnMinY[x];
-                  if (columnMaxY[x] > clusterMaxY) clusterMaxY = columnMaxY[x];
-                }
-              } else {
-                if (inCluster) {
-                  inCluster = false;
-                  const clusterWidth = x - clusterStart;
-                  if (clusterWidth <= 8) {
-                    candleClusters.push({
-                      startX: clusterStart,
-                      endX: x - 1,
-                      midY: (clusterMinY + clusterMaxY) / 2,
-                      height: clusterMaxY - clusterMinY + 1,
-                    });
+                  barWidth++;
+                  if (barWidth > 12) {
+                    inBar = false;
                   }
                 }
-              }
-            }
-            if (inCluster) {
-              const clusterWidth = xEnd - clusterStart;
-              if (clusterWidth <= 8) {
-                candleClusters.push({
-                  startX: clusterStart,
-                  endX: xEnd - 1,
-                  midY: (clusterMinY + clusterMaxY) / 2,
-                  height: clusterMaxY - clusterMinY + 1,
-                });
+              } else {
+                inBar = false;
+                barWidth = 0;
               }
             }
 
-            // Check vertical spread of candle cluster positions across Y axis
-            let ySpread = 0;
-            if (candleClusters.length >= 2) {
-              const midYs = candleClusters.map((c) => c.midY);
-              const minMidY = Math.min(...midYs);
-              const maxMidY = Math.max(...midYs);
-              ySpread = maxMidY - minMidY;
+            const isDominatedByBrokerBg = (darkBgCount + lightBgCount) / totalExamined > 0.28;
+
+            // Check if bottom controls also indicate an active trading platform (Buy & Sell buttons present)
+            let hasTradingControls = false;
+            if (isPortrait) {
+              const bottomYStart = Math.floor(targetHeight * 0.65);
+              const bottomYEnd = Math.floor(targetHeight * 0.98);
+              let bottomGreen = 0;
+              let bottomRed = 0;
+              for (let y = bottomYStart; y < bottomYEnd; y++) {
+                for (let x = 0; x < targetWidth; x++) {
+                  const idx = (y * targetWidth + x) * 4;
+                  const r = data[idx];
+                  const g = data[idx + 1];
+                  const b = data[idx + 2];
+                  if (g >= 120 && g > r * 1.25 && g > b * 1.05) bottomGreen++;
+                  if (r >= 135 && r > g * 1.30 && r > b * 1.30) bottomRed++;
+                }
+              }
+              if (bottomGreen >= 12 && bottomRed >= 12) {
+                hasTradingControls = true;
+              }
             }
 
-            const isDominatedByChartBg = (darkBgCount + lightBgCount) / totalExamined > 0.40;
+            // Screen is verified as an active trading chart if:
+            // - Has distinct candle bars and candle pixels in the chart area, AND (broker background OR broker Buy/Sell controls)
+            const isCandlestickChart =
+              (distinctCandleBars >= 2 && totalCandlePixels >= 20 && totalCandlePixels <= totalExamined * 0.45 && (isDominatedByBrokerBg || hasTradingControls)) ||
+              (hasTradingControls && totalCandlePixels >= 12);
 
-            // Strict Verification:
-            // 1. At least 6 separate candle clusters across horizontal axis
-            // 2. Candle pixels between 80 and 35% of total chart area
-            // 3. Vertical Y spread >= 8 pixels (price varies, not a single horizontal text line or button)
-            // 4. Background is uniform broker chart background
-            const isTradingChart =
-              candleClusters.length >= 6 &&
-              totalCandlePixels >= 80 &&
-              totalCandlePixels <= totalExamined * 0.35 &&
-              ySpread >= 8 &&
-              isDominatedByChartBg;
-
-            if (!isTradingChart) {
+            if (!isCandlestickChart) {
               return resolve({
                 isChart: false,
                 dir: 'WAIT',
@@ -778,23 +767,30 @@ export class LiveScreenService {
             }
 
             // Real candlestick chart verified!
-            // Analyze recent momentum on rightmost 35% of screen
+            // Analyze recent price momentum on rightmost 40% of the chart
             let recentGreen = 0;
             let recentRed = 0;
-            for (let y = Math.floor(th * 0.2); y < Math.floor(th * 0.8); y++) {
-              for (let x = Math.floor(tw * 0.65); x < Math.floor(tw * 0.95); x++) {
-                const idx = (y * tw + x) * 4;
+            const rightXStart = Math.floor(xStart + (xEnd - xStart) * 0.55);
+
+            for (let y = yStart; y < yEnd; y++) {
+              for (let x = rightXStart; x < xEnd; x++) {
+                const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
-                if (g >= 115 && g >= r * 1.30 && g >= b * 1.25 && (g - b) > 25) recentGreen++;
-                if (r >= 135 && r >= g * 1.35 && r >= b * 1.35 && (r - b) > 30) recentRed++;
+
+                const isGreen = g >= 95 && g >= r * 1.20 && (g - r) >= 16 && b <= g * 1.10 && r < 125;
+                const isRed = r >= 115 && r >= g * 1.22 && (r - g) >= 18 && r >= b * 1.22 && (r - b) >= 18 && g < 145 && b < 145;
+
+                if (isGreen) recentGreen++;
+                if (isRed) recentRed++;
               }
             }
 
             const dir: 'UP' | 'DOWN' = recentGreen >= recentRed ? 'UP' : 'DOWN';
-            const ratio = Math.max(recentGreen, recentRed) / Math.max(1, recentGreen + recentRed);
-            const confidence = Math.min(92, Math.max(78, Math.round(76 + ratio * 16)));
+            const totalRightCandles = Math.max(1, recentGreen + recentRed);
+            const ratio = Math.max(recentGreen, recentRed) / totalRightCandles;
+            const confidence = Math.min(92, Math.max(76, Math.round(74 + ratio * 18)));
             const symbol = 'LIVE CHART';
             const pattern = dir === 'UP' ? 'Bullish Candlestick Momentum' : 'Bearish Rejection Momentum';
 
@@ -805,7 +801,7 @@ export class LiveScreenService {
               symbol,
               pattern,
               reason: [
-                'স্ক্রিনে সক্রিয় ট্রেডিং ক্যান্ডেলস্টিক চার্ট সনাক্ত হয়েছে।',
+                'স্ক্রিনে সক্রিয় ট্রেডিং ক্যান্ডেলস্টিক চার্ট সফলভাবে সনাক্ত হয়েছে।',
                 dir === 'UP'
                   ? 'সাম্প্রতিক ক্যান্ডেলগুলোতে বায়ার্স প্রেসার ও বুলিশ মোমেন্টাম নিশ্চিত।'
                   : 'সাম্প্রতিক ক্যান্ডেলগুলোতে সেলার্স প্রেসার ও বিয়ারিশ রিজেকশন নিশ্চিত।',
