@@ -8,6 +8,7 @@ import {
 } from '../plugins/TradePulseNativeScreen';
 import { Capacitor } from '@capacitor/core';
 import { getApiUrl } from './apiConfig';
+import { agentLearningService } from './agentLearningService';
 
 export class LiveScreenService {
   private static instance: LiveScreenService;
@@ -850,6 +851,22 @@ export class LiveScreenService {
     const confidence = chartDetection.confidence;
     const symbol = chartDetection.symbol;
 
+    // Cross-check with AI Learned Playbook rules and past mistake warnings
+    const targetDir = dir === 'UP' ? 'CALL' : 'PUT';
+    const learnedRules = agentLearningService.getRules();
+    const matchingRule = learnedRules.find(
+      (r) => r.recommendedDirection === targetDir && r.status === 'ACTIVE'
+    );
+    const reasoning = [...chartDetection.reason];
+    if (matchingRule) {
+      reasoning.push(
+        `এআই প্লেবুক নিয়ম: ${matchingRule.titleBn} (কনফিডেন্স: ${Math.round(matchingRule.confidenceWeight * 100)}%)`
+      );
+      if (matchingRule.cautionaryNotesBn && matchingRule.cautionaryNotesBn.length > 0) {
+        reasoning.push(`⚠️ অতীতের ভুল থেকে শিক্ষা: ${matchingRule.cautionaryNotesBn[0]}`);
+      }
+    }
+
     return {
       analysisId,
       timestamp: now,
@@ -858,7 +875,7 @@ export class LiveScreenService {
       confidence,
       verdictTitle: dir === 'UP' ? 'CALL (UP) সিগন্যাল' : 'PUT (DOWN) সিগন্যাল',
       suggestedExpiry: '01:00',
-      reasoning: chartDetection.reason,
+      reasoning,
       visionData: {
         symbol,
         timeframe: '1m',

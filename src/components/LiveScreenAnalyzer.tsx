@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
+import { agentLearningService } from '../services/agentLearningService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
 import {
   getApiBaseUrl,
@@ -59,6 +60,21 @@ export const LiveScreenAnalyzer: React.FC = () => {
   }>({ tested: false, ok: false, latencyMs: 0 });
   const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
   const [customUrlInput, setCustomUrlInput] = useState<string>(getCustomApiUrl());
+  const [learningFeedbackMsg, setLearningFeedbackMsg] = useState<string | null>(null);
+
+  const handleFeedbackOutcome = (outcome: 'WIN' | 'LOSS') => {
+    if (!result || result.direction === 'WAIT') return;
+    const symbol = result.visionData?.symbol || 'LIVE CHART';
+    const direction: 'CALL' | 'PUT' = result.direction === 'UP' ? 'CALL' : 'PUT';
+    const pattern = result.visionData?.candlestickPattern;
+    agentLearningService.recordOutcome(symbol, direction, outcome, pattern);
+    if (outcome === 'WIN') {
+      setLearningFeedbackMsg('✅ ট্রেডটি সফল (WIN)! এআই এই কৌশলে কনফিডেন্স বাড়িয়েছে।');
+    } else {
+      setLearningFeedbackMsg('⚠️ ট্রেডটিতে ভুল (LOSS) হয়েছে! এআই কারণ বিশ্লেষণ করে নলেজ প্লেবুক আপডেট করেছে।');
+    }
+    setTimeout(() => setLearningFeedbackMsg(null), 6000);
+  };
 
   const runHealthCheck = async () => {
     setIsTestingServer(true);
@@ -506,7 +522,36 @@ export const LiveScreenAnalyzer: React.FC = () => {
                   </span>
                 )}
               </div>
+
+              {/* 1-Click AI Self-Learning Outcome Feedback */}
+              {isChartFound && result.direction !== 'WAIT' && (
+                <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex flex-col items-center gap-1.5">
+                  <span className="text-[10px] text-slate-300 font-medium">
+                    ট্রেড ফলাফল দিয়ে এআই-কে শিক্ষা দিন:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleFeedbackOutcome('WIN')}
+                      className="px-2.5 py-1 text-[11px] bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 rounded font-semibold transition-all active:scale-95"
+                    >
+                      + লাভ (Win)
+                    </button>
+                    <button
+                      onClick={() => handleFeedbackOutcome('LOSS')}
+                      className="px-2.5 py-1 text-[11px] bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 rounded font-semibold transition-all active:scale-95"
+                    >
+                      - ভুল/লস (Loss)
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {learningFeedbackMsg && (
+              <div className="p-2.5 bg-cyan-950/70 border border-cyan-500/50 rounded-lg text-xs text-cyan-200 text-center animate-fadeIn">
+                {learningFeedbackMsg}
+              </div>
+            )}
 
             {/* Market Verification Status Box */}
             <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">

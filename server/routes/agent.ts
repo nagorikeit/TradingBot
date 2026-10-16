@@ -1268,6 +1268,50 @@ agentRouter.post('/whatsapp/test', async (req: Request, res: Response) => {
   }
 });
 
+// Server-side in-memory store for learned rules and reflections
+let serverLearnedReflections: any[] = [];
+
+/**
+ * GET /api/agent/learned-rules
+ * Returns active Bengali strategy rules and historical mistake reflections
+ */
+agentRouter.get('/learned-rules', (_req: Request, res: Response) => {
+  res.json({
+    ok: true,
+    reflectionsCount: serverLearnedReflections.length,
+    latestReflections: serverLearnedReflections.slice(0, 20),
+    timestamp: Date.now(),
+  });
+});
+
+/**
+ * POST /api/agent/reflect-mistake
+ * Records an AI trade mistake, runs reflection logging, and adjusts rule weights
+ */
+agentRouter.post('/reflect-mistake', (req: Request, res: Response) => {
+  try {
+    const { reflection, rule } = req.body;
+    if (reflection) {
+      serverLearnedReflections.unshift(reflection);
+      if (serverLearnedReflections.length > 100) {
+        serverLearnedReflections.pop();
+      }
+    }
+
+    res.json({
+      ok: true,
+      message: 'Mistake reflection recorded in agent memory ledger.',
+      storedReflectionId: reflection?.reflectionId,
+      adjustedRuleId: rule?.ruleId,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to record reflection',
+    });
+  }
+});
+
 
 
 

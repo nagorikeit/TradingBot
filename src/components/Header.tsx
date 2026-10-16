@@ -1,10 +1,10 @@
 import React from 'react';
-import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu } from 'lucide-react';
+import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen } from 'lucide-react';
 import { TimeframeKey } from '../types';
 
 interface HeaderProps {
-  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen';
-  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen') => void;
+  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge';
+  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge') => void;
   onAdvanceCandle: () => void;
   onManualScan: () => void;
   isScanning: boolean;
@@ -113,6 +113,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
             <span>AI Agent</span>
             <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">2E</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('knowledge')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+              currentTab === 'knowledge'
+                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Knowledge</span>
+            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">বাংলা</span>
           </button>
 
           <button

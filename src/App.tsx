@@ -21,10 +21,11 @@ import { ScannerView } from './components/ScannerView';
 import { AgentCommandCenter } from './components/AgentCommandCenter';
 import { LiveScreenAnalyzer } from './components/LiveScreenAnalyzer';
 import { FloatingLiveScreenController } from './components/FloatingLiveScreenController';
+import { BengaliKnowledgeHub } from './components/BengaliKnowledgeHub';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen'>('terminal');
+  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge'>('terminal');
   const [symbol, setSymbol] = useState<string>(() => marketService.getSymbol());
   const [timeframe, setTimeframe] = useState<TimeframeKey>(() => marketService.getTimeframe());
   const [providerMode, setProviderMode] = useState<MarketDataSourceMode>(() => marketService.getProviderMode());
@@ -194,6 +195,10 @@ export default function App() {
 
         {currentTab === 'live-screen' && (
           <LiveScreenAnalyzer />
+        )}
+
+        {currentTab === 'knowledge' && (
+          <BengaliKnowledgeHub />
         )}
       </main>
 
