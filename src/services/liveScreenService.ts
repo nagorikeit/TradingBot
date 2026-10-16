@@ -34,6 +34,7 @@ export class LiveScreenService {
   private autoOpenModal: boolean = false;
   private isSearchingForChart: boolean = false;
   private isChartFound: boolean = false;
+  private consecutiveChartDetections: number = 0;
   private expirySecondsLeft: number = 60; // 1-minute candle default countdown
 
   // Diagnostic Status Panel Tracking (Rules 4, 5, 6, 7)
@@ -212,6 +213,7 @@ export class LiveScreenService {
         this.isChartFound = false;
         this.expirySecondsLeft = 0;
         this.errorMessage = null;
+        this.latestResult = null;
         this.notify();
 
         voiceAssistantService.announceSearchingForChart();
@@ -381,6 +383,7 @@ export class LiveScreenService {
         this.isChartFound = false;
         this.errorMessage = null;
         this.expirySecondsLeft = 0;
+        this.latestResult = null;
         this.notify();
 
         // 4. Show Floating HUD widget over other apps if overlay permission is present
@@ -577,7 +580,7 @@ export class LiveScreenService {
    */
   private async isCandlestickChartImage(base64: string): Promise<{
     isChart: boolean;
-    dir: 'UP' | 'DOWN';
+    dir: 'UP' | 'DOWN' | 'WAIT';
     confidence: number;
     symbol: string;
     pattern: string;
@@ -588,10 +591,10 @@ export class LiveScreenService {
         if (typeof document === 'undefined') {
           return resolve({
             isChart: false,
-            dir: 'UP',
+            dir: 'WAIT',
             confidence: 0,
             symbol: 'UNKNOWN',
-            pattern: 'চার্ট অনুসন্ধান চলছে',
+            pattern: 'চার্ট পাওয়া যায়নি',
             reason: ['চার্ট অনুসন্ধান অব্যাহত রয়েছে...'],
           });
         }
@@ -608,10 +611,10 @@ export class LiveScreenService {
             if (!ctx) {
               return resolve({
                 isChart: false,
-                dir: 'UP',
+                dir: 'WAIT',
                 confidence: 0,
                 symbol: 'UNKNOWN',
-                pattern: 'চার্ট অনুসন্ধান চলছে',
+                pattern: 'চার্ট পাওয়া যায়নি',
                 reason: ['চার্ট অনুসন্ধান অব্যাহত রয়েছে...'],
               });
             }
@@ -620,13 +623,7 @@ export class LiveScreenService {
             const imgData = ctx.getImageData(0, 0, tw, th);
             const data = imgData.data;
 
-            // 1. Candlestick green colors:
-            // g >= 110 && g >= r * 1.25 && g >= b * 1.15
-            // 2. Candlestick red colors:
-            // r >= 125 && r >= g * 1.30 && r >= b * 1.30
-            let greenCount = 0;
-            let redCount = 0;
-            const columnHasCandle = new Array(tw).fill(false);
+            let cyanCount = 0;
             let darkBgCount = 0;
             let lightBgCount = 0;
 
@@ -635,6 +632,12 @@ export class LiveScreenService {
             const xStart = Math.floor(tw * 0.05);
             const xEnd = Math.floor(tw * 0.95);
 
+            const columnCandlePixels: number[] = new Array(tw).fill(0);
+            const columnMinY: number[] = new Array(tw).fill(999);
+            const columnMaxY: number[] = new Array(tw).fill(-1);
+            let totalGreen = 0;
+            let totalRed = 0;
+
             for (let y = yStart; y < yEnd; y++) {
               for (let x = xStart; x < xEnd; x++) {
                 const idx = (y * tw + x) * 4;
@@ -642,43 +645,127 @@ export class LiveScreenService {
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Check background (dark broker themes like Quotex/Binomo/TradingView or clean light themes)
-                if (r < 45 && g < 50 && b < 60) darkBgCount++;
+                // Check for TradePulse app theme buttons/accents (cyan)
+                if (r < 80 && g > 130 && b > 160) {
+                  cyanCount++;
+                }
+
+                // Check background (dark broker themes or clean light broker themes)
+                if (r < 40 && g < 45 && b < 55) darkBgCount++;
                 else if (r > 225 && g > 225 && b > 225) lightBgCount++;
 
-                const isGreen = g >= 110 && g >= r * 1.25 && g >= b * 1.15;
-                const isRed = r >= 125 && r >= g * 1.30 && r >= b * 1.30;
+                // Strict Candlestick green: green dominant over red and blue (not teal/cyan)
+                const isGreen = g >= 115 && g >= r * 1.30 && g >= b * 1.25 && (g - b) > 25;
+                // Strict Candlestick red: red dominant over green and blue (not purple/magenta)
+                const isRed = r >= 135 && r >= g * 1.35 && r >= b * 1.35 && (r - b) > 30;
 
                 if (isGreen) {
-                  greenCount++;
-                  columnHasCandle[x] = true;
+                  totalGreen++;
+                  columnCandlePixels[x]++;
+                  if (y < columnMinY[x]) columnMinY[x] = y;
+                  if (y > columnMaxY[x]) columnMaxY[x] = y;
                 } else if (isRed) {
-                  redCount++;
-                  columnHasCandle[x] = true;
+                  totalRed++;
+                  columnCandlePixels[x]++;
+                  if (y < columnMinY[x]) columnMinY[x] = y;
+                  if (y > columnMaxY[x]) columnMaxY[x] = y;
                 }
               }
             }
 
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
-            const candlePixels = greenCount + redCount;
-            const activeColumns = columnHasCandle.filter(Boolean).length;
-            const isDominatedByChartBg = (darkBgCount + lightBgCount) / totalExamined > 0.38;
+            const totalCandlePixels = totalGreen + totalRed;
 
-            // Strict Chart Verification:
-            // A real candlestick chart has:
-            // - At least 4 distinct candle columns across the time axis
-            // - Candle pixels occupy between 25 and 35% of the chart body area
-            // - Chart canvas has consistent dark or light broker background
+            // Reject if TradePulse UI itself is dominant
+            if (cyanCount > 60) {
+              return resolve({
+                isChart: false,
+                dir: 'WAIT',
+                confidence: 0,
+                symbol: 'UNKNOWN',
+                pattern: 'TradePulse স্ক্রিন সনাক্ত',
+                reason: [
+                  'TradePulse অ্যাপের নিজস্ব ইন্টারফেস স্ক্রিনে দৃশ্যমান।',
+                  'অনুগ্রহ করে ব্রোকার অ্যাপের (যেমন Quotex/Binomo/TradingView) চার্ট ওপেন করুন।',
+                ],
+              });
+            }
+
+            // Identify distinct candle clusters (candlestick bars)
+            const candleClusters: { startX: number; endX: number; midY: number; height: number }[] = [];
+            let inCluster = false;
+            let clusterStart = 0;
+            let clusterMinY = 999;
+            let clusterMaxY = -1;
+
+            for (let x = xStart; x < xEnd; x++) {
+              const height = columnMaxY[x] - columnMinY[x] + 1;
+              const hasCandle = columnCandlePixels[x] >= 3 && height >= 4;
+
+              if (hasCandle) {
+                if (!inCluster) {
+                  inCluster = true;
+                  clusterStart = x;
+                  clusterMinY = columnMinY[x];
+                  clusterMaxY = columnMaxY[x];
+                } else {
+                  if (columnMinY[x] < clusterMinY) clusterMinY = columnMinY[x];
+                  if (columnMaxY[x] > clusterMaxY) clusterMaxY = columnMaxY[x];
+                }
+              } else {
+                if (inCluster) {
+                  inCluster = false;
+                  const clusterWidth = x - clusterStart;
+                  if (clusterWidth <= 8) {
+                    candleClusters.push({
+                      startX: clusterStart,
+                      endX: x - 1,
+                      midY: (clusterMinY + clusterMaxY) / 2,
+                      height: clusterMaxY - clusterMinY + 1,
+                    });
+                  }
+                }
+              }
+            }
+            if (inCluster) {
+              const clusterWidth = xEnd - clusterStart;
+              if (clusterWidth <= 8) {
+                candleClusters.push({
+                  startX: clusterStart,
+                  endX: xEnd - 1,
+                  midY: (clusterMinY + clusterMaxY) / 2,
+                  height: clusterMaxY - clusterMinY + 1,
+                });
+              }
+            }
+
+            // Check vertical spread of candle cluster positions across Y axis
+            let ySpread = 0;
+            if (candleClusters.length >= 2) {
+              const midYs = candleClusters.map((c) => c.midY);
+              const minMidY = Math.min(...midYs);
+              const maxMidY = Math.max(...midYs);
+              ySpread = maxMidY - minMidY;
+            }
+
+            const isDominatedByChartBg = (darkBgCount + lightBgCount) / totalExamined > 0.40;
+
+            // Strict Verification:
+            // 1. At least 6 separate candle clusters across horizontal axis
+            // 2. Candle pixels between 80 and 35% of total chart area
+            // 3. Vertical Y spread >= 8 pixels (price varies, not a single horizontal text line or button)
+            // 4. Background is uniform broker chart background
             const isTradingChart =
-              activeColumns >= 4 &&
-              candlePixels >= 25 &&
-              candlePixels <= totalExamined * 0.35 &&
+              candleClusters.length >= 6 &&
+              totalCandlePixels >= 80 &&
+              totalCandlePixels <= totalExamined * 0.35 &&
+              ySpread >= 8 &&
               isDominatedByChartBg;
 
             if (!isTradingChart) {
               return resolve({
                 isChart: false,
-                dir: 'UP',
+                dir: 'WAIT',
                 confidence: 0,
                 symbol: 'UNKNOWN',
                 pattern: 'চার্ট পাওয়া যায়নি',
@@ -691,7 +778,7 @@ export class LiveScreenService {
             }
 
             // Real candlestick chart verified!
-            // Analyze recent momentum on rightmost 35% of screen (latest candles)
+            // Analyze recent momentum on rightmost 35% of screen
             let recentGreen = 0;
             let recentRed = 0;
             for (let y = Math.floor(th * 0.2); y < Math.floor(th * 0.8); y++) {
@@ -700,8 +787,8 @@ export class LiveScreenService {
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
-                if (g >= 110 && g >= r * 1.25 && g >= b * 1.15) recentGreen++;
-                if (r >= 125 && r >= g * 1.30 && r >= b * 1.30) recentRed++;
+                if (g >= 115 && g >= r * 1.30 && g >= b * 1.25 && (g - b) > 25) recentGreen++;
+                if (r >= 135 && r >= g * 1.35 && r >= b * 1.35 && (r - b) > 30) recentRed++;
               }
             }
 
@@ -728,7 +815,7 @@ export class LiveScreenService {
           } catch {
             resolve({
               isChart: false,
-              dir: 'UP',
+              dir: 'WAIT',
               confidence: 0,
               symbol: 'UNKNOWN',
               pattern: 'চার্ট অনুসন্ধান চলছে',
@@ -740,7 +827,7 @@ export class LiveScreenService {
         img.onerror = () => {
           resolve({
             isChart: false,
-            dir: 'UP',
+            dir: 'WAIT',
             confidence: 0,
             symbol: 'UNKNOWN',
             pattern: 'চার্ট অনুসন্ধান চলছে',
@@ -752,7 +839,7 @@ export class LiveScreenService {
       } catch {
         resolve({
           isChart: false,
-          dir: 'UP',
+          dir: 'WAIT',
           confidence: 0,
           symbol: 'UNKNOWN',
           pattern: 'চার্ট অনুসন্ধান চলছে',
@@ -923,7 +1010,7 @@ export class LiveScreenService {
         'অনুগ্রহ করে ট্রেডিং অ্যাপ (Binomo/Quotex/MT4) এর চার্ট স্ক্রিনে রাখুন।',
         'চার্ট খোঁজা অব্যাহত রয়েছে...',
       ];
-      this.latestResult = result;
+      this.latestResult = null;
       this.errorMessage = null;
 
       this.updateFloatingOverlayHUD({

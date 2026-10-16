@@ -154,12 +154,13 @@ CRITICAL RULES:
         }
 
         if (response) {
-          const text = response.text?.trim() || '{}';
-          const parsed: ScreenVisionParsedData = JSON.parse(text);
-
-          // If Gemini successfully parsed a chart, return it
-          if (parsed.isClearTradingChart) {
+          let text = response.text?.trim() || '{}';
+          text = text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+          try {
+            const parsed: ScreenVisionParsedData = JSON.parse(text);
             return parsed;
+          } catch (jsonErr) {
+            console.warn('[VisionAnalysisService] JSON parse error from Gemini response:', jsonErr);
           }
         } else if (lastErr) {
           console.warn('[VisionAnalysisService] Gemini Vision call failure:', lastErr.message || lastErr);

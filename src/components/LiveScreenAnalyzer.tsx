@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Sparkles,
   Smartphone,
+  Radar,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -472,7 +473,71 @@ export const LiveScreenAnalyzer: React.FC = () => {
       )}
 
       {/* Main Analysis Display Grid */}
-      {result ? (
+      {(streamState === 'STREAMING' || streamState === 'CONNECTING' || streamState === 'PAUSED') && (!isChartFound || !result || !result.visionData?.isClearTradingChart) ? (
+        /* Dedicated Scanning & Waiting for Chart View */
+        <div className="bg-slate-900/90 border-2 border-dashed border-amber-500/40 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-2xl backdrop-blur-md">
+          {/* Animated Scanner Radar / Pulse Visual */}
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-amber-500/10 animate-ping opacity-60" />
+            <div className="absolute inset-2 rounded-full bg-amber-500/20 animate-pulse" />
+            <div className="w-16 h-16 rounded-full bg-slate-950 border-2 border-amber-500/60 flex items-center justify-center text-amber-400 shadow-lg">
+              <Radar className="w-8 h-8 animate-spin" style={{ animationDuration: '4s' }} />
+            </div>
+          </div>
+
+          <div className="space-y-2 max-w-lg mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/50 text-amber-300 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>স্ক্রিন শেয়ার সংযুক্ত • চার্ট অনুসন্ধান চলছে</span>
+            </div>
+            <h3 className="text-xl font-bold text-white tracking-tight">
+              স্ক্রিনে কোনো ট্রেডিং চার্ট পাওয়া যায়নি
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              ট্রেডিং ফলাফল ও সিগন্যাল শতভাগ নির্ভুল রাখতে, <strong>কোনো স্পষ্ট ট্রেডিং চার্ট (Candlestick Chart) শনাক্ত না হওয়া পর্যন্ত ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ রাখা হয়েছে।</strong>
+            </p>
+          </div>
+
+          {/* Clear Step-by-Step Instructions */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-2xl mx-auto text-left text-xs">
+            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+              <div className="text-cyan-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-[11px]">১</span>
+                <span>ব্রোকার অ্যাপ খুলুন</span>
+              </div>
+              <p className="text-slate-400 text-[11px]">Quotex, Binomo, Pocket Option বা TradingView অ্যাপ ওপেন করুন।</p>
+            </div>
+
+            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+              <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-950 border border-emerald-500/40 flex items-center justify-center text-[11px]">২</span>
+                <span>চার্ট ফুলস্ক্রিন রাখুন</span>
+              </div>
+              <p className="text-slate-400 text-[11px]">ক্যান্ডেলস্টিক চার্টটি ডিসপ্লেতে রাখুন যাতে এআই ক্যান্ডেলস্টিকগুলো সরাসরি রিড করতে পারে।</p>
+            </div>
+
+            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+              <div className="text-purple-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-purple-950 border border-purple-500/40 flex items-center justify-center text-[11px]">৩</span>
+                <span>স্বয়ংক্রিয় এনালাইসিস</span>
+              </div>
+              <p className="text-slate-400 text-[11px]">চার্ট শনাক্ত হওয়ামাত্রই এআই স্বয়ংক্রিয়ভাবে CALL/PUT সিগন্যাল ও কাউন্টডাউন শুরু করবে।</p>
+            </div>
+          </div>
+
+          {/* Live frame status pill */}
+          <div className="inline-flex flex-wrap items-center justify-center gap-3 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span>লাইভ ফ্রেম স্ক্যান: <strong className="text-cyan-300">{liveScreenService.getFrameCount()}</strong></span>
+            </div>
+            <span>•</span>
+            <span>চার্ট স্ট্যাটাস: <strong className="text-amber-300">অপেক্ষমাণ (WAIT)</strong></span>
+            <span>•</span>
+            <span>ফলাফল স্ট্যাটাস: <strong className="text-rose-400">চার্ট ছাড়া ব্লকড</strong></span>
+          </div>
+        </div>
+      ) : isChartFound && result && result.visionData?.isClearTradingChart ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Column 1: Signal & Verification Verdict */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -482,16 +547,14 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </span>
               <div className="flex items-center gap-1.5 text-slate-400 text-xs">
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{isChartFound ? formattedCountdown : '--:--'}</strong></span>
+                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{formattedCountdown}</strong></span>
               </div>
             </div>
 
             {/* Big Direction Badge */}
             <div
               className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1.5 ${
-                !isChartFound
-                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-                  : result.direction === 'UP'
+                result.direction === 'UP'
                   ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
                   : result.direction === 'DOWN'
                   ? 'bg-rose-950/40 border-rose-500/50 text-rose-300'
@@ -499,32 +562,24 @@ export const LiveScreenAnalyzer: React.FC = () => {
               }`}
             >
               <div className="text-2xl font-black tracking-tight font-mono">
-                {!isChartFound ? (
-                  <span className="text-amber-300">⚠️ চার্ট স্ক্যান হচ্ছে...</span>
-                ) : (
-                  <>
-                    {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
-                    {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
-                    {result.direction === 'WAIT' && '⏸ WAIT / অপেক্ষা'}
-                  </>
-                )}
+                {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
+                {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
+                {result.direction === 'WAIT' && '⏸ WAIT / অপেক্ষা'}
               </div>
               <div className="text-xs font-medium opacity-90">
-                {!isChartFound ? 'ট্রেডিং চার্ট সামনে রাখুন। শনাক্ত হলে সিগন্যাল শুরু হবে।' : result.verdictTitle}
+                {result.verdictTitle}
               </div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
                   কনফিডেন্স: {result.confidence}%
                 </span>
-                {isChartFound && (
-                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                    ⏱️ এক্সপায়ারি: {formattedCountdown}
-                  </span>
-                )}
+                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
+                  ⏱️ এক্সপায়ারি: {formattedCountdown}
+                </span>
               </div>
 
               {/* 1-Click AI Self-Learning Outcome Feedback */}
-              {isChartFound && result.direction !== 'WAIT' && (
+              {result.direction !== 'WAIT' && (
                 <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex flex-col items-center gap-1.5">
                   <span className="text-[10px] text-slate-300 font-medium">
                     ট্রেড ফলাফল দিয়ে এআই-কে শিক্ষা দিন:
