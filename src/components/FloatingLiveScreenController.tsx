@@ -311,7 +311,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
           {/* Countdown & Status Body */}
           <div className="mt-2.5 space-y-2">
             {/* Active Candle Countdown: ONLY visible AFTER chart is detected and analyzed! */}
-            {isStreaming && isChartFound && result && (
+            {isStreaming && isChartFound && result && result.visionData?.isClearTradingChart && (
               <div className="px-3 py-2 rounded-2xl bg-slate-950/90 border border-cyan-800/50 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
@@ -334,7 +334,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             )}
 
             {/* Case 1: Chart Analyzed -> Smart, Sleek Direction Pill */}
-            {isStreaming && isChartFound && result ? (
+            {isStreaming && isChartFound && result && result.visionData?.isClearTradingChart ? (
               <div
                 className={`p-3 rounded-2xl border flex flex-col gap-2 transition-all ${
                   result.direction === 'UP'
@@ -387,7 +387,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                   💡 {result.visionData?.candlestickPattern || result.reasoning[0] || 'মোমেন্টাম নিশ্চিত'}
                 </div>
               </div>
-            ) : isStreaming && !isChartFound ? (
+            ) : isStreaming && (!isChartFound || !result || !result.visionData?.isClearTradingChart) ? (
               /* Case 2: Streaming, Chart not found (WAIT state) */
               <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 text-amber-200 flex flex-col items-center text-center gap-2 animate-in fade-in">
                 <Radar className="w-6 h-6 text-amber-400" />
