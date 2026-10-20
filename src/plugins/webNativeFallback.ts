@@ -111,12 +111,12 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
   }
 
   async showFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
-    this.renderWebFloatingHUD(data);
+    // In web browser, the React FloatingLiveScreenController renders the unified floating HUD bubble.
+    // Avoid creating redundant unstyled DOM elements that block display buttons.
     return { success: true };
   }
 
   async updateFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
-    this.renderWebFloatingHUD(data);
     return { success: true };
   }
 

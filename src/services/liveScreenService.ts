@@ -108,7 +108,7 @@ export class LiveScreenService {
   }
 
   public shouldAutoOpenModal(): boolean {
-    return this.autoOpenModal;
+    return false;
   }
 
   public clearAutoOpenModal(): void {
