@@ -40,22 +40,23 @@ export class VisionAnalysisService {
     this.ai = ai;
 
     const systemPrompt = `You are an expert financial technical analyst and chart vision inspector.
-Your job is to inspect the provided screen capture of a trading terminal / mobile trading app (such as Binomo, Quotex, Pocket Option, Olymp Trade, TradingView, MT4/MT5) and extract structured technical details.
+Your job is to inspect the provided screen capture of a trading terminal / mobile trading app (such as Quotex, Binomo, Pocket Option, TradingView, Olymp Trade, Exnova, ExpertOption, MT4/MT5, Binance, Bybit) and extract structured technical details.
 
 CRITICAL RULES:
 1. TRADING SCREEN IDENTIFICATION:
-   - If the screen displays candlestick bars (green/red candles), price axes, trendlines, or binary/forex broker trading interface (with Buy/Call/Up, Sell/Put/Down buttons), "isClearTradingChart" MUST BE TRUE.
-   - Even if there are background watermarks (e.g. "DEMO"), headers ("Demo account ৳1,500,000.00", "Deposit"), floating overlay widgets, or dark broker themes, RECOGNIZE THE CHART and set "isClearTradingChart": true.
-   - STRICT NEGATIVE RULE: If the screen is NOT an active trading terminal or candlestick chart (for example: mobile home screen, app launcher, messenger/chat, settings, YouTube, general website, social media, or blank screen), you MUST set "isClearTradingChart": false, "confidenceScore": 0, "lastCandleDirection": "UNCERTAIN", and "visionSummary": "স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।". DO NOT guess or fabricate trades on non-trading screens!
+   - Recognize all major trading platforms (Quotex, Binomo, Pocket Option, TradingView, Olymp Trade, MT4, MT5, Binance).
+   - If the screen displays candlestick bars (green/teal and red candles), Heikin Ashi, price axes, gridlines, or binary/forex broker trading interface (with Buy/Call/Up green button, Sell/Put/Down red button, timer, or payout %), set "isClearTradingChart": true.
+   - Even if there are background watermarks (e.g. "DEMO"), headers ("Demo account", "Live account", balance numbers), floating overlay widgets, or dark broker themes (#131722, #1e222d), RECOGNIZE THE CHART and set "isClearTradingChart": true.
+   - STRICT NEGATIVE RULE: If the screen is NOT an active trading terminal or candlestick chart (for example: mobile home screen, app launcher, messenger/chat, WhatsApp, settings, YouTube, browser start page, social media, or blank screen), you MUST set "isClearTradingChart": false, "confidenceScore": 0, "lastCandleDirection": "UNCERTAIN", "candlestickPattern": "কোনো চার্ট পাওয়া যায়নি", and "visionSummary": "স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি। অনুগ্রহ করে ব্রোকার অ্যাপের চার্ট সামনে রাখুন।". DO NOT guess or fabricate trades on non-trading screens!
 2. PRIVACY & SAFETY:
    - Standard broker headers, Demo account labels, and virtual balances are NORMAL trading UI elements and MUST NOT be flagged as sensitive private data. Set "containsSensitivePrivateData": false for all standard broker screens. Only set true if real personal credentials (passwords, credit card numbers, government IDs) are visible.
 3. TECHNICAL DETAIL EXTRACTION:
-   - Identify the currency pair or asset (e.g. AUD/CHF, EUR/USD, GBP/USD, BTC/USDT, OTC).
-   - Identify the timeframe (e.g. 1m, 5m, 15m, 30s) or remaining timer.
+   - Identify the currency pair or asset (e.g. AUD/CHF, EUR/USD, GBP/USD, BTC/USDT, AUD/CAD OTC, etc.).
+   - Identify the timeframe (e.g. 1m, 5m, 15m, 30s) or remaining candle timer.
    - Determine current trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT).
    - Inspect the recent candles: are they green/bullish or red/bearish?
-   - Name the pattern (e.g. Bullish Momentum, Hammer, Engulfing, Breakout, Pin Bar).
-   - Set "confidenceScore" between 0.70 and 0.95 when candles are clearly visible.`;
+   - Name the pattern (e.g. Bullish Momentum, Hammer, Engulfing, Bearish Rejection, Breakout, Pin Bar).
+   - Set "confidenceScore" between 0.75 and 0.95 when candles are clearly visible.`;
 
     try {
       if (process.env.GEMINI_API_KEY) {
@@ -77,7 +78,7 @@ CRITICAL RULES:
                       },
                     },
                     {
-                      text: 'Examine this live trading chart screen capture. Detect the asset symbol, timeframe, candlestick patterns, price action direction (UP/CALL or DOWN/PUT), and confirm isClearTradingChart is true.',
+                      text: 'Examine this live screen capture. If this is a trading chart terminal (Quotex, Binomo, PocketOption, TradingView, etc.), detect the asset symbol, timeframe, candlestick patterns, price action direction (UP/CALL or DOWN/PUT), and set isClearTradingChart: true. If this is NOT a trading chart (home screen, chat, settings, non-trading app), set isClearTradingChart: false with confidenceScore: 0.',
                     },
                   ],
                 },
@@ -85,6 +86,8 @@ CRITICAL RULES:
               config: {
                 systemInstruction: systemPrompt,
                 responseMimeType: 'application/json',
+                temperature: 0.1,
+                maxOutputTokens: 800,
                 responseSchema: {
                   type: Type.OBJECT,
                   properties: {

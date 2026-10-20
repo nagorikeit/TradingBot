@@ -299,14 +299,18 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 >
                   {result.direction === 'UP' && '▲ CALL / UP'}
                   {result.direction === 'DOWN' && '▼ PUT / DOWN'}
-                  {result.direction === 'WAIT' && '⏸ WAIT'}
+                  {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন'}
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold">
-                  ⏱ {formattedCountdown}
-                </span>
+                {(result.direction === 'UP' || result.direction === 'DOWN') && expirySec > 0 && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold">
+                    ⏱ {formattedCountdown}
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-slate-300 font-mono truncate">
-                {result.visionData?.symbol || 'চার্ট'} • {result.confidence}% কনফিডেন্স
+                {result.direction !== 'WAIT'
+                  ? `${result.visionData?.symbol || 'চার্ট'} • ${result.confidence}% কনফিডেন্স`
+                  : `${result.visionData?.symbol || 'চার্ট'} • মোমেন্টামের অপেক্ষায়`}
               </div>
             </div>
           ) : isStreaming ? (

@@ -46,3 +46,14 @@ export interface ScreenAnalysisFinalResult {
 }
 
 export type LiveStreamState = 'IDLE' | 'CONNECTING' | 'STREAMING' | 'PAUSED' | 'DISCONNECTED' | 'ERROR';
+
+export interface ChartDetectionDiagnostic {
+  isChart: boolean;
+  distinctCandleBars: number;
+  totalCandlePixels: number;
+  horizontalSpanPercent: number;
+  verticalDispersionPx: number;
+  hasBrokerBackground: boolean;
+  failureReason?: string;
+  recommendedAction?: string;
+}

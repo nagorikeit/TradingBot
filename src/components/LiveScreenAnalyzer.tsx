@@ -28,7 +28,7 @@ import {
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { agentLearningService } from '../services/agentLearningService';
-import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
+import { LiveStreamState, ScreenAnalysisFinalResult, ChartDetectionDiagnostic } from '../types/screenTypes';
 import {
   getApiBaseUrl,
   getCustomApiUrl,
@@ -50,6 +50,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
+  const [chartDiagnostic, setChartDiagnostic] = useState<ChartDetectionDiagnostic | null>(liveScreenService.getChartDiagnostic());
 
   // Backend Connection Health & Settings Modal State
   const [showServerModal, setShowServerModal] = useState<boolean>(false);
@@ -102,6 +103,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setErrorMessage(liveScreenService.getErrorMessage());
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
+      setChartDiagnostic(liveScreenService.getChartDiagnostic());
     });
     return unsub;
   }, []);
@@ -498,6 +500,71 @@ export const LiveScreenAnalyzer: React.FC = () => {
             </p>
           </div>
 
+          {/* Live Chart Detector Diagnostics & Reason Box (Answers user questions: why chart is not detected & result safety) */}
+          <div className="bg-slate-950/90 border border-amber-500/40 rounded-xl p-4 sm:p-5 max-w-2xl mx-auto text-left space-y-3.5 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Radar className="w-4 h-4 text-amber-400" />
+                <span>লাইভ চার্ট ডিটেকশন ডায়াগনস্টিক (Live Detector State)</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/80 border border-rose-600/40 text-rose-300 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                ফলাফল সম্পূর্ণ স্থগিত (BLOCKED)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">ক্যান্ডেলস্টিক বার</div>
+                <div className="font-bold text-slate-200 mt-1">
+                  {chartDiagnostic?.distinctCandleBars ?? 0} টি <span className="text-[9px] text-slate-500">(ন্যূনতম ৫)</span>
+                </div>
+              </div>
+              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">ক্যান্ডেল পিক্সেল</div>
+                <div className="font-bold text-slate-200 mt-1">
+                  {chartDiagnostic?.totalCandlePixels ?? 0} px <span className="text-[9px] text-slate-500">(ন্যূনতম ৫০)</span>
+                </div>
+              </div>
+              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">অনুভূমিক বিস্তার</div>
+                <div className="font-bold text-slate-200 mt-1">
+                  {chartDiagnostic?.horizontalSpanPercent ?? 0}% <span className="text-[9px] text-slate-500">(ন্যূনতম ২০%)</span>
+                </div>
+              </div>
+              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">ব্রোকার ব্যাকগ্রাউন্ড</div>
+                <div className={`font-bold mt-1 ${chartDiagnostic?.hasBrokerBackground ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {chartDiagnostic?.hasBrokerBackground ? '✅ ডার্ক/লাইট থিম' : '❌ থিম মেলেনি'}
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed reason why chart is not detected */}
+            <div className="text-xs space-y-1.5 bg-amber-950/30 border border-amber-600/30 p-3 rounded-lg text-slate-300">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>চার্ট শনাক্ত না হওয়ার কারণ:</span>
+              </div>
+              <p className="text-[11px] text-slate-300 pl-5 leading-relaxed">
+                {chartDiagnostic?.failureReason || 'বর্তমান স্ক্রিনে কোনো ক্যান্ডেলস্টিক চার্ট মেলেনি। ব্রোকার অ্যাপের চার্ট সামনে আনুন।'}
+              </p>
+              {chartDiagnostic?.recommendedAction && (
+                <p className="text-[11px] text-cyan-300 pl-5 font-semibold">
+                  👉 করণীয়: {chartDiagnostic.recommendedAction}
+                </p>
+              )}
+            </div>
+
+            {/* Strict Safety Guarantee Badge */}
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-emerald-500/20 text-[11px] text-slate-300">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>সিগন্যাল সেফগার্ড সক্রিয়:</strong> চার্ট স্ক্রিন থেকে সরে গেলে বা মিনিমাইজ হলে সাথে সাথে পূর্ববর্তী সিগন্যাল ও কাউন্টডাউন মুছে যায়।
+              </span>
+            </div>
+          </div>
+
           {/* Clear Step-by-Step Instructions */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-2xl mx-auto text-left text-xs">
             <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
@@ -564,18 +631,26 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <div className="text-2xl font-black tracking-tight font-mono">
                 {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
                 {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
-                {result.direction === 'WAIT' && '⏸ WAIT / অপেক্ষা'}
+                {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন (WAIT)'}
               </div>
               <div className="text-xs font-medium opacity-90">
                 {result.verdictTitle}
               </div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-                <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
-                  কনফিডেন্স: {result.confidence}%
-                </span>
-                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                  ⏱️ এক্সপায়ারি: {formattedCountdown}
-                </span>
+                {result.direction !== 'WAIT' ? (
+                  <>
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
+                      কনফিডেন্স: {result.confidence}%
+                    </span>
+                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
+                      ⏱️ এক্সপায়ারি: {formattedCountdown}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[11px] font-mono text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-600/50">
+                    চার্ট পর্যবেক্ষণ চলছে • স্পষ্ট মোমেন্টামের অপেক্ষায়
+                  </span>
+                )}
               </div>
 
               {/* 1-Click AI Self-Learning Outcome Feedback */}
