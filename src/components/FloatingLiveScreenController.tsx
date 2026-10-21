@@ -14,8 +14,6 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
-  Layers,
-  ExternalLink,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -146,24 +144,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     setIsVoiceOn(next);
   };
 
-  const handleTogglePip = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    await pictureInPictureService.toggleFloatingOverlay({
-      direction: result?.direction || 'WAIT',
-      confidence: result?.confidence || 0,
-      symbol: result?.visionData?.symbol || 'OTC CHART',
-      durationText: formattedCountdown,
-      expirySec,
-      isChartFound,
-      isStreaming: streamState === 'STREAMING',
-      isPaused: streamState === 'PAUSED',
-      frameCount,
-      verdictTitle: result?.verdictTitle,
-      reasonText: result?.reasoning?.[0],
-      errorReason: errorMessage || undefined,
-    });
-  };
-
   const handleCancelConnecting = (e: React.MouseEvent) => {
     e.stopPropagation();
     liveScreenService.cancelConnecting();
@@ -235,6 +215,13 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         zIndex: 60,
       };
 
+  // User Requirement: "আমার কথা হল একটি মাত্র বাবল থাকবে কানেক্ট হওয়ার পর সেটি সকল স্ক্রিনের উপর ভাসমান থাকবে এবং ফলাফল দেখাবে"
+  // When OS Picture-in-Picture window is active, it IS the single bubble floating over all apps/screens.
+  // We do NOT render a duplicate in-page bubble!
+  if (isPipActive) {
+    return null;
+  }
+
   const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
 
   return (
@@ -259,26 +246,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-950/90 border border-red-700/70 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs text-red-200 animate-in fade-in max-w-xs">
           <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
           <div className="truncate text-[11px]">{errorMessage}</div>
-        </div>
-      )}
-
-      {/* System-Wide Always-On-Top PiP Indicator Pill */}
-      {isPipActive && (
-        <div className="mb-2 px-3 py-1 rounded-full bg-cyan-950/95 border border-cyan-400/70 shadow-xl backdrop-blur-md flex items-center justify-between gap-2 text-xs text-cyan-200 animate-in fade-in max-w-xs">
-          <div className="flex items-center gap-1.5 truncate">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-            </span>
-            <span className="text-[10px] font-semibold truncate">সব অ্যাপের উপর ভাসমান (All-Screen PiP)</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleTogglePip}
-            className="text-[10px] text-cyan-300 hover:text-white underline font-mono shrink-0"
-          >
-            বন্ধ
-          </button>
         </div>
       )}
 
@@ -428,24 +395,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             title="সরাসরি ডিসপ্লে খুলুন"
           >
             <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Always-on-top Picture-in-Picture Overlay Toggle (Floats over Quotex/Binomo/all apps) */}
-          <button
-            type="button"
-            onClick={handleTogglePip}
-            className={`p-1.5 rounded-lg transition-all ${
-              isPipActive
-                ? 'text-cyan-200 bg-cyan-900/80 border border-cyan-400/60 shadow-[0_0_10px_rgba(56,189,248,0.5)]'
-                : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800'
-            }`}
-            title={
-              isPipActive
-                ? 'সিস্টেম-লেভেল ভাসমান উইন্ডো বন্ধ করুন'
-                : 'সব অ্যাপের উপরে ভাসমান রাখুন (Quotex/Binomo বা যেকোনো স্ক্রিনে গেলে ভাসমান থাকবে)'
-            }
-          >
-            <Layers className="w-3.5 h-3.5" />
           </button>
 
           {/* Voice Assistant Toggle */}

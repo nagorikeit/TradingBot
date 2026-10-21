@@ -318,33 +318,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <span>{isVoiceOn ? 'ভয়েস অন' : 'ভয়েস অফ'}</span>
             </button>
 
-            {/* System-Wide Floating HUD Widget Toggle (Over all apps) */}
-            <button
-              onClick={async () => {
-                await pictureInPictureService.toggleFloatingOverlay({
-                  direction: result?.direction || 'WAIT',
-                  confidence: result?.confidence || 0,
-                  symbol: result?.visionData?.symbol || 'OTC CHART',
-                  durationText: formattedCountdown,
-                  expirySec,
-                  isChartFound,
-                  isStreaming: streamState === 'STREAMING',
-                  isPaused: streamState === 'PAUSED',
-                  frameCount: liveScreenService.getFrameCount(),
-                  verdictTitle: result?.verdictTitle,
-                  reasonText: result?.reasoning?.[0],
-                });
-              }}
-              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-all shadow-sm ${
-                isPipActive
-                  ? 'bg-cyan-900/60 border-cyan-400 text-cyan-200 ring-2 ring-cyan-500/30'
-                  : 'border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40'
-              }`}
-              title="অন্য যেকোনো ট্রেডিং অ্যাপের (Quotex, Binomo, MT4) ওপর সবসময় ভাসমান উইন্ডো রাখুন"
-            >
-              <Layers className={`w-4 h-4 ${isPipActive ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'}`} />
-              <span>{isPipActive ? '📌 সব স্ক্রিনে ভাসমান (ON)' : '📌 সব স্ক্রিনে ভাসমান HUD'}</span>
-            </button>
 
             {/* Backend Server Settings Button */}
             <button
@@ -412,23 +385,23 @@ export const LiveScreenAnalyzer: React.FC = () => {
             <Smartphone className="w-4 h-4" />
             <span>অন্যান্য অ্যাপ্লিকেশনে (Quotex / Pocket Option / Binomo) ট্রেড করার নিয়ম:</span>
           </div>
-          <span className="text-[11px] font-normal text-slate-400 hidden sm:inline">অল-স্ক্রিন ভাসমান HUD প্রযুক্তি</span>
+          <span className="text-[11px] font-normal text-emerald-400 hidden sm:inline">স্বয়ংক্রিয় একক বাবল প্রযুক্তি</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] text-slate-400 pt-1">
           <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
             <div className="font-semibold text-slate-200">১. স্ক্রিন শেয়ার কানেক্ট করুন</div>
-            <p className="text-slate-400">উপরে <b>"Connect Live Screen"</b> চাপুন এবং স্ক্রিন ক্যাপচার ডায়ালগে "Start now" বা ডিসপ্লে সিলেক্ট করুন।</p>
+            <p className="text-slate-400">উপরে <b>"Connect Live Screen"</b> চাপুন এবং স্ক্রিন ক্যাপচার ডায়ালগে "Start now" বা ব্রোকার ডিসপ্লে সিলেক্ট করুন।</p>
           </div>
           <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
             <div className="font-semibold text-cyan-300 flex items-center justify-between">
-              <span>২. ভাসমান HUD চালু করুন</span>
-              {isPipActive && <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-500/40">অন আছে</span>}
+              <span>২. একটি মাত্র বাবল ভাসমান হবে</span>
+              <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded border border-cyan-500/40">স্বয়ংক্রিয়</span>
             </div>
-            <p className="text-slate-400"><b>"সব স্ক্রিনে ভাসমান HUD"</b> বাটনে চাপ দিলে একটি Always-on-Top উইন্ডো তৈরি হবে যা সব অ্যাপের উপরে ভাসে।</p>
+            <p className="text-slate-400">কানেক্ট হলেই মাত্র <b>একটি একক বাবল</b> সক্রিয় হবে, যা কোনো অতিরিক্ত বাটন ছাড়াই সরাসরি সব স্ক্রিনের উপর ভাসমান থাকবে।</p>
           </div>
           <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
-            <div className="font-semibold text-slate-200">৩. ব্রোকার অ্যাপে ট্রেড করুন</div>
-            <p className="text-slate-400">Quotex বা Binomo-তে চলে যান। উইন্ডোটি স্ক্রিনে ভাসমান থাকবে এবং লাইভ CALL/PUT সিগন্যাল ও বাংলা ভয়েস দিকনির্দেশনা দেবে।</p>
+            <div className="font-semibold text-slate-200">৩. যেকোনো স্ক্রিনে ট্রেড করুন</div>
+            <p className="text-slate-400">Quotex বা Binomo-তে যান। বাবলটি চার্ট রিড করে সরাসরি লাইভ CALL/PUT ফলাফল, কনফিডেন্স ও কাউন্টডাউন টাইমার দেখাবে।</p>
           </div>
         </div>
       </div>

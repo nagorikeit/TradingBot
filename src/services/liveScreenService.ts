@@ -1359,10 +1359,15 @@ export class LiveScreenService {
       this.videoEl.srcObject = null;
     }
 
+    try {
+      await this.hideFloatingOverlayHUD();
+    } catch (e) {
+      console.warn('Overlay hide error:', e);
+    }
+
     if (this.isNativeCaptureActive) {
       try {
         await TradePulseNativeScreen.stopScreenCapture();
-        await TradePulseNativeScreen.hideFloatingOverlay();
       } catch (err) {
         console.warn('Native stop error:', err);
       }
