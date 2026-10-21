@@ -111,16 +111,50 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
   }
 
   async showFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
-    // In web browser, the React FloatingLiveScreenController renders the unified floating HUD bubble.
-    // Avoid creating redundant unstyled DOM elements that block display buttons.
+    try {
+      const { pictureInPictureService } = await import('../services/pictureInPictureService');
+      await pictureInPictureService.requestFloatingOverlay({
+        direction: data.direction,
+        confidence: data.confidence,
+        symbol: data.symbol || 'CHART',
+        durationText: data.durationText,
+        verdictTitle: data.verdictTitle,
+        reasonText: data.reasonText,
+        errorReason: data.errorReason,
+        frameCount: data.frameCount || 0,
+      });
+    } catch (e) {
+      console.warn('PiP launch in web fallback:', e);
+    }
     return { success: true };
   }
 
   async updateFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
+    try {
+      const { pictureInPictureService } = await import('../services/pictureInPictureService');
+      pictureInPictureService.updateData({
+        direction: data.direction,
+        confidence: data.confidence,
+        symbol: data.symbol || 'CHART',
+        durationText: data.durationText,
+        verdictTitle: data.verdictTitle,
+        reasonText: data.reasonText,
+        errorReason: data.errorReason,
+        frameCount: data.frameCount || 0,
+      });
+    } catch (e) {
+      console.warn('PiP update in web fallback:', e);
+    }
     return { success: true };
   }
 
   async hideFloatingOverlay(): Promise<{ success: boolean }> {
+    try {
+      const { pictureInPictureService } = await import('../services/pictureInPictureService');
+      await pictureInPictureService.closeFloatingOverlay();
+    } catch (e) {
+      console.warn('PiP close in web fallback:', e);
+    }
     if (this.overlayElement) {
       this.overlayElement.remove();
       this.overlayElement = null;
