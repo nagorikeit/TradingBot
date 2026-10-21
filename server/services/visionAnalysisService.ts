@@ -42,21 +42,33 @@ export class VisionAnalysisService {
     const systemPrompt = `You are an expert financial technical analyst and chart vision inspector.
 Your job is to inspect the provided screen capture of a trading terminal / mobile trading app (such as Quotex, Binomo, Pocket Option, TradingView, Olymp Trade, Exnova, ExpertOption, MT4/MT5, Binance, Bybit) and extract structured technical details.
 
-CRITICAL RULES:
-1. TRADING SCREEN IDENTIFICATION:
-   - Recognize all major trading platforms (Quotex, Binomo, Pocket Option, TradingView, Olymp Trade, MT4, MT5, Binance).
-   - If the screen displays candlestick bars (green/teal and red candles), Heikin Ashi, price axes, gridlines, or binary/forex broker trading interface (with Buy/Call/Up green button, Sell/Put/Down red button, timer, or payout %), set "isClearTradingChart": true.
-   - Even if there are background watermarks (e.g. "DEMO"), headers ("Demo account", "Live account", balance numbers), floating overlay widgets, or dark broker themes (#131722, #1e222d), RECOGNIZE THE CHART and set "isClearTradingChart": true.
-   - STRICT NEGATIVE RULE: If the screen is NOT an active trading terminal or candlestick chart (for example: mobile home screen, app launcher, messenger/chat, WhatsApp, settings, YouTube, browser start page, social media, or blank screen), you MUST set "isClearTradingChart": false, "confidenceScore": 0, "lastCandleDirection": "UNCERTAIN", "candlestickPattern": "কোনো চার্ট পাওয়া যায়নি", and "visionSummary": "স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি। অনুগ্রহ করে ব্রোকার অ্যাপের চার্ট সামনে রাখুন।". DO NOT guess or fabricate trades on non-trading screens!
-2. PRIVACY & SAFETY:
-   - Standard broker headers, Demo account labels, and virtual balances are NORMAL trading UI elements and MUST NOT be flagged as sensitive private data. Set "containsSensitivePrivateData": false for all standard broker screens. Only set true if real personal credentials (passwords, credit card numbers, government IDs) are visible.
-3. TECHNICAL DETAIL EXTRACTION:
-   - Identify the currency pair or asset (e.g. AUD/CHF, EUR/USD, GBP/USD, BTC/USDT, AUD/CAD OTC, etc.).
-   - Identify the timeframe (e.g. 1m, 5m, 15m, 30s) or remaining candle timer.
-   - Determine current trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT).
-   - Inspect the recent candles: are they green/bullish or red/bearish?
-   - Name the pattern (e.g. Bullish Momentum, Hammer, Engulfing, Bearish Rejection, Breakout, Pin Bar).
-   - Set "confidenceScore" between 0.75 and 0.95 when candles are clearly visible.`;
+CRITICAL TWO-STAGE CHART-GATE RULES:
+STAGE 1: ANCHORED TRADING LANDMARK VERIFICATION
+You MUST evaluate 4 specific trading landmarks before analyzing any price action:
+1. hasCandlestickSeries: A sequential series of candlestick bars with distinct bodies (green/teal and red) and vertical wicks. Reject app icons (e.g. WhatsApp, YouTube, Telegram), notification bars, social media feeds, desktop icons, or photo galleries.
+2. hasPriceScaleOrGrid: Numeric price scale numbers with decimals on the right/left axis (e.g. 1.08450, 0.6543) or chart price gridlines.
+3. hasTimeframeOrTimer: Timeframe selector (e.g. 1m, 5m, 15s) or expiration countdown timer.
+4. hasBrokerControls: Green CALL/UP button, Red PUT/DOWN button, broker payout % (e.g. 85%, 92%), or broker header.
+
+HARD NEGATIVE RULE:
+If "hasCandlestickSeries" is false OR "landmarkScore" < 2 (e.g. mobile home screen, app drawer, WhatsApp, Telegram, Settings, YouTube, web browser home, blank or locked screen):
+You MUST set:
+- isClearTradingChart: false
+- confidenceScore: 0
+- lastCandleDirection: "UNCERTAIN"
+- candlestickPattern: "কোনো চার্ট পাওয়া যায়নি"
+- chartStructure: "UNCLEAR"
+- indicatorsIdentified: []
+- visionSummary: "স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট নেই। ফলাফল প্রদর্শন সম্পূর্ণ স্থগিত।"
+NEVER fabricate, guess, or return UP/DOWN signals on non-trading screens!
+
+STAGE 2: TECHNICAL DETAIL EXTRACTION (ONLY IF isClearTradingChart is TRUE):
+- Identify the currency pair or asset (e.g. AUD/CHF, EUR/USD, GBP/USD, BTC/USDT, AUD/CAD OTC, etc.).
+- Identify the timeframe (e.g. 1m, 5m, 15m, 30s) or remaining candle timer.
+- Determine current trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT).
+- Inspect the recent candles: are they green/bullish or red/bearish?
+- Name the pattern (e.g. Bullish Momentum, Hammer, Engulfing, Bearish Rejection, Breakout, Pin Bar).
+- Set "confidenceScore" between 0.75 and 0.95.`;
 
     try {
       if (process.env.GEMINI_API_KEY) {
@@ -78,7 +90,7 @@ CRITICAL RULES:
                       },
                     },
                     {
-                      text: 'Examine this live screen capture. If this is a trading chart terminal (Quotex, Binomo, PocketOption, TradingView, etc.), detect the asset symbol, timeframe, candlestick patterns, price action direction (UP/CALL or DOWN/PUT), and set isClearTradingChart: true. If this is NOT a trading chart (home screen, chat, settings, non-trading app), set isClearTradingChart: false with confidenceScore: 0.',
+                      text: 'Examine this live screen capture. If this is an active trading terminal (Quotex, Binomo, PocketOption, TradingView, etc.) with candlestick bars and trading landmarks, extract the details and set isClearTradingChart: true. If this is NOT an active trading chart (home screen, app icons, chat, settings, non-trading app), set isClearTradingChart: false with confidenceScore: 0 and hasCandlestickSeries: false.',
                     },
                   ],
                 },
@@ -106,6 +118,32 @@ CRITICAL RULES:
                     chartStructure: {
                       type: Type.STRING,
                       description: 'UPTREND, DOWNTREND, RANGING, BREAKOUT, CONSOLIDATION, or UNCLEAR',
+                    },
+                    landmarks: {
+                      type: Type.OBJECT,
+                      properties: {
+                        hasCandlestickSeries: {
+                          type: Type.BOOLEAN,
+                          description: 'True ONLY if a sequential series of candlestick bars (bodies with wicks) is clearly visible. False for app icons, photos, or regular text.',
+                        },
+                        hasPriceScaleOrGrid: {
+                          type: Type.BOOLEAN,
+                          description: 'True if vertical price axis scale numbers or chart grid lines are visible.',
+                        },
+                        hasTimeframeOrTimer: {
+                          type: Type.BOOLEAN,
+                          description: 'True if a timeframe badge (1M, 5M) or candle timer is visible.',
+                        },
+                        hasBrokerControls: {
+                          type: Type.BOOLEAN,
+                          description: 'True if broker UP/DOWN trade buttons or payout % are visible.',
+                        },
+                        landmarkScore: {
+                          type: Type.INTEGER,
+                          description: 'Count of verified landmarks (0 to 4).',
+                        },
+                      },
+                      required: ['hasCandlestickSeries', 'hasPriceScaleOrGrid', 'landmarkScore'],
                     },
                     indicatorsIdentified: {
                       type: Type.ARRAY,
@@ -161,6 +199,20 @@ CRITICAL RULES:
           text = text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
           try {
             const parsed: ScreenVisionParsedData = JSON.parse(text);
+
+            // STRICT STAGE-1 ENFORCEMENT ON PARSED DATA:
+            // If the model did not detect a candlestick series or landmark score is < 2, force isClearTradingChart = false
+            const landmarks = parsed.landmarks;
+            if (landmarks && (!landmarks.hasCandlestickSeries || (landmarks.landmarkScore || 0) < 2)) {
+              parsed.isClearTradingChart = false;
+              parsed.confidenceScore = 0;
+              parsed.lastCandleDirection = 'UNCERTAIN';
+              parsed.candlestickPattern = 'কোনো চার্ট পাওয়া যায়নি';
+              parsed.chartStructure = 'UNCLEAR';
+              parsed.indicatorsIdentified = [];
+              parsed.visionSummary = 'ক্যান্ডেলস্টিক ল্যান্ডমার্ক অনুপস্থিত। এটি ট্রেডিং চার্ট নয়—ফলাফল স্থগিত।';
+            }
+
             return parsed;
           } catch (jsonErr) {
             console.warn('[VisionAnalysisService] JSON parse error from Gemini response:', jsonErr);

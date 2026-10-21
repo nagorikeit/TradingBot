@@ -490,13 +490,19 @@ export const LiveScreenAnalyzer: React.FC = () => {
           <div className="space-y-2 max-w-lg mx-auto">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/50 text-amber-300 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              <span>স্ক্রিন শেয়ার সংযুক্ত • চার্ট অনুসন্ধান চলছে</span>
+              <span>
+                {liveScreenService.getConsecutiveChartDetections() === 1
+                  ? 'চার্ট ফ্রেম ১ শনাক্ত • ফ্রেম ২ কনফার্মেশন চলছে...'
+                  : 'স্ক্রিন শেয়ার সংযুক্ত • চার্ট অনুসন্ধান চলছে'}
+              </span>
             </div>
             <h3 className="text-xl font-bold text-white tracking-tight">
-              স্ক্রিনে কোনো ট্রেডিং চার্ট পাওয়া যায়নি
+              {liveScreenService.getConsecutiveChartDetections() === 1
+                ? 'চার্ট নিশ্চিতকরণ চলছে (Verifying...)'
+                : 'স্ক্রিনে কোনো ট্রেডিং চার্ট পাওয়া যায়নি'}
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              ট্রেডিং ফলাফল ও সিগন্যাল শতভাগ নির্ভুল রাখতে, <strong>কোনো স্পষ্ট ট্রেডিং চার্ট (Candlestick Chart) শনাক্ত না হওয়া পর্যন্ত ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ রাখা হয়েছে।</strong>
+              ট্রেডিং ফলাফল ও সিগন্যাল শতভাগ নির্ভুল রাখতে, <strong>কোনো স্পষ্ট ট্রেডিং চার্ট (Candlestick Chart) ধারাবাহিকভাবে শনাক্ত না হওয়া পর্যন্ত ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ রাখা হয়েছে।</strong>
             </p>
           </div>
 

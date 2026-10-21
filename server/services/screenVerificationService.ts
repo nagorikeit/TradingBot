@@ -277,7 +277,9 @@ export class ScreenVerificationService {
     }
 
     // SAFETY GUARD 2: Unclear or Non-Chart Screen
-    if (!visionData.isClearTradingChart) {
+    const hasCandleLandmark = !visionData.landmarks || visionData.landmarks.hasCandlestickSeries;
+    if (!visionData.isClearTradingChart || !hasCandleLandmark) {
+      visionData.isClearTradingChart = false;
       return {
         analysisId,
         timestamp: now,
@@ -285,17 +287,17 @@ export class ScreenVerificationService {
         direction: 'WAIT',
         confidence: 0,
         verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
-        suggestedExpiry: '01:00',
+        suggestedExpiry: 'N/A',
         reasoning: [
           'স্ক্রিনে স্পষ্ট কোনো ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।',
-          'অনুগ্রহ করে ট্রেডিং অ্যাপের (Binomo, Quotex, MT4) চার্ট স্ক্রিনে রাখুন।',
-          'চার্ট খোঁজা অব্যাহত রয়েছে...',
+          'ট্রেডিং চার্ট ছাড়া ফলাফল ও সিগন্যাল সম্পূর্ণ ব্লকড।',
+          'অনুগ্রহ করে ব্রোকার অ্যাপের (Quotex, Binomo, Pocket Option) চার্ট স্ক্রিনে রাখুন।',
         ],
         visionData,
         marketVerification: {
           isVerified: false,
           status: 'SKIPPED',
-          notes: 'No trading chart identified to verify.',
+          notes: 'No verified candlestick chart identified on screen.',
         },
         safetyDisclaimer: 'Vision AI is an educational assistance tool. No automated orders are placed.',
       };
