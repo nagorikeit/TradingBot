@@ -113,18 +113,20 @@ class PictureInPictureService {
   /**
    * Request system-level floating PiP window over all apps
    */
-  public async requestFloatingOverlay(initialData?: Partial<PipDataPayload>): Promise<boolean> {
+  public async requestFloatingOverlay(initialData?: Partial<PipDataPayload>): Promise<{ success: boolean; error?: string }> {
     if (initialData) {
       this.currentData = { ...this.currentData, ...initialData };
     }
 
     if (this.isPipActiveState) {
       this.updateData(this.currentData);
-      return true;
+      return { success: true };
     }
 
+    let lastError = '';
+
     // Attempt 1: Document Picture-in-Picture (Available on Desktop Chrome 111+)
-    if ('documentPictureInPicture' in window) {
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window) {
       try {
         const docPip = (window as any).documentPictureInPicture;
         const pipWindow = await docPip.requestWindow({
@@ -145,79 +147,148 @@ class PictureInPictureService {
         });
 
         this.notify();
-        return true;
-      } catch (err) {
-        console.warn('Document Picture-in-Picture failed, falling back to Video Canvas PiP:', err);
+        return { success: true };
+      } catch (err: any) {
+        console.warn('Document Picture-in-Picture failed:', err);
+        lastError = err?.message || String(err);
       }
     }
 
     // Attempt 2: Canvas Video Picture-in-Picture (Mobile Android, Chrome Mobile, Safari, etc.)
-    return await this.startVideoPip();
+    const videoPipResult = await this.startVideoPip();
+    if (videoPipResult.success) {
+      return { success: true };
+    }
+    if (videoPipResult.error) {
+      lastError = videoPipResult.error;
+    }
+
+    // Attempt 3: If screen capture video element is playing, request PiP on it as fallback
+    try {
+      const { liveScreenService } = await import('./liveScreenService');
+      const screenVideo = liveScreenService.getVideoElement();
+      if (screenVideo && typeof screenVideo.requestPictureInPicture === 'function') {
+        await screenVideo.requestPictureInPicture();
+        this.isPipActiveState = true;
+        this.pipMode = 'VIDEO';
+        screenVideo.addEventListener(
+          'leavepictureinpicture',
+          () => {
+            this.isPipActiveState = false;
+            this.pipMode = 'NONE';
+            this.notify();
+          },
+          { once: true }
+        );
+        this.notify();
+        return { success: true };
+      }
+    } catch (fallbackErr: any) {
+      console.warn('Fallback stream PiP also failed:', fallbackErr);
+      if (!lastError) lastError = fallbackErr?.message || String(fallbackErr);
+    }
+
+    return { success: false, error: lastError || 'Picture-in-Picture not supported in this browser' };
   }
 
   /**
    * Starts Canvas-based Video Picture-in-Picture (Standard across Android phones and browsers)
    */
-  private async startVideoPip(): Promise<boolean> {
+  private async startVideoPip(): Promise<{ success: boolean; error?: string }> {
     try {
       if (!this.canvas) {
         this.canvas = document.createElement('canvas');
-        this.canvas.width = 540;
-        this.canvas.height = 280;
+        this.canvas.width = 480;
+        this.canvas.height = 270;
         this.canvasCtx = this.canvas.getContext('2d');
       }
+
+      // Initial frame render so canvas has actual graphic pixels immediately
+      this.drawCanvasFrame();
+      // Start continuous rendering loop so stream receives live ticks
+      this.startCanvasRenderLoop();
 
       if (!this.video) {
         this.video = document.createElement('video');
         this.video.muted = true;
+        this.video.defaultMuted = true;
         this.video.autoplay = true;
         this.video.playsInline = true;
+        this.video.setAttribute('muted', '');
+        this.video.setAttribute('playsinline', '');
+        this.video.setAttribute('autoplay', '');
+        // Non-zero dimensions placed offscreen so browser security checks pass
         this.video.style.position = 'fixed';
-        this.video.style.opacity = '0';
+        this.video.style.left = '-9999px';
+        this.video.style.top = '0px';
+        this.video.style.width = '320px';
+        this.video.style.height = '180px';
         this.video.style.pointerEvents = 'none';
-        this.video.style.width = '1px';
-        this.video.style.height = '1px';
+        this.video.style.zIndex = '-999';
         document.body.appendChild(this.video);
       }
 
-      // Initial frame render
-      this.drawCanvasFrame();
-
       // Hook canvas stream to video
       if (!this.video.srcObject) {
-        const stream = (this.canvas as any).captureStream ? (this.canvas as any).captureStream(30) : null;
+        const stream = (this.canvas as any).captureStream
+          ? (this.canvas as any).captureStream(30)
+          : (this.canvas as any).mozCaptureStream
+          ? (this.canvas as any).mozCaptureStream(30)
+          : null;
+
         if (!stream) {
-          throw new Error('Canvas captureStream is not supported in this environment');
+          throw new Error('Canvas captureStream is not supported in this browser');
         }
         this.video.srcObject = stream;
-        await this.video.play().catch(() => {});
       }
 
-      // Start continuous rendering loop
-      this.startCanvasRenderLoop();
+      await this.video.play().catch(() => {});
 
-      // Request PiP window from OS
-      await this.video.requestPictureInPicture();
+      // Wait until video has active frames / loaded metadata
+      if (this.video.readyState === 0 || this.video.videoWidth === 0) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 350);
+          const onLoaded = () => {
+            clearTimeout(timeout);
+            this.video?.removeEventListener('loadedmetadata', onLoaded);
+            this.video?.removeEventListener('timeupdate', onLoaded);
+            resolve();
+          };
+          this.video?.addEventListener('loadedmetadata', onLoaded);
+          this.video?.addEventListener('timeupdate', onLoaded);
+        });
+      }
+
+      if (typeof this.video.requestPictureInPicture === 'function') {
+        await this.video.requestPictureInPicture();
+      } else {
+        throw new Error('requestPictureInPicture is not supported on this video element');
+      }
 
       this.isPipActiveState = true;
       this.pipMode = 'VIDEO';
+      this.startCanvasRenderLoop();
 
-      this.video.addEventListener('leavepictureinpicture', () => {
-        this.stopCanvasRenderLoop();
-        this.isPipActiveState = false;
-        this.pipMode = 'NONE';
-        this.notify();
-      }, { once: true });
+      this.video.addEventListener(
+        'leavepictureinpicture',
+        () => {
+          this.stopCanvasRenderLoop();
+          this.isPipActiveState = false;
+          this.pipMode = 'NONE';
+          this.notify();
+        },
+        { once: true }
+      );
 
       this.notify();
-      return true;
+      return { success: true };
     } catch (err: any) {
       console.warn('Video Picture-in-Picture failed:', err);
       this.stopCanvasRenderLoop();
       this.isPipActiveState = false;
       this.pipMode = 'NONE';
       this.notify();
-      return false;
+      return { success: false, error: err?.message || 'Video PiP failed' };
     }
   }
 
@@ -244,10 +315,10 @@ class PictureInPictureService {
     this.notify();
   }
 
-  public async toggleFloatingOverlay(initialData?: Partial<PipDataPayload>): Promise<boolean> {
+  public async toggleFloatingOverlay(initialData?: Partial<PipDataPayload>): Promise<{ success: boolean; error?: string }> {
     if (this.isPipActiveState) {
       await this.closeFloatingOverlay();
-      return false;
+      return { success: false };
     } else {
       return await this.requestFloatingOverlay(initialData);
     }
@@ -263,6 +334,8 @@ class PictureInPictureService {
 
     if (this.pipMode === 'DOCUMENT' && this.docPipWindow) {
       this.updateDocumentPipDOM();
+    } else if (this.pipMode === 'VIDEO') {
+      this.drawCanvasFrame();
     }
   }
 

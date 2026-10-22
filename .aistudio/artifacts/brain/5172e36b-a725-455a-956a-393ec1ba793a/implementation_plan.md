@@ -81,14 +81,24 @@ Create a responsive, high-density dashboard matching TradePulse's visual design:
 
 ---
 
-## Verification Plan
+## 5. Unified All-Screen Floating HUD Bubble (একক ভাসমান বাবল - সব অ্যাপ ও স্ক্রিনের ওপর দৃশ্যমান)
 
-### Automated Build & Unit Verification
-1. `compile_applet`: Verify successful TypeScript compilation across all modified files.
-2. `lint_applet`: Verify zero ESLint/TypeScript errors (`tsc --noEmit`).
-3. Express API test: Execute test requests to `/api/agent/learned-rules` and `/api/agent/reflect-mistake` using `run_command` with `curl`.
+### User Pain Points Resolved:
+1. **Single Bubble Discipline**: Eliminated redundant secondary buttons like "সকল স্ক্রিনে AI HUD" and in-DOM overlay clones. There is strictly **ONE** active floating bubble at any time.
+2. **True OS-Level Floating (Always-On-Top)**:
+   - On Desktop Chromium (Chrome, Edge): Uses native **Document Picture-in-Picture** (`documentPictureInPicture.requestWindow()`) to open a persistent, floating Always-On-Top widget.
+   - On Mobile / Android Chrome: Uses continuous 30fps HTML5 Canvas streaming into **Video Picture-in-Picture** (`HTMLVideoElement.requestPictureInPicture()`) to float as an OS PiP widget.
+   - On Native Android APK: Uses Android `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY` to float natively above Quotex, Binomo, MT4, and other apps.
+3. **User Gesture Expiry Solved**:
+   - In web browsers, Picture-in-Picture requires an active transient user gesture (`navigator.userActivation.isActive`).
+   - Previously, waiting for `await getDisplayMedia()` expired the click gesture before launching PiP.
+   - Solved by initiating `pictureInPictureService.requestFloatingOverlay()` synchronously during the user's initial click on "Connect Live Screen" or "ডেমো টেস্ট স্ট্রিম", or directly on clicking/tapping the floating bubble.
+4. **Single-Bubble Rendering Sync**:
+   - When the OS-level PiP window is active (`isPipActive === true`), the in-page DOM bubble gracefully renders `null`.
+   - When the user closes the floating window, the in-page bubble immediately restores without page reloads.
 
-### Manual End-to-End User Flow
-1. **Browse Knowledge Base**: Click the new "Knowledge" tab in the navigation bar; verify that predefined Bengali rules (Candlestick, EMA/RSI, Price Action) are clearly readable and formatted.
-2. **Trigger Self-Learning**: Mark a test signal as "Loss" or click "Reflect Mistake"; verify the Agent writes a detailed Bengali post-mortem explanation and updates the rule's cautionary notes.
-3. **Dual-Read Verification**: Ensure that subsequent live chart analyses cite the learned rules in the reasoning array.
+### Verification State:
+- `lint_applet` (`tsc --noEmit`): Passed with 0 errors.
+- `compile_applet`: Build succeeded cleanly.
+- Dev server running on port 3000.
+

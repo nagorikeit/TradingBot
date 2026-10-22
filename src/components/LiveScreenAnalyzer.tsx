@@ -139,7 +139,43 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const countdownRemainderSec = expirySec % 60;
   const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
   const handleConnect = async () => {
-    await liveScreenService.connectScreen();
+    // 1. Immediately request system-level Always-On-Top floating window inside user gesture
+    pictureInPictureService.requestFloatingOverlay({
+      direction: 'WAIT',
+      confidence: 0,
+      symbol: 'OTC CHART',
+      durationText: '--:--',
+      expirySec: 0,
+      isChartFound: false,
+      isStreaming: true,
+      isPaused: false,
+      frameCount: 0,
+      verdictTitle: 'স্ক্রিন নির্বাচন করুন...',
+      reasonText: 'ট্রেডিং চার্ট বা Quotex উইন্ডো সিলেক্ট করুন',
+    }).catch((err) => {
+      console.warn('Pre-emptive PiP overlay on connect:', err);
+    });
+
+    const success = await liveScreenService.connectScreen();
+    if (!success) {
+      pictureInPictureService.closeFloatingOverlay().catch(() => {});
+    }
+  };
+
+  const handleDemoConnect = async () => {
+    pictureInPictureService.requestFloatingOverlay({
+      direction: 'WAIT',
+      confidence: 0,
+      symbol: 'DEMO CHART',
+      durationText: '--:--',
+      expirySec: 50,
+      isChartFound: true,
+      isStreaming: true,
+      isPaused: false,
+      frameCount: 1,
+      verdictTitle: 'ডেমো চার্ট স্ক্যানিং...',
+    }).catch(() => {});
+    await liveScreenService.startDemoTestStream();
   };
 
   const handleToggleVoice = () => {
@@ -260,7 +296,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 </button>
 
                 <button
-                  onClick={() => liveScreenService.startDemoTestStream()}
+                  onClick={handleDemoConnect}
                   className="px-3.5 py-2 text-xs font-semibold text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/40 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
                   title="স্ক্রিন শেয়ার ছাড়া ইনস্ট্যান্ট ডেমো চার্ট দিয়ে এআই সিগন্যাল ও ফ্লোটিং বাবল টেস্ট করুন"
                 >

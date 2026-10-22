@@ -14,6 +14,7 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -149,13 +150,57 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     liveScreenService.cancelConnecting();
   };
 
-  const handleBubbleClick = (e: React.MouseEvent) => {
+  const handlePromoteToAllScreensOverlay = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await pictureInPictureService.requestFloatingOverlay({
+        direction: result?.direction || 'WAIT',
+        confidence: result?.confidence || 0,
+        symbol: result?.visionData?.symbol || 'OTC CHART',
+        durationText: formattedCountdown,
+        expirySec,
+        isChartFound,
+        isStreaming: streamState === 'STREAMING',
+        isPaused: streamState === 'PAUSED',
+        frameCount,
+        verdictTitle: result?.verdictTitle,
+        reasonText: result?.reasoning?.[0],
+        errorReason: errorMessage || undefined,
+      });
+    } catch (err) {
+      console.warn('Float over all screens promotion:', err);
+    }
+  };
+
+  const handleBubbleClick = async (e: React.MouseEvent) => {
     // If user dragged the bubble, don't trigger click action
     if (hasMovedRef.current) {
       hasMovedRef.current = false;
       return;
     }
-    // Directly open on the display screen!
+
+    // Direct promote: User tapping the bubble promotes it directly to the OS-level floating overlay
+    if (streamState === 'STREAMING' || streamState === 'PAUSED') {
+      const res = await pictureInPictureService.requestFloatingOverlay({
+        direction: result?.direction || 'WAIT',
+        confidence: result?.confidence || 0,
+        symbol: result?.visionData?.symbol || 'OTC CHART',
+        durationText: formattedCountdown,
+        expirySec,
+        isChartFound,
+        isStreaming: streamState === 'STREAMING',
+        isPaused: streamState === 'PAUSED',
+        frameCount,
+        verdictTitle: result?.verdictTitle,
+        reasonText: result?.reasoning?.[0],
+        errorReason: errorMessage || undefined,
+      });
+      if (res.success) {
+        return;
+      }
+    }
+
+    // Fallback: Directly open on the display screen!
     onNavigateToLiveScreen();
   };
 
@@ -384,6 +429,16 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
         {/* Quick Inline Action Buttons on the Bubble */}
         <div className="flex items-center gap-1 border-l border-slate-700/60 pl-2 shrink-0">
+          {/* All-Screens Always-On-Top Floating Mode */}
+          <button
+            type="button"
+            onClick={handlePromoteToAllScreensOverlay}
+            className="p-1.5 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/60 rounded-lg transition-colors"
+            title="বাবলটি সব অ্যাপের ওপর সর্বদা ভাসমান রাখুন (Always-On-Top)"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+
           {/* Direct Open Display Button */}
           <button
             type="button"

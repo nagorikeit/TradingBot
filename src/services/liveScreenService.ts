@@ -112,6 +112,14 @@ export class LiveScreenService {
     return this.latestChartDiagnostic;
   }
 
+  public getVideoElement(): HTMLVideoElement | null {
+    return this.videoEl;
+  }
+
+  public getStream(): MediaStream | null {
+    return this.stream;
+  }
+
   public getExpirySecondsLeft(): number {
     return this.expirySecondsLeft;
   }
@@ -155,10 +163,6 @@ export class LiveScreenService {
 
   public getLastErrorReason(): string | null {
     return this.lastErrorReason;
-  }
-
-  public getStream(): MediaStream | null {
-    return this.stream;
   }
 
   public getScanIntervalSeconds(): number {
