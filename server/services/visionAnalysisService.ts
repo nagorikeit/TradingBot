@@ -286,10 +286,26 @@ YOUR CORE DUTIES:
           confidenceScore: 0.0,
           containsSensitivePrivateData: false,
         };
-      } else if (bufferStr.includes('quotex') || bufferStr.includes('binomo') || bufferStr.includes('pocket') || bufferStr.includes('tradingview') || bufferStr.includes('candle') || bufferStr.includes('eur/usd')) {
-        detectedAppName = bufferStr.includes('quotex') ? 'Quotex Trading Terminal' : bufferStr.includes('binomo') ? 'Binomo Terminal' : 'TradingView / Chart';
+      } else if (
+        bufferStr.includes('quotex') ||
+        bufferStr.includes('market-qx') ||
+        bufferStr.includes('qx.info') ||
+        bufferStr.includes('qxbroker') ||
+        bufferStr.includes('binomo') ||
+        bufferStr.includes('pocket') ||
+        bufferStr.includes('tradingview') ||
+        bufferStr.includes('candle') ||
+        bufferStr.includes('eur/usd') ||
+        bufferStr.includes('cosmos')
+      ) {
+        detectedAppName = (bufferStr.includes('quotex') || bufferStr.includes('market-qx') || bufferStr.includes('qx.info'))
+          ? 'Quotex Trading Terminal'
+          : bufferStr.includes('binomo')
+          ? 'Binomo Terminal'
+          : 'TradingView / Broker Chart';
         screenCategory = 'TRADING_CHART';
         isChart = true;
+        if (bufferStr.includes('cosmos')) detectedSymbol = 'ATOM/USD (Cosmos)';
       } else if (bufferStr.includes('youtube') || bufferStr.includes('video') || bufferStr.includes('watch')) {
         detectedAppName = 'YouTube ভিডিও প্লেয়ার';
         screenCategory = 'VIDEO_STREAM';

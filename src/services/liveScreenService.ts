@@ -1060,12 +1060,16 @@ export class LiveScreenService {
             const data = imgData.data;
 
             // Active chart zone:
-            // Mobile Portrait: ~8% to ~78% of screen height (covers Quotex/Binomo/PocketOption chart canvas while skipping header balance and bottom order buttons)
-            // Desktop/Landscape: ~5% to ~95%
-            const yStart = isPortrait ? Math.floor(targetHeight * 0.08) : Math.floor(targetHeight * 0.05);
-            const yEnd = isPortrait ? Math.floor(targetHeight * 0.78) : Math.floor(targetHeight * 0.95);
+            // Mobile Portrait: ~17% to ~70% of screen height
+            // Automatically skips:
+            // - Top browser URL bar, balance, deposit button, and 50% deposit bonus promotional banners (0% to ~16%)
+            // - Bottom asset selector, timer, investment controls, and Buy/Sell giant buttons (71% to 100%)
+            // - Right vertical price scale (88% to 100%)
+            // Focuses 100% on pure candlestick price action (bodies and wicks)!
+            const yStart = isPortrait ? Math.floor(targetHeight * 0.17) : Math.floor(targetHeight * 0.08);
+            const yEnd = isPortrait ? Math.floor(targetHeight * 0.70) : Math.floor(targetHeight * 0.92);
             const xStart = Math.floor(targetWidth * 0.02);
-            const xEnd = Math.floor(targetWidth * 0.98);
+            const xEnd = Math.floor(targetWidth * 0.88);
 
             let darkBgCount = 0;
             let lightBgCount = 0;
@@ -1123,11 +1127,11 @@ export class LiveScreenService {
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
-            // Group adjacent candle columns and classify them:
-            // Real candlestick bars are narrow vertical shapes (width 1-16px, height >= 4px).
-            // UI elements (buttons, badges, pills like "ভয়েস অন", "সার্ভার সক্রিয়", "কল / আপ") are wide horizontal shapes (width > 18px).
+            // Group adjacent candle columns:
+            // In real broker charts, consecutive candles often touch or sit closely side-by-side in a trend.
+            // When candles form a continuous span (e.g. 4 consecutive red candles in Quotex),
+            // we estimate the number of distinct candle bars from the cluster width (~7-9px per candle body).
             let distinctCandleBars = 0;
-            let wideUiElementCount = 0;
             let currentBarWidth = 0;
             let currentBarMinY = 999;
             let currentBarMaxY = -1;
@@ -1136,7 +1140,7 @@ export class LiveScreenService {
 
             for (let x = xStart; x < xEnd; x++) {
               const colHeight = columnMaxY[x] - columnMinY[x] + 1;
-              const hasCandleCol = columnCandlePixels[x] >= 2 && colHeight >= 3;
+              const hasCandleCol = columnCandlePixels[x] >= 1 && colHeight >= 2;
 
               if (hasCandleCol) {
                 if (currentBarWidth === 0) {
@@ -1151,12 +1155,9 @@ export class LiveScreenService {
               } else {
                 if (currentBarWidth > 0) {
                   const barHeight = currentBarMaxY - currentBarMinY + 1;
-                  if (currentBarWidth > 18) {
-                    // Wide UI button, card header, or banner
-                    wideUiElementCount++;
-                  } else if (currentBarWidth <= 16 && barHeight >= 4 && (currentBarWidth <= 4 || barHeight >= currentBarWidth * 0.65)) {
-                    // Real vertical candlestick body
-                    distinctCandleBars++;
+                  if (barHeight >= 3) {
+                    const candlesInSpan = Math.max(1, Math.min(8, Math.round(currentBarWidth / 7.5)));
+                    distinctCandleBars += candlesInSpan;
                     validBarPositionsX.push(x - Math.floor(currentBarWidth / 2));
                     validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
                   }
@@ -1169,10 +1170,9 @@ export class LiveScreenService {
 
             if (currentBarWidth > 0) {
               const barHeight = currentBarMaxY - currentBarMinY + 1;
-              if (currentBarWidth > 18) {
-                wideUiElementCount++;
-              } else if (currentBarWidth <= 16 && barHeight >= 4 && (currentBarWidth <= 4 || barHeight >= currentBarWidth * 0.65)) {
-                distinctCandleBars++;
+              if (barHeight >= 3) {
+                const candlesInSpan = Math.max(1, Math.min(8, Math.round(currentBarWidth / 7.5)));
+                distinctCandleBars += candlesInSpan;
                 validBarPositionsX.push(xEnd - Math.floor(currentBarWidth / 2));
                 validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
               }
@@ -1195,23 +1195,27 @@ export class LiveScreenService {
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
             // TradePulse Self-Capture Guard:
-            // If wide UI buttons exist and there are few candles, or if TradePulse is foregrounded
+            // Only triggered if TradePulse's own tab is currently focused/visible in the browser
+            // When the user switches to Quotex, document.visibilityState is 'hidden'
             const isTradePulseScreen =
-              wideUiElementCount >= 1 && distinctCandleBars < 5;
+              typeof document !== 'undefined' &&
+              document.visibilityState === 'visible' &&
+              !this.isNativeCaptureActive &&
+              isPortrait &&
+              distinctCandleBars < 3;
 
-            // Strict Candlestick Chart Criteria:
-            // 1. At least 5 distinct narrow candle bars across the chart
-            // 2. Total candle pixels >= 40
-            // 3. Horizontal span >= 18% of chart width
-            // 4. Vertical price action dispersion >= 6px
+            // Resilient Broker Candlestick Chart Criteria:
+            // 1. At least 3 candle bars across the timeline
+            // 2. Total candle pixels >= 25
+            // 3. Horizontal span >= 12% of chart width
+            // 4. Vertical price action dispersion >= 4px
             // 5. Must have broker theme background
-            // 6. No dominant wide UI buttons across the chart area
             const isCandlestickChart =
               !isTradePulseScreen &&
-              distinctCandleBars >= 5 &&
-              totalCandlePixels >= 40 &&
-              horizontalSpan >= targetWidth * 0.18 &&
-              verticalDispersion >= 6 &&
+              distinctCandleBars >= 3 &&
+              totalCandlePixels >= 25 &&
+              horizontalSpan >= targetWidth * 0.12 &&
+              verticalDispersion >= 4 &&
               hasBrokerBg;
 
             const diagnostic: ChartDetectionDiagnostic = {
@@ -1227,15 +1231,15 @@ export class LiveScreenService {
               const failureReasons: string[] = [];
               if (isTradePulseScreen) {
                 failureReasons.push('⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে: আপনি বর্তমানে ট্রেডপাল্স অ্যাপের স্ক্রিনেই আছেন।');
-              } else if (distinctCandleBars < 5) {
-                failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: স্ক্রিনে মাত্র ${distinctCandleBars}টি ক্যান্ডেলস্টিক বার পাওয়া গেছে (কমপক্ষে ৫টি স্পষ্ট ক্যান্ডেল প্রয়োজন)।`);
+              } else if (distinctCandleBars < 3) {
+                failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: স্ক্রিনে মাত্র ${distinctCandleBars}টি ক্যান্ডেলস্টিক বার পাওয়া গেছে।`);
               } else if (!hasBrokerBg) {
                 failureReasons.push('ব্রোকার ব্যাকগ্রাউন্ড অমিল: ট্রেডিং টার্মিনালের ডার্ক বা লাইট চার্ট ব্যাকগ্রাউন্ড শনাক্ত হয়নি।');
-              } else if (totalCandlePixels < 40) {
+              } else if (totalCandlePixels < 25) {
                 failureReasons.push(`ক্যান্ডেল পিক্সেল অপর্যাপ্ত: মাত্র ${totalCandlePixels} লাল/সবুজ ক্যান্ডেল পিক্সেল শনাক্ত হয়েছে।`);
-              } else if (horizontalSpan < targetWidth * 0.18) {
-                failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}% (কমপক্ষে ১৮% প্রয়োজন)।`);
-              } else if (verticalDispersion < 6) {
+              } else if (horizontalSpan < targetWidth * 0.12) {
+                failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}%।`);
+              } else if (verticalDispersion < 4) {
                 failureReasons.push('প্রাইস অ্যাকশন অনুভূমিক/ফ্ল্যাট: কোনো উল্লম্ব ট্রেন্ড বা সুইং ওঠানামা নেই।');
               } else {
                 failureReasons.push('স্ক্রিনটি সক্রিয় ট্রেডিং টার্মিনাল নয় (হোমস্ক্রিন, চ্যাট বা অন্য অ্যাপ হতে পারে)।');

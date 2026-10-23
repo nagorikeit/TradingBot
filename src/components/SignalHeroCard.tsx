@@ -28,32 +28,23 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
   isScanning,
   timeframe,
 }) => {
-  if (!signal) {
-    return (
-      <div className="bg-[#111827] border border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[320px] text-center">
-        <Radio className="w-8 h-8 text-emerald-400 animate-pulse mb-3" />
-        <h3 className="text-sm font-semibold text-white">INITIALIZING SCANNER</h3>
-        <p className="text-xs text-slate-400 mt-1 max-w-sm">
-          Loading market candle series and calculating technical indicators...
-        </p>
-      </div>
-    );
-  }
-
-  const asset = getAssetInfo(signal.symbol);
-
   // IMMUTABLE SNAPSHOT DATA (Prevents historical signal repainting from live ticks):
-  const snapshot = signal.snapshot;
-  const entryPrice = snapshot ? snapshot.entryPrice : signal.entryPrice;
-  const candleTime = snapshot ? snapshot.candleTimestamp : signal.signalTime;
-  const targetExpiryTime = snapshot?.expiryTime ?? signal.expiryTime;
+  const snapshot = signal?.snapshot;
+  const entryPrice = snapshot ? snapshot.entryPrice : (signal?.entryPrice ?? 0);
+  const candleTime = snapshot ? snapshot.candleTimestamp : (signal?.signalTime ?? 0);
+  const targetExpiryTime = snapshot?.expiryTime ?? signal?.expiryTime ?? 0;
 
-  // Real-time Expiry Countdown Engine (Absolute wall-clock based, 1s interval, leak-free cleanup)
+  // Real-time Expiry Countdown Engine (Always called unconditionally at top level!)
   const [remainingMs, setRemainingMs] = useState<number>(() => {
-    return Math.max(0, targetExpiryTime - Date.now());
+    return targetExpiryTime > 0 ? Math.max(0, targetExpiryTime - Date.now()) : 0;
   });
 
   useEffect(() => {
+    if (!signal || targetExpiryTime <= 0) {
+      setRemainingMs(0);
+      return;
+    }
+
     const updateCountdown = () => {
       const diff = Math.max(0, targetExpiryTime - Date.now());
       setRemainingMs(diff);
@@ -86,7 +77,21 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, [signal.id, targetExpiryTime]);
+  }, [signal?.id, targetExpiryTime]);
+
+  if (!signal) {
+    return (
+      <div className="bg-[#111827] border border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[320px] text-center">
+        <Radio className="w-8 h-8 text-emerald-400 animate-pulse mb-3" />
+        <h3 className="text-sm font-semibold text-white">INITIALIZING SCANNER</h3>
+        <p className="text-xs text-slate-400 mt-1 max-w-sm">
+          Loading market candle series and calculating technical indicators...
+        </p>
+      </div>
+    );
+  }
+
+  const asset = getAssetInfo(signal.symbol);
 
   const isExpired = remainingMs <= 0;
   const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
