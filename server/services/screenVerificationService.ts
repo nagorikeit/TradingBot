@@ -7,6 +7,8 @@ import { visionAnalysisService } from './visionAnalysisService';
 
 export class ScreenVerificationService {
   private static instance: ScreenVerificationService;
+  private lastDetectedScreen: string | null = null;
+  private lastScreenSwitchedAt: number = Date.now();
 
   private constructor() {}
 
@@ -217,19 +219,38 @@ export class ScreenVerificationService {
   }
 
   /**
-   * Synthesizes Vision data and Market verification into final trading signal
+  private lastDetectedScreen: string | null = null;
+  private lastScreenSwitchedAt: number = Date.now();
+
+  /**
+   * Synthesizes Vision data and Market verification into final trading / screen analysis
    */
   public async processScreenFrame(
     imageBase64: string,
     mimeType: string = 'image/jpeg',
-    frameCapturedAt: number = Date.now()
+    frameCapturedAt: number = Date.now(),
+    customPrompt?: string
   ): Promise<ScreenAnalysisFinalResult> {
     const analysisId = `screen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
     const latencyMs = now - frameCapturedAt;
 
     // 1. Vision AI Processing
-    const visionData = await visionAnalysisService.analyzeFrame(imageBase64, mimeType);
+    const visionData = await visionAnalysisService.analyzeFrame(imageBase64, mimeType, customPrompt);
+
+    // Track Screen Transitions (switching between apps/screens)
+    const currentAppName = visionData.detectedAppName || (visionData.isClearTradingChart ? 'Trading Chart' : 'Active Screen');
+    let screenTransition: { previousScreen?: string; currentScreen: string; switchedAt: number } | undefined = undefined;
+
+    if (this.lastDetectedScreen && this.lastDetectedScreen !== currentAppName) {
+      screenTransition = {
+        previousScreen: this.lastDetectedScreen,
+        currentScreen: currentAppName,
+        switchedAt: now,
+      };
+      this.lastScreenSwitchedAt = now;
+    }
+    this.lastDetectedScreen = currentAppName;
 
     // Compute suggested expiry based on detected timeframe
     let suggestedExpiry = '1 - 2 Min (পরবর্তী ক্যান্ডেল)';
@@ -252,7 +273,7 @@ export class ScreenVerificationService {
       suggestedExpiry = 'Daily Close';
     }
 
-    // SAFETY GUARD 1: Sensitive Private Data Detection (Only blocks if NO chart was detected)
+    // SAFETY GUARD 1: Sensitive Private Data Detection
     if (visionData.containsSensitivePrivateData && !visionData.isClearTradingChart) {
       return {
         analysisId,
@@ -264,7 +285,7 @@ export class ScreenVerificationService {
         suggestedExpiry: 'N/A',
         reasoning: [
           'নিরাপত্তা সতর্কতা: স্ক্রিনে ব্যালেন্স বা ব্যক্তিগত তথ্য শনাক্ত হয়েছে।',
-          'ব্যবহারকারীর তহবিলের নিরাপত্তার স্বার্থে তাৎক্ষণিক সিগন্যাল স্থগিত করা হয়েছে।',
+          'ব্যবহারকারীর তথ্যের নিরাপত্তার স্বার্থে সিগন্যাল স্থগিত করা হয়েছে।',
         ],
         visionData,
         marketVerification: {
@@ -273,31 +294,42 @@ export class ScreenVerificationService {
           notes: 'Sensitive user private data detected on non-chart screen.',
         },
         safetyDisclaimer: 'Privacy Guard: Private user details were masked from analysis.',
+        screenStatus: 'OTHER_SCREEN_READING',
+        screenTransition,
       };
     }
 
-    // SAFETY GUARD 2: Unclear or Non-Chart Screen
+    // SCENARIO 2: Non-Chart Screen Reading (User switched to another app, browser, YouTube, code, doc)
     if (!visionData.isClearTradingChart) {
+      const appTitle = visionData.detectedAppName || 'অন্যান্য অ্যাপ্লিকেশন';
+      const ocrSummary = visionData.screenSummaryBn || visionData.visionSummary || 'স্ক্রিন সফলভাবে পড়া হয়েছে।';
+      const extractedSnippets = visionData.extractedText && visionData.extractedText.length > 0
+        ? `পঠিত টেক্সট: ${visionData.extractedText.slice(0, 3).join(' | ')}`
+        : 'ইন্টারফেস উপাদান ও ভিজ্যুয়াল কন্টেন্ট শনাক্ত করা হয়েছে।';
+
       return {
         analysisId,
         timestamp: now,
         frameCapturedAt,
         direction: 'WAIT',
-        confidence: 0,
-        verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
-        suggestedExpiry: '01:00',
+        confidence: Math.round((visionData.confidenceScore || 0.85) * 100),
+        verdictTitle: `স্ক্রিন সনাক্ত: ${appTitle} (পড়া হয়েছে)`,
+        suggestedExpiry: 'N/A',
         reasoning: [
-          'স্ক্রিনে স্পষ্ট কোনো ক্যান্ডেলস্টিক চার্ট পাওয়া যায়নি।',
-          'অনুগ্রহ করে ট্রেডিং অ্যাপের (Binomo, Quotex, MT4) চার্ট স্ক্রিনে রাখুন।',
-          'চার্ট খোঁজা অব্যাহত রয়েছে...',
+          `শনাক্তকৃত স্ক্রিন: ${appTitle} [${visionData.screenCategory || 'GENERAL'}]`,
+          `এআই বিশ্লেষণ: ${ocrSummary}`,
+          extractedSnippets,
+          'ট্রেডিং চার্ট স্ক্রিনে না থাকায় স্বয়ংক্রিয়ভাবে ট্রেড সিগন্যাল হোল্ড (WAIT) রাখা হয়েছে। চার্টে ফিরলে তাৎক্ষণিক ক্যান্ডেল বিশ্লেষণ শুরু হবে।',
         ],
         visionData,
         marketVerification: {
-          isVerified: false,
+          isVerified: true,
           status: 'SKIPPED',
-          notes: 'No trading chart identified to verify.',
+          notes: `অন্যান্য স্ক্রিন (${appTitle}) সফলভাবে পড়া ও সনাক্ত হয়েছে।`,
         },
-        safetyDisclaimer: 'Vision AI is an educational assistance tool. No automated orders are placed.',
+        safetyDisclaimer: 'Vision AI is an educational assistant and screen observer.',
+        screenStatus: 'OTHER_SCREEN_READING',
+        screenTransition,
       };
     }
 
@@ -322,10 +354,12 @@ export class ScreenVerificationService {
           notes: `Processing delay of ${latencyMs}ms exceeds 18000ms threshold.`,
         },
         safetyDisclaimer: 'Stale frames are held in WAIT to protect against slippage.',
+        screenStatus: 'CHART_DETECTED',
+        screenTransition,
       };
     }
 
-    // 2. Market Cross-Verification
+    // 2. Market Cross-Verification for Trading Chart
     const marketVerification = await this.verifyMarketData(visionData);
 
     const reasoning: string[] = [];
@@ -408,6 +442,8 @@ export class ScreenVerificationService {
       marketVerification,
       safetyDisclaimer:
         'লাইভ স্ক্রিন বিশ্লেষণ একটি এডুকেশনাল ডিসিশন এইড। কোনো অটোমেটেড অর্ডার প্লেস করা হয় না।',
+      screenStatus: 'CHART_DETECTED',
+      screenTransition,
     };
   }
 }

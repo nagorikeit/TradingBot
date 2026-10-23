@@ -14,6 +14,10 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
+  Eye,
+  FileText,
+  Globe,
+  CheckCircle2,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -181,6 +185,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       };
 
   const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
+  const isReadingOtherScreen = Boolean(
+    isStreaming &&
+    !hasChartSignal &&
+    result &&
+    (result.screenStatus === 'OTHER_SCREEN_READING' || (result.visionData?.detectedAppName && result.visionData?.detectedAppName !== 'Unknown'))
+  );
 
   return (
     <div
@@ -219,6 +229,8 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               : result.direction === 'DOWN'
               ? 'bg-slate-900/95 border-rose-500/70 text-slate-100 ring-2 ring-rose-500/40'
               : 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
+            : isReadingOtherScreen
+            ? 'bg-slate-900/95 border-sky-500/70 text-slate-100 ring-2 ring-sky-500/30'
             : isStreaming
             ? 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
             : isPaused
@@ -247,6 +259,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               {result.direction === 'DOWN' && <TrendingDown className="w-4 h-4" />}
               {result.direction === 'WAIT' && <Clock className="w-4 h-4" />}
             </div>
+          ) : isReadingOtherScreen ? (
+            <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/60 flex items-center justify-center text-sky-300">
+              <Eye className="w-4 h-4 animate-pulse" />
+            </div>
           ) : isStreaming ? (
             <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400">
               <Radar className="w-4 h-4 animate-pulse" />
@@ -266,12 +282,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               <span
                 className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  hasChartSignal ? 'bg-emerald-400' : 'bg-amber-400'
+                  hasChartSignal ? 'bg-emerald-400' : isReadingOtherScreen ? 'bg-sky-400' : 'bg-amber-400'
                 }`}
               />
               <span
                 className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                  hasChartSignal ? 'bg-emerald-500' : 'bg-amber-500'
+                  hasChartSignal ? 'bg-emerald-500' : isReadingOtherScreen ? 'bg-sky-500' : 'bg-amber-500'
                 }`}
               />
             </span>
@@ -311,6 +327,21 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 {result.direction !== 'WAIT'
                   ? `${result.visionData?.symbol || 'চার্ট'} • ${result.confidence}% কনফিডেন্স`
                   : `${result.visionData?.symbol || 'চার্ট'} • মোমেন্টামের অপেক্ষায়`}
+              </div>
+            </div>
+          ) : isReadingOtherScreen ? (
+            <div>
+              <div className="text-xs font-bold text-sky-300 flex items-center gap-1.5 truncate max-w-[190px]">
+                <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                <span className="truncate">{result?.visionData?.detectedAppName || 'অন্য স্ক্রিন'}</span>
+                <span className="text-[8px] font-mono bg-sky-950/90 px-1 py-0.5 rounded border border-sky-500/50 text-sky-200">
+                  READING
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-300 font-mono truncate max-w-[190px]">
+                {result?.visionData?.extractedText?.[0]
+                  ? `পড়া হয়েছে: "${result.visionData.extractedText[0].slice(0, 20)}..."`
+                  : (result?.visionData?.screenSummaryBn || 'AI স্ক্রিন পড়ছে')}
               </div>
             </div>
           ) : isStreaming ? (

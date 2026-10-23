@@ -12,29 +12,40 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
-  Eye,
   Sliders,
   Volume2,
   VolumeX,
   Server,
   Wifi,
   WifiOff,
-  Settings,
   ExternalLink,
   Sparkles,
   Smartphone,
   Radar,
+  FileText,
+  Code,
+  MessageSquare,
+  Video,
+  Send,
+  History,
+  Tv,
+  ArrowRight,
+  BookOpen,
+  Terminal,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { agentLearningService } from '../services/agentLearningService';
-import { LiveStreamState, ScreenAnalysisFinalResult, ChartDetectionDiagnostic } from '../types/screenTypes';
 import {
-  getApiBaseUrl,
+  LiveStreamState,
+  ScreenAnalysisFinalResult,
+  ChartDetectionDiagnostic,
+  ScreenTransitionRecord,
+} from '../types/screenTypes';
+import {
   getCustomApiUrl,
   setCustomApiUrl,
   checkBackendHealth,
-  DEFAULT_HOSTED_BACKEND_URL,
 } from '../services/apiConfig';
 
 export const LiveScreenAnalyzer: React.FC = () => {
@@ -50,7 +61,21 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
-  const [chartDiagnostic, setChartDiagnostic] = useState<ChartDetectionDiagnostic | null>(liveScreenService.getChartDiagnostic());
+  const [chartDiagnostic, setChartDiagnostic] = useState<ChartDetectionDiagnostic | null>(
+    liveScreenService.getChartDiagnostic()
+  );
+
+  // Screen Switch Transitions & History
+  const [transitions, setTransitions] = useState<ScreenTransitionRecord[]>(liveScreenService.getScreenTransitions());
+  const [isOtherScreenActive, setIsOtherScreenActive] = useState<boolean>(liveScreenService.isOtherScreenDetected());
+  const [activeScreenName, setActiveScreenName] = useState<string>(liveScreenService.getActiveScreenName());
+  const [isPiPActive, setIsPiPActive] = useState<boolean>(liveScreenService.isPictureInPictureActive());
+  const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
+
+  // Screen Q&A Interactive Assistant
+  const [questionInput, setQuestionInput] = useState<string>('');
+  const [questionAnswer, setQuestionAnswer] = useState<string | null>(null);
+  const [isAskingQuestion, setIsAskingQuestion] = useState<boolean>(false);
 
   // Backend Connection Health & Settings Modal State
   const [showServerModal, setShowServerModal] = useState<boolean>(false);
@@ -104,6 +129,10 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
       setChartDiagnostic(liveScreenService.getChartDiagnostic());
+      setTransitions(liveScreenService.getScreenTransitions());
+      setIsOtherScreenActive(liveScreenService.isOtherScreenDetected());
+      setActiveScreenName(liveScreenService.getActiveScreenName());
+      setIsPiPActive(liveScreenService.isPictureInPictureActive());
     });
     return unsub;
   }, []);
@@ -125,10 +154,10 @@ export const LiveScreenAnalyzer: React.FC = () => {
     return () => clearInterval(ticker);
   }, []);
 
-  const signalAgeSec = result ? Math.max(0, Math.floor((now - result.timestamp) / 1000)) : 0;
   const countdownMin = Math.floor(expirySec / 60);
   const countdownRemainderSec = expirySec % 60;
   const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
+
   const handleConnect = async () => {
     await liveScreenService.connectScreen();
   };
@@ -148,15 +177,42 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const handleDisconnect = () => {
     liveScreenService.disconnect();
+    setActiveTestScreen(null);
   };
 
   const handleManualSnap = () => {
     liveScreenService.captureAndAnalyzeCurrentFrame();
   };
 
+  const handleTogglePiP = async () => {
+    const active = await liveScreenService.togglePictureInPicture();
+    setIsPiPActive(active);
+  };
+
+  const handleScreenSwitchTest = async (
+    type: 'QUOTEX_CHART' | 'CHROME_DOC' | 'VS_CODE' | 'WHATSAPP' | 'YOUTUBE'
+  ) => {
+    setActiveTestScreen(type);
+    await liveScreenService.testScreenSwitch(type);
+  };
+
+  const handleAskQuestion = async (customQ?: string) => {
+    const q = customQ || questionInput;
+    if (!q.trim()) return;
+    setIsAskingQuestion(true);
+    setQuestionAnswer(null);
+    const ans = await liveScreenService.askQuestionAboutActiveScreen(q);
+    setQuestionAnswer(ans);
+    setIsAskingQuestion(false);
+  };
+
+  const isStreaming = streamState === 'STREAMING';
+  const isPaused = streamState === 'PAUSED';
+  const isConnecting = streamState === 'CONNECTING';
+
   return (
     <div className="space-y-6">
-      {/* Top Banner & Controller */}
+      {/* 1. Top Controller & Connection Banner */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg backdrop-blur-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -165,35 +221,41 @@ export const LiveScreenAnalyzer: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-tight">Live Screen Analysis</h2>
+                <h2 className="text-lg font-bold text-white tracking-tight">Live Screen Analysis & Universal OCR</h2>
                 <span
-                  className={`px-2 py-0.5 text-xs font-mono font-medium rounded-full ${
-                    streamState === 'STREAMING'
+                  className={`px-2.5 py-0.5 text-xs font-mono font-medium rounded-full ${
+                    isStreaming
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
-                      : streamState === 'PAUSED'
+                      : isPaused
                       ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      : streamState === 'CONNECTING'
+                      : isConnecting
                       ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
                       : 'bg-slate-800 text-slate-400 border border-slate-700'
                   }`}
                 >
-                  {streamState === 'STREAMING' && '● LIVE STREAMING'}
-                  {streamState === 'PAUSED' && '⏸ PAUSED'}
-                  {streamState === 'CONNECTING' && 'CONNECTING...'}
-                  {streamState === 'IDLE' && 'DISCONNECTED'}
-                  {streamState === 'DISCONNECTED' && 'DISCONNECTED'}
+                  {isStreaming && '● LIVE STREAMING'}
+                  {isPaused && '⏸ PAUSED'}
+                  {isConnecting && 'CONNECTING...'}
+                  {(streamState === 'IDLE' || streamState === 'DISCONNECTED') && 'DISCONNECTED'}
                   {streamState === 'ERROR' && 'ERROR'}
                 </span>
+
+                {isStreaming && (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-mono rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span>সক্রিয় স্ক্রিন: <strong>{activeScreenName}</strong></span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Share your TradingView or broker chart window to inspect candles, indicators, and cross-verify with live market feeds.
+                স্ক্রিন শেয়ার সংযুক্ত করার পর যেকোনো অ্যাপ বা স্ক্রিনে যান (Quotex, Pocket Option, YouTube, ব্রাউজার, কোড এডিটর)—এআই তাৎক্ষণিক শনাক্ত ও রিড করবে।
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {streamState === 'STREAMING' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {isStreaming && (
               <>
                 <button
                   onClick={handlePause}
@@ -220,7 +282,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </>
             )}
 
-            {streamState === 'PAUSED' && (
+            {isPaused && (
               <>
                 <button
                   onClick={handleResume}
@@ -244,19 +306,10 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 <button
                   onClick={handleConnect}
                   className="px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 active:scale-95 rounded-lg flex items-center gap-2 shadow-sm transition-all"
-                  title="লাইভ স্ক্রিন শেয়ারিং ও রিয়েল-টাইম ট্রেডিং সিগন্যাল ইঞ্জিন চালু করুন"
+                  title="লাইভ স্ক্রিন শেয়ারিং ও যেকোনো স্ক্রিন সনাক্তকরণ ইঞ্জিন চালু করুন"
                 >
                   <Monitor className="w-4 h-4" />
                   <span>Connect Live Screen</span>
-                </button>
-
-                <button
-                  onClick={() => liveScreenService.startDemoTestStream()}
-                  className="px-3.5 py-2 text-xs font-semibold text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/40 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
-                  title="স্ক্রিন শেয়ার ছাড়া ইনস্ট্যান্ট ডেমো চার্ট দিয়ে এআই সিগন্যাল ও ফ্লোটিং বাবল টেস্ট করুন"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>ডেমো টেস্ট স্ট্রিম</span>
                 </button>
 
                 {isInsideIframe && (
@@ -276,7 +329,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </div>
             )}
 
-            {streamState === 'CONNECTING' && (
+            {isConnecting && (
               <div className="flex items-center gap-2">
                 <button
                   disabled
@@ -288,12 +341,25 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 <button
                   onClick={() => liveScreenService.cancelConnecting()}
                   className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
-                  title="কানেকশন বাতিল বা রিসেট করুন"
                 >
-                  রিসেট (Cancel)
+                  রিসেট
                 </button>
               </div>
             )}
+
+            {/* Picture-in-Picture (PiP) Window Button */}
+            <button
+              onClick={handleTogglePiP}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors shadow-sm ${
+                isPiPActive
+                  ? 'bg-purple-950/50 border-purple-500/50 text-purple-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+              }`}
+              title="অন্যান্য অ্যাপ্লিকেশন চালানোর সময়ও স্ক্রিনের একপাশে ভাসমান PiP প্রিভিউ দেখতে ক্লিক করুন"
+            >
+              <Tv className="w-4 h-4 text-purple-400" />
+              <span>{isPiPActive ? 'PiP উইন্ডো সক্রিয়' : 'PiP উইন্ডো'}</span>
+            </button>
 
             {/* Voice Assistant Toggle Button */}
             <button
@@ -303,7 +369,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
                   ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/50'
                   : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
               }`}
-              title={isVoiceOn ? 'ভয়েস সহকারী চালু আছে (ক্লিক করে বন্ধ করুন)' : 'ভয়েস সহকারী বন্ধ আছে (ক্লিক করে চালু করুন)'}
+              title={isVoiceOn ? 'ভয়েস সহকারী চালু আছে' : 'ভয়েস সহকারী বন্ধ আছে'}
             >
               {isVoiceOn ? <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
               <span>{isVoiceOn ? 'ভয়েস অন' : 'ভয়েস অফ'}</span>
@@ -326,7 +392,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 }
               }}
               className="px-3 py-2 text-xs font-semibold rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40 flex items-center gap-1.5 transition-colors shadow-sm"
-              title="অন্য যেকোনো ট্রেডিং অ্যাপের (Binomo, Quotex, MT4) ওপর ভাসমান উইন্ডো দেখানো বা লুকানো"
+              title="অন্য যেকোনো ট্রেডিং অ্যাপের ওপর ভাসমান উইন্ডো দেখানো বা লুকানো"
             >
               <Layers className="w-4 h-4 text-cyan-400" />
               <span>ফ্লোটিং HUD</span>
@@ -341,24 +407,17 @@ export const LiveScreenAnalyzer: React.FC = () => {
               className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors shadow-sm ${
                 serverStatus.tested && serverStatus.ok
                   ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/40'
-                  : serverStatus.tested && !serverStatus.ok
-                  ? 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-900/40'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
               }`}
-              title="ব্যাকএন্ড সার্ভার কানেকশন ও API সেটিংস"
             >
               {serverStatus.tested && serverStatus.ok ? (
                 <Wifi className="w-4 h-4 text-emerald-400" />
-              ) : serverStatus.tested && !serverStatus.ok ? (
-                <WifiOff className="w-4 h-4 text-rose-400" />
               ) : (
                 <Server className="w-4 h-4 text-cyan-400" />
               )}
               <span>
                 {serverStatus.tested && serverStatus.ok
-                  ? `সার্ভার সক্রিয় (${serverStatus.latencyMs}ms)`
-                  : serverStatus.tested && !serverStatus.ok
-                  ? 'অন-ডিভাইস ভিশন সক্রিয়'
+                  ? `সার্ভার সক্রিয় (${serverStatus.latencyMs}ms)`
                   : 'সার্ভার চেক'}
               </span>
             </button>
@@ -372,8 +431,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
             <span>Inspection Interval:</span>
             <input
               type="range"
-              min="5"
-              max="30"
+              min="3"
+              max="20"
               step="1"
               value={intervalSec}
               onChange={(e) => liveScreenService.setScanIntervalSeconds(Number(e.target.value))}
@@ -385,34 +444,129 @@ export const LiveScreenAnalyzer: React.FC = () => {
           <div className="flex items-center gap-2 text-emerald-400/90">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
             <span className="text-[11px]">
-              Privacy Protected: Account balance and login credentials are automatically redacted.
+              Privacy Protected: Account balance and login credentials are automatically shielded.
             </span>
           </div>
         </div>
       </div>
 
-      {/* Visual Step-by-Step Guide for Switching to other Trading Apps */}
-      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs space-y-2 shadow-sm">
-        <div className="flex items-center justify-between text-slate-300 font-semibold">
-          <div className="flex items-center gap-2 text-cyan-400">
-            <Smartphone className="w-4 h-4" />
-            <span>অন্যান্য অ্যাপ্লিকেশনে (Quotex / Pocket Option) ট্রেড করার নিয়ম:</span>
+      {/* 2. Interactive Screen Switch Verification Test Bench (ব্যবহারকারীর টেস্টের জন্য) */}
+      <div className="p-4 rounded-xl bg-slate-900/95 border border-cyan-500/30 shadow-lg space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+          <div className="flex items-center gap-2 text-sm font-bold text-white">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>স্ক্রিন সুইচ ও এআই রিডিং টেস্ট বেঞ্চ (Screen Switch & OCR Test Matrix)</span>
           </div>
-          <span className="text-[11px] font-normal text-slate-400 hidden sm:inline">রিয়েল-টাইম স্ক্রিন এআই</span>
+          <span className="text-xs text-cyan-300 font-normal">
+            ১-ক্লিকে যেকোনো স্ক্রিন স্যুইচ করে এআই রিডিং ও বাংলা ভয়েস পরীক্ষা করুন 👇
+          </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] text-slate-400 pt-1">
-          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
-            <div className="font-semibold text-slate-200">১. স্ক্রিন শেয়ার কানেক্ট করুন</div>
-            <p className="text-slate-400">উপরে <b>"Connect Live Screen"</b> চাপুন এবং স্ক্রিন ক্যাপচার ডায়ালগে "Start now" বা ডিসপ্লে সিলেক্ট করুন।</p>
-          </div>
-          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
-            <div className="font-semibold text-slate-200">২. ফ্লোটিং বাবল ভেসে উঠবে</div>
-            <p className="text-slate-400">কানেক্ট হলেই স্ক্রিনে ভাসমান সিগন্যাল বাবল (HUD) চালু হবে যা ড্র্যাগ করে যেকোনো পাশে সরানো যায়।</p>
-          </div>
-          <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
-            <div className="font-semibold text-slate-200">৩. ট্রেডিং অ্যাপে যান</div>
-            <p className="text-slate-400">হোম চেপে ব্রোকার অ্যাপ খুলুন। বাবলটি স্ক্রিনে থাকবে এবং লাইভ চার্ট রিড করে CALL/PUT সিগন্যাল ও বাংলা ভয়েস দিকনির্দেশনা দেবে।</p>
-          </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 text-xs">
+          {/* Test 1: Quotex Chart */}
+          <button
+            onClick={() => handleScreenSwitchTest('QUOTEX_CHART')}
+            className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all active:scale-95 ${
+              activeTestScreen === 'QUOTEX_CHART'
+                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200 shadow-md ring-1 ring-emerald-500/50'
+                : 'bg-slate-950/70 border-slate-800 hover:border-emerald-500/50 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                ট্রেডিং চার্ট
+              </span>
+              <Monitor className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-xs">Quotex AUD/CAD</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">ক্যান্ডেল রিডিং ও CALL সিগন্যাল</div>
+            </div>
+          </button>
+
+          {/* Test 2: Chrome Document */}
+          <button
+            onClick={() => handleScreenSwitchTest('CHROME_DOC')}
+            className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all active:scale-95 ${
+              activeTestScreen === 'CHROME_DOC'
+                ? 'bg-blue-950/60 border-blue-500 text-blue-200 shadow-md ring-1 ring-blue-500/50'
+                : 'bg-slate-950/70 border-slate-800 hover:border-blue-500/50 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-500/40">
+                ব্রাউজার পেজ
+              </span>
+              <FileText className="w-4 h-4 text-blue-400" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-xs">Google Chrome</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">ফাইন্যান্স গাইড টেক্সট OCR</div>
+            </div>
+          </button>
+
+          {/* Test 3: VS Code IDE */}
+          <button
+            onClick={() => handleScreenSwitchTest('VS_CODE')}
+            className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all active:scale-95 ${
+              activeTestScreen === 'VS_CODE'
+                ? 'bg-purple-950/60 border-purple-500 text-purple-200 shadow-md ring-1 ring-purple-500/50'
+                : 'bg-slate-950/70 border-slate-800 hover:border-purple-500/50 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                কোড এডিটর
+              </span>
+              <Code className="w-4 h-4 text-purple-400" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-xs">VS Code IDE</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">টাইপস্ক্রিপ্ট কোড সিনট্যাক্স রিড</div>
+            </div>
+          </button>
+
+          {/* Test 4: WhatsApp Web */}
+          <button
+            onClick={() => handleScreenSwitchTest('WHATSAPP')}
+            className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all active:scale-95 ${
+              activeTestScreen === 'WHATSAPP'
+                ? 'bg-teal-950/60 border-teal-500 text-teal-200 shadow-md ring-1 ring-teal-500/50'
+                : 'bg-slate-950/70 border-slate-800 hover:border-teal-500/50 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-teal-950/80 text-teal-300 border border-teal-500/40">
+                মেসেঞ্জার
+              </span>
+              <MessageSquare className="w-4 h-4 text-teal-400" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-xs">WhatsApp Web</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">চ্যাট বার্তা ও প্রাইভেসি প্রটেকশন</div>
+            </div>
+          </button>
+
+          {/* Test 5: YouTube Video */}
+          <button
+            onClick={() => handleScreenSwitchTest('YOUTUBE')}
+            className={`p-3 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all active:scale-95 ${
+              activeTestScreen === 'YOUTUBE'
+                ? 'bg-rose-950/60 border-rose-500 text-rose-200 shadow-md ring-1 ring-rose-500/50'
+                : 'bg-slate-950/70 border-slate-800 hover:border-rose-500/50 text-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-500/40">
+                ভিডিও প্লেয়ার
+              </span>
+              <Video className="w-4 h-4 text-rose-400" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-xs">YouTube Player</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">ভিডিও শিরোনাম ও মেটাডাটা</div>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -437,48 +591,297 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <div className="font-semibold text-red-300">
                 {errorMessage.includes('Failed to fetch')
                   ? '⚠️ সার্ভার সংযোগ বিচ্ছিন্ন (Failed to fetch)'
-                  : errorMessage.includes('MediaProjection')
-                  ? '⚠️ স্ক্রিন ক্যাপচার পারমিশন এরর'
                   : `Notice: ${errorMessage}`}
-              </div>
-              <div className="mt-1 text-slate-300 text-[11px] leading-relaxed">
-                {errorMessage.includes('Failed to fetch') && (
-                  <span>
-                    মোবাইল ইন্টারনেট বা ক্লাউড সার্ভারের সংযোগ পাওয়া যাচ্ছে না। নিচের <b>সার্ভার কনফিগারেশন</b> বাটনে ক্লিক করে সঠিক Backend URL দিন অথবা ইন্টারনেট সংযোগ চেক করুন।
-                  </span>
-                )}
-                {errorMessage.includes('MediaProjection') && (
-                  <span>
-                    অ্যান্ড্রয়েড 14/15-এর Foreground Service পারমিশন সংশোধন করা হয়েছে। নতুন বিল্ডের APK ডাউনলোড করে আপডেট করুন।
-                  </span>
-                )}
-                {errorMessage.includes('getDisplayMedia') && (
-                  <span>
-                    মোবাইল ব্রাউজারে স্ক্রিন শেয়ারের জন্য TradePulse Android APK ব্যবহার করুন অথবা ব্রাউজারের পারমিশন চালু করুন।
-                  </span>
-                )}
               </div>
             </div>
           </div>
-          {errorMessage.includes('Failed to fetch') && (
-            <button
-              onClick={() => {
-                setShowServerModal(true);
-                runHealthCheck();
-              }}
-              className="px-3 py-1.5 bg-red-900/60 hover:bg-red-800/80 border border-red-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap self-start sm:self-center"
-            >
-              ⚙️ সার্ভার কনফিগার করুন
-            </button>
-          )}
         </div>
       )}
 
-      {/* Main Analysis Display Grid */}
-      {(streamState === 'STREAMING' || streamState === 'CONNECTING' || streamState === 'PAUSED') && (!isChartFound || !result || !result.visionData?.isClearTradingChart) ? (
-        /* Dedicated Scanning & Waiting for Chart View */
+      {/* 3. MAIN DISPLAY: Switches dynamically between Trading Chart Analysis and Other Screen Reading */}
+      {isChartFound && result && result.visionData?.isClearTradingChart ? (
+        /* MODE A: Active Trading Chart Analysis View */
+        <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-xs text-emerald-300">
+            <div className="flex items-center gap-2 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>ট্রেডিং চার্ট সক্রিয়: এআই ক্যান্ডেলস্টিক ও টেকনিক্যাল মোমেন্টাম বিশ্লেষণ করছে</span>
+            </div>
+            <span className="font-mono text-[11px] bg-slate-900 px-2.5 py-0.5 rounded border border-emerald-500/40">
+              {result.visionData.symbol || 'ASSET'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Column 1: Signal & Verification Verdict */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Synthesized Signal
+                </span>
+                <div className="flex items-center gap-1.5 text-slate-400 text-xs">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{formattedCountdown}</strong></span>
+                </div>
+              </div>
+
+              {/* Big Direction Badge */}
+              <div
+                className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1.5 ${
+                  result.direction === 'UP'
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                    : result.direction === 'DOWN'
+                    ? 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                    : 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+                }`}
+              >
+                <div className="text-2xl font-black tracking-tight font-mono">
+                  {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
+                  {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
+                  {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন (WAIT)'}
+                </div>
+                <div className="text-xs font-medium opacity-90">
+                  {result.verdictTitle}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+                  <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
+                    কনফিডেন্স: {result.confidence}%
+                  </span>
+                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
+                    ⏱️ এক্সপায়ারি: {formattedCountdown}
+                  </span>
+                </div>
+
+                {/* 1-Click AI Self-Learning Outcome Feedback */}
+                {result.direction !== 'WAIT' && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex flex-col items-center gap-1.5">
+                    <span className="text-[10px] text-slate-300 font-medium">
+                      ট্রেড ফলাফল দিয়ে এআই-কে শিক্ষা দিন:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleFeedbackOutcome('WIN')}
+                        className="px-2.5 py-1 text-[11px] bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 rounded font-semibold transition-all active:scale-95"
+                      >
+                        + লাভ (Win)
+                      </button>
+                      <button
+                        onClick={() => handleFeedbackOutcome('LOSS')}
+                        className="px-2.5 py-1 text-[11px] bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 rounded font-semibold transition-all active:scale-95"
+                      >
+                        - ভুল/লস (Loss)
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {learningFeedbackMsg && (
+                <div className="p-2.5 bg-cyan-950/70 border border-cyan-500/50 rounded-lg text-xs text-cyan-200 text-center animate-fadeIn">
+                  {learningFeedbackMsg}
+                </div>
+              )}
+
+              {/* Market Verification Status Box */}
+              <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Market Verification:</span>
+                  <span
+                    className={`font-semibold flex items-center gap-1 ${
+                      result.marketVerification.status === 'MATCHED'
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    {result.marketVerification.status}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                  {result.marketVerification.notes}
+                </p>
+              </div>
+            </div>
+
+            {/* Column 2: Vision Technical Breakdown */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Visual Technical Data
+                </span>
+                <span className="text-xs text-cyan-400 font-mono">
+                  {result.visionData.symbol || 'SYMBOL ?'} ({result.visionData.timeframe || 'TF ?'})
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
+                  <span className="text-slate-500 block text-[10px] uppercase">Market Type</span>
+                  <span className="font-semibold text-slate-200">{result.visionData.marketType}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
+                  <span className="text-slate-500 block text-[10px] uppercase">Trend Structure</span>
+                  <span className="font-semibold text-slate-200">{result.visionData.chartStructure}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
+                  <span className="text-slate-500 block text-[10px] uppercase">Last Candle Bias</span>
+                  <span className="font-semibold text-emerald-400">
+                    {result.visionData.lastCandleDirection}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
+                  <span className="text-slate-500 block text-[10px] uppercase">Candle Pattern</span>
+                  <span className="font-semibold text-slate-200">
+                    {result.visionData.candlestickPattern || 'None'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Indicators Identified */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] text-slate-400 font-medium">সনাক্তকৃত ইন্ডিকেটর:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {result.visionData.indicatorsIdentified.map((ind, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] text-slate-300 font-mono"
+                    >
+                      {ind.name}: {ind.bias}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Visual Summary */}
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg text-xs text-slate-300 leading-relaxed">
+                <span className="font-semibold text-cyan-300 mr-1">এআই ভিশন সামারি:</span>
+                {result.visionData.visionSummary}
+              </div>
+            </div>
+
+            {/* Column 3: Reasoning Steps & Safe Execution Notice */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
+                Analysis Reasoning Chain
+              </span>
+
+              <div className="space-y-2 text-xs">
+                {result.reasoning.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-slate-300">
+                    <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] font-mono shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className="leading-relaxed">{step}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-lg text-[11px] text-slate-400">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 inline mr-1.5" />
+                <span>{result.safetyDisclaimer}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : result && (!isChartFound || result.screenStatus === 'OTHER_SCREEN_READING') ? (
+        /* MODE B: Other Screen Recognition & Universal OCR Reading View */
+        <div className="bg-slate-900/95 border border-cyan-500/40 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
+          {/* Header Badge */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-lg">
+                {result.visionData?.screenCategory === 'DOCUMENT' ? (
+                  <FileText className="w-6 h-6 text-blue-400" />
+                ) : result.visionData?.screenCategory === 'CODE_IDE' ? (
+                  <Code className="w-6 h-6 text-purple-400" />
+                ) : result.visionData?.screenCategory === 'CHAT_MESSENGER' ? (
+                  <MessageSquare className="w-6 h-6 text-teal-400" />
+                ) : result.visionData?.screenCategory === 'VIDEO_STREAM' ? (
+                  <Video className="w-6 h-6 text-rose-400" />
+                ) : (
+                  <Monitor className="w-6 h-6 text-cyan-400" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-white tracking-tight">
+                    {result.visionData?.detectedAppName || 'অন্যান্য অ্যাপ্লিকেশন স্ক্রিন'}
+                  </h3>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                    {result.visionData?.screenCategory || 'GENERAL_SCREEN'}
+                  </span>
+                </div>
+                <div className="text-xs text-emerald-400 font-medium flex items-center gap-1.5 mt-0.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>স্ক্রিন শনাক্ত ও টেক্সট সফলভাবে পড়া হয়েছে (Readability: {result.confidence}%)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Status Pill */}
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span>ট্রেড সিগন্যাল স্থগিত (WAIT)</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Bengali Visual Summary Banner */}
+          <div className="p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 space-y-1 text-slate-200 text-xs leading-relaxed">
+            <div className="font-bold text-cyan-300 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-cyan-400" />
+              <span>এআই স্ক্রিন সারসংক্ষেপ:</span>
+            </div>
+            <p className="text-sm font-medium text-slate-100 pl-5">
+              {result.visionData?.screenSummaryBn || result.visionData?.visionSummary || 'স্ক্রিন ফ্রেম পর্যবেক্ষণ করা হয়েছে।'}
+            </p>
+          </div>
+
+          {/* Live Extracted OCR Text Box */}
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-300 border-b border-slate-800/80 pb-2">
+              <span className="flex items-center gap-1.5 text-cyan-400">
+                <BookOpen className="w-4 h-4" />
+                <span>পঠিত প্রধান টেক্সট ও ইন্টারফেস উপাদান (Extracted Text from Screen):</span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {result.visionData?.extractedText?.length || 0} টি উপাদান পঠিত
+              </span>
+            </div>
+
+            {result.visionData?.extractedText && result.visionData.extractedText.length > 0 ? (
+              <div className="space-y-2">
+                {result.visionData.extractedText.map((snippet, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 font-mono flex items-start gap-2"
+                  >
+                    <span className="w-4 h-4 rounded-full bg-slate-800 text-cyan-400 text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                      ✓
+                    </span>
+                    <span className="break-all">{snippet}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">
+                স্ক্রিন ইমেজ প্রসেস করা হয়েছে কিন্তু কোনো নির্দিষ্ট টেক্সট ব্লক পাওয়া যায়নি।
+              </p>
+            )}
+          </div>
+
+          {/* Safe Trading Notice */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-start gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <strong>নিরাপদ ট্রেডিং গ্যারান্টি:</strong> ব্যবহারকারী যখনই অন্য যেকোনো অ্যাপ্লিকেশন বা ব্রাউজার পেজে যান, এআই নিশ্চিত করে যে কোনো ভুল বা মিথ্যা ট্রেড সিগন্যাল তৈরি না হয়। আবার ট্রেডিং চার্ট (Quotex/Binomo/TradingView)-এ ফিরে আসলে তাৎক্ষণিক ক্যান্ডেলস্টিক এনালাইসিস চালু হবে।
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* MODE C: Searching / Initial State View */
         <div className="bg-slate-900/90 border-2 border-dashed border-amber-500/40 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-2xl backdrop-blur-md">
-          {/* Animated Scanner Radar / Pulse Visual */}
           <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
             <div className="absolute inset-0 rounded-full bg-amber-500/10 animate-ping opacity-60" />
             <div className="absolute inset-2 rounded-full bg-amber-500/20 animate-pulse" />
@@ -490,425 +893,164 @@ export const LiveScreenAnalyzer: React.FC = () => {
           <div className="space-y-2 max-w-lg mx-auto">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/50 text-amber-300 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              <span>স্ক্রিন শেয়ার সংযুক্ত • চার্ট অনুসন্ধান চলছে</span>
+              <span>স্ক্রিন শেয়ার সংযুক্ত • লাইভ ফ্রেম স্ক্যান চলছে</span>
             </div>
             <h3 className="text-xl font-bold text-white tracking-tight">
-              স্ক্রিনে কোনো ট্রেডিং চার্ট পাওয়া যায়নি
+              যেকোনো অ্যাপ্লিকেশন বা ব্রাউজার স্ক্রিনে যান
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              ট্রেডিং ফলাফল ও সিগন্যাল শতভাগ নির্ভুল রাখতে, <strong>কোনো স্পষ্ট ট্রেডিং চার্ট (Candlestick Chart) শনাক্ত না হওয়া পর্যন্ত ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ রাখা হয়েছে।</strong>
+              স্ক্রিন পরিবর্তন করলেই এআই স্বয়ংক্রিয়ভাবে অ্যাপ ও টেক্সট ডিটেক্ট করবে। অথবা উপরের <strong>টেস্ট বেঞ্চের যেকোনো বোতামে ক্লিক করে</strong> তাৎক্ষণিক ফলাফল পরীক্ষা করুন।
             </p>
           </div>
-
-          {/* Live Chart Detector Diagnostics & Reason Box (Answers user questions: why chart is not detected & result safety) */}
-          <div className="bg-slate-950/90 border border-amber-500/40 rounded-xl p-4 sm:p-5 max-w-2xl mx-auto text-left space-y-3.5 shadow-xl">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                <Radar className="w-4 h-4 text-amber-400" />
-                <span>লাইভ চার্ট ডিটেকশন ডায়াগনস্টিক (Live Detector State)</span>
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/80 border border-rose-600/40 text-rose-300 font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
-                ফলাফল সম্পূর্ণ স্থগিত (BLOCKED)
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
-                <div className="text-[10px] text-slate-400">ক্যান্ডেলস্টিক বার</div>
-                <div className="font-bold text-slate-200 mt-1">
-                  {chartDiagnostic?.distinctCandleBars ?? 0} টি <span className="text-[9px] text-slate-500">(ন্যূনতম ৫)</span>
-                </div>
-              </div>
-              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
-                <div className="text-[10px] text-slate-400">ক্যান্ডেল পিক্সেল</div>
-                <div className="font-bold text-slate-200 mt-1">
-                  {chartDiagnostic?.totalCandlePixels ?? 0} px <span className="text-[9px] text-slate-500">(ন্যূনতম ৫০)</span>
-                </div>
-              </div>
-              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
-                <div className="text-[10px] text-slate-400">অনুভূমিক বিস্তার</div>
-                <div className="font-bold text-slate-200 mt-1">
-                  {chartDiagnostic?.horizontalSpanPercent ?? 0}% <span className="text-[9px] text-slate-500">(ন্যূনতম ২০%)</span>
-                </div>
-              </div>
-              <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
-                <div className="text-[10px] text-slate-400">ব্রোকার ব্যাকগ্রাউন্ড</div>
-                <div className={`font-bold mt-1 ${chartDiagnostic?.hasBrokerBackground ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {chartDiagnostic?.hasBrokerBackground ? '✅ ডার্ক/লাইট থিম' : '❌ থিম মেলেনি'}
-                </div>
-              </div>
-            </div>
-
-            {/* Detailed reason why chart is not detected */}
-            <div className="text-xs space-y-1.5 bg-amber-950/30 border border-amber-600/30 p-3 rounded-lg text-slate-300">
-              <div className="font-bold text-amber-300 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>চার্ট শনাক্ত না হওয়ার কারণ:</span>
-              </div>
-              <p className="text-[11px] text-slate-300 pl-5 leading-relaxed">
-                {chartDiagnostic?.failureReason || 'বর্তমান স্ক্রিনে কোনো ক্যান্ডেলস্টিক চার্ট মেলেনি। ব্রোকার অ্যাপের চার্ট সামনে আনুন।'}
-              </p>
-              {chartDiagnostic?.recommendedAction && (
-                <p className="text-[11px] text-cyan-300 pl-5 font-semibold">
-                  👉 করণীয়: {chartDiagnostic.recommendedAction}
-                </p>
-              )}
-            </div>
-
-            {/* Strict Safety Guarantee Badge */}
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-emerald-500/20 text-[11px] text-slate-300">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>
-                <strong>সিগন্যাল সেফগার্ড সক্রিয়:</strong> চার্ট স্ক্রিন থেকে সরে গেলে বা মিনিমাইজ হলে সাথে সাথে পূর্ববর্তী সিগন্যাল ও কাউন্টডাউন মুছে যায়।
-              </span>
-            </div>
-          </div>
-
-          {/* Clear Step-by-Step Instructions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-2xl mx-auto text-left text-xs">
-            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-              <div className="text-cyan-400 font-bold flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-[11px]">১</span>
-                <span>ব্রোকার অ্যাপ খুলুন</span>
-              </div>
-              <p className="text-slate-400 text-[11px]">Quotex, Binomo, Pocket Option বা TradingView অ্যাপ ওপেন করুন।</p>
-            </div>
-
-            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-              <div className="text-emerald-400 font-bold flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-950 border border-emerald-500/40 flex items-center justify-center text-[11px]">২</span>
-                <span>চার্ট ফুলস্ক্রিন রাখুন</span>
-              </div>
-              <p className="text-slate-400 text-[11px]">ক্যান্ডেলস্টিক চার্টটি ডিসপ্লেতে রাখুন যাতে এআই ক্যান্ডেলস্টিকগুলো সরাসরি রিড করতে পারে।</p>
-            </div>
-
-            <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-              <div className="text-purple-400 font-bold flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-purple-950 border border-purple-500/40 flex items-center justify-center text-[11px]">৩</span>
-                <span>স্বয়ংক্রিয় এনালাইসিস</span>
-              </div>
-              <p className="text-slate-400 text-[11px]">চার্ট শনাক্ত হওয়ামাত্রই এআই স্বয়ংক্রিয়ভাবে CALL/PUT সিগন্যাল ও কাউন্টডাউন শুরু করবে।</p>
-            </div>
-          </div>
-
-          {/* Live frame status pill */}
-          <div className="inline-flex flex-wrap items-center justify-center gap-3 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span>লাইভ ফ্রেম স্ক্যান: <strong className="text-cyan-300">{liveScreenService.getFrameCount()}</strong></span>
-            </div>
-            <span>•</span>
-            <span>চার্ট স্ট্যাটাস: <strong className="text-amber-300">অপেক্ষমাণ (WAIT)</strong></span>
-            <span>•</span>
-            <span>ফলাফল স্ট্যাটাস: <strong className="text-rose-400">চার্ট ছাড়া ব্লকড</strong></span>
-          </div>
-        </div>
-      ) : isChartFound && result && result.visionData?.isClearTradingChart ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Column 1: Signal & Verification Verdict */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Synthesized Signal
-              </span>
-              <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-                <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                <span>কাউন্টডাউন: <strong className="text-cyan-300 font-mono">{formattedCountdown}</strong></span>
-              </div>
-            </div>
-
-            {/* Big Direction Badge */}
-            <div
-              className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-1.5 ${
-                result.direction === 'UP'
-                  ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-                  : result.direction === 'DOWN'
-                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-300'
-                  : 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-              }`}
-            >
-              <div className="text-2xl font-black tracking-tight font-mono">
-                {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
-                {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
-                {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন (WAIT)'}
-              </div>
-              <div className="text-xs font-medium opacity-90">
-                {result.verdictTitle}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-                {result.direction !== 'WAIT' ? (
-                  <>
-                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
-                      কনফিডেন্স: {result.confidence}%
-                    </span>
-                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                      ⏱️ এক্সপায়ারি: {formattedCountdown}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[11px] font-mono text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-600/50">
-                    চার্ট পর্যবেক্ষণ চলছে • স্পষ্ট মোমেন্টামের অপেক্ষায়
-                  </span>
-                )}
-              </div>
-
-              {/* 1-Click AI Self-Learning Outcome Feedback */}
-              {result.direction !== 'WAIT' && (
-                <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex flex-col items-center gap-1.5">
-                  <span className="text-[10px] text-slate-300 font-medium">
-                    ট্রেড ফলাফল দিয়ে এআই-কে শিক্ষা দিন:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleFeedbackOutcome('WIN')}
-                      className="px-2.5 py-1 text-[11px] bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 rounded font-semibold transition-all active:scale-95"
-                    >
-                      + লাভ (Win)
-                    </button>
-                    <button
-                      onClick={() => handleFeedbackOutcome('LOSS')}
-                      className="px-2.5 py-1 text-[11px] bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 rounded font-semibold transition-all active:scale-95"
-                    >
-                      - ভুল/লস (Loss)
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {learningFeedbackMsg && (
-              <div className="p-2.5 bg-cyan-950/70 border border-cyan-500/50 rounded-lg text-xs text-cyan-200 text-center animate-fadeIn">
-                {learningFeedbackMsg}
-              </div>
-            )}
-
-            {/* Market Verification Status Box */}
-            <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Market Verification:</span>
-                <span
-                  className={`font-semibold flex items-center gap-1 ${
-                    result.marketVerification.status === 'MATCHED'
-                      ? 'text-emerald-400'
-                      : result.marketVerification.status === 'PRICE_MISMATCH'
-                      ? 'text-rose-400'
-                      : 'text-amber-400'
-                  }`}
-                >
-                  {result.marketVerification.status === 'MATCHED' && <CheckCircle2 className="w-3 h-3" />}
-                  {result.marketVerification.status === 'PRICE_MISMATCH' && <XCircle className="w-3 h-3" />}
-                  {result.marketVerification.status === 'UNSUPPORTED_BROKER_FEED' && <HelpCircle className="w-3 h-3" />}
-                  {result.marketVerification.status}
-                </span>
-              </div>
-
-              {result.marketVerification.livePrice && (
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-500">Live Price:</span>
-                  <span className="text-white">${result.marketVerification.livePrice}</span>
-                </div>
-              )}
-
-              {result.marketVerification.screenPrice && (
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-500">Screen Price:</span>
-                  <span className="text-slate-300">${result.marketVerification.screenPrice}</span>
-                </div>
-              )}
-
-              {result.marketVerification.priceDeltaPercent !== undefined && (
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-500">Price Deviation:</span>
-                  <span
-                    className={
-                      result.marketVerification.priceDeltaPercent > 1.5
-                        ? 'text-rose-400 font-bold'
-                        : 'text-emerald-400'
-                    }
-                  >
-                    {result.marketVerification.priceDeltaPercent}%
-                  </span>
-                </div>
-              )}
-
-              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-                {result.marketVerification.notes}
-              </p>
-            </div>
-          </div>
-
-          {/* Column 2: Vision Technical Breakdown */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Visual Technical Data
-              </span>
-              <span className="text-xs text-cyan-400 font-mono">
-                {result.visionData.symbol || 'SYMBOL ?'} ({result.visionData.timeframe || 'TF ?'})
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
-                <span className="text-slate-500 block text-[10px] uppercase">Market Type</span>
-                <span className="font-semibold text-slate-200">{result.visionData.marketType}</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
-                <span className="text-slate-500 block text-[10px] uppercase">Trend Structure</span>
-                <span className="font-semibold text-slate-200">{result.visionData.chartStructure}</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
-                <span className="text-slate-500 block text-[10px] uppercase">Last Candle Bias</span>
-                <span
-                  className={`font-semibold ${
-                    result.visionData.lastCandleDirection === 'BULLISH'
-                      ? 'text-emerald-400'
-                      : result.visionData.lastCandleDirection === 'BEARISH'
-                      ? 'text-rose-400'
-                      : 'text-slate-400'
-                  }`}
-                >
-                  {result.visionData.lastCandleDirection}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/90">
-                <span className="text-slate-500 block text-[10px] uppercase">Candle Pattern</span>
-                <span className="font-semibold text-slate-200">
-                  {result.visionData.candlestickPattern || 'None'}
-                </span>
-              </div>
-            </div>
-
-            {/* Visible Indicators on Screen */}
-            <div>
-              <span className="text-xs font-medium text-slate-400 block mb-2">Visible Indicators:</span>
-              {result.visionData.indicatorsIdentified.length > 0 ? (
-                <div className="space-y-1.5">
-                  {result.visionData.indicatorsIdentified.map((ind, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2 rounded bg-slate-950/80 border border-slate-800 text-xs flex items-center justify-between"
-                    >
-                      <div>
-                        <span className="font-semibold text-slate-300">{ind.name}</span>
-                        <span className="text-slate-500 text-[11px] block">{ind.description}</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                          ind.bias === 'BULLISH'
-                            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                            : ind.bias === 'BEARISH'
-                            ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {ind.bias}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 italic">No specific indicators visible in frame.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Column 3: Reasoning & Safety Disclaimer */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
-                Analysis Reasoning
-              </span>
-
-              <ul className="space-y-2 text-xs text-slate-300">
-                {result.reasoning.map((reason, idx) => (
-                  <li key={idx} className="flex items-start gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
-                    <span className="text-cyan-400 shrink-0 font-bold">•</span>
-                    <span>{reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-500 space-y-1">
-              <div className="flex items-center gap-1.5 font-medium text-slate-400">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Safety & Execution Gate</span>
-              </div>
-              <p>{result.safetyDisclaimer}</p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Empty State */
-        <div className="bg-slate-900/60 border border-slate-800 border-dashed rounded-xl p-12 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-800/80 mx-auto flex items-center justify-center text-slate-400">
-            <Eye className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-semibold text-slate-200">No Active Screen Stream</h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Click <strong>"Connect Live Screen"</strong> above and choose your TradingView, broker chart, or Binance tab to start continuous visual analysis.
-          </p>
         </div>
       )}
 
-      {/* Server Settings Modal */}
-      {showServerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                  <Server className="w-4 h-4" />
+      {/* 4. Real-Time Screen Transition Audit Log (স্ক্রিন সুইচ ট্র্যাকার ও হিস্ট্রি) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-white">
+            <History className="w-4 h-4 text-cyan-400" />
+            <span>স্ক্রিন সুইচ ট্র্যাকার ও হিস্ট্রি লগ (Screen Transition Audit Log)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-slate-400">
+              মোট সুইচ রেকর্ড: <strong className="text-cyan-300">{transitions.length}</strong>
+            </span>
+            {transitions.length > 0 && (
+              <button
+                onClick={() => liveScreenService.clearScreenTransitions()}
+                className="text-[11px] text-slate-400 hover:text-rose-300 underline"
+              >
+                মুছে ফেলুন
+              </button>
+            )}
+          </div>
+        </div>
+
+        {transitions.length > 0 ? (
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {transitions.map((t) => (
+              <div
+                key={t.id}
+                className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {new Date(t.timestamp).toLocaleTimeString()}
+                  </span>
+                  <div className="flex items-center gap-2 font-semibold text-slate-200">
+                    <span>{t.appName}</span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">
+                      {t.category}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Backend Server Settings</h3>
-                  <p className="text-[11px] text-slate-400">AI Vision & Trading Engine Connectivity</p>
+
+                <div className="flex items-center gap-3 text-slate-400 text-[11px]">
+                  <span className="truncate max-w-xs">{t.summaryBn}</span>
+                  <span
+                    className={`px-2 py-0.5 rounded font-mono font-semibold ${
+                      t.isChart
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-cyan-950 text-cyan-300 border border-cyan-500/40'
+                    }`}
+                  >
+                    {t.isChart ? 'চার্ট সিগন্যাল' : 'পঠিত'}
+                  </span>
                 </div>
               </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 text-center py-4 italic">
+            এখনো কোনো স্ক্রিন সুইচ লগ হয়নি। উপরের টেস্ট বেঞ্চে ক্লিক করুন অথবা ব্রাউজারের অন্য উইন্ডোতে যান।
+          </p>
+        )}
+      </div>
+
+      {/* 5. Interactive "Ask AI About Current Screen" (স্ক্রিন থেকে তথ্য জানুন) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3.5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-bold text-white">
+            <Terminal className="w-4 h-4 text-cyan-400" />
+            <span>স্ক্রিন সম্পর্কিত যেকোনো প্রশ্ন জিজ্ঞাসা করুন (Ask AI About Screen)</span>
+          </div>
+          <span className="text-xs text-slate-400 hidden sm:inline">Multimodal Vision Inspection</span>
+        </div>
+
+        {/* Quick Question Chips */}
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button
+            onClick={() => handleAskQuestion('এই স্ক্রিনে কী লেখা আছে?')}
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-white transition-colors"
+          >
+            "এই স্ক্রিনে কী লেখা আছে?"
+          </button>
+          <button
+            onClick={() => handleAskQuestion('কোন অ্যাপ্লিকেশন বা সাইট খোলা আছে?')}
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-white transition-colors"
+          >
+            "কোন অ্যাপ্লিকেশন খোলা আছে?"
+          </button>
+          <button
+            onClick={() => handleAskQuestion('স্ক্রিনে কোন এরর বা সতর্কতা মেসেজ আছে কি?')}
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-white transition-colors"
+          >
+            "কোন সতর্কতা মেসেজ আছে কি?"
+          </button>
+        </div>
+
+        {/* Input Bar */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="আপনার প্রশ্ন লিখুন (যেমন: স্ক্রিনের ব্যালেন্স বা প্রধান টেক্সট কী?)..."
+            value={questionInput}
+            onChange={(e) => setQuestionInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAskQuestion()}
+            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+          />
+          <button
+            onClick={() => handleAskQuestion()}
+            disabled={isAskingQuestion || !questionInput.trim()}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            {isAskingQuestion ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+            <span>জিজ্ঞাসা করুন</span>
+          </button>
+        </div>
+
+        {questionAnswer && (
+          <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-xs text-cyan-200 leading-relaxed animate-in fade-in">
+            <span className="font-bold text-cyan-300 block mb-1">🤖 এআই উত্তর:</span>
+            {questionAnswer}
+          </div>
+        )}
+      </div>
+
+      {/* 6. Backend Server Configuration Modal */}
+      {showServerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                <Server className="w-4 h-4 text-cyan-400" />
+                <span>সার্ভার কানেকশন সেটিংস</span>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowServerModal(false)}
-                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800"
+                className="text-slate-400 hover:text-white text-xs font-mono"
               >
-                ✕
+                ✕ বন্ধ করুন
               </button>
             </div>
 
-            {/* Connection Status Card */}
-            <div className={`p-3.5 rounded-xl border flex items-start gap-3 ${
-              serverStatus.tested && serverStatus.ok
-                ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-                : serverStatus.tested && !serverStatus.ok
-                ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
-                : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
-            }`}>
-              {serverStatus.tested && serverStatus.ok ? (
-                <Wifi className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-              ) : serverStatus.tested && !serverStatus.ok ? (
-                <WifiOff className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              ) : (
-                <RefreshCw className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5 animate-spin" />
-              )}
-              <div className="flex-1 text-xs space-y-1">
-                <div className="font-semibold flex items-center justify-between">
-                  <span>{serverStatus.tested ? (serverStatus.ok ? 'সার্ভার সক্রিয় ও সংযুক্ত' : 'অন-ডিভাইস ভিশন সক্রিয় (সার্ভার অফলাইন)') : 'যাচাই করা হচ্ছে...'}</span>
-                  {serverStatus.tested && serverStatus.ok && (
-                    <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full">
-                      {serverStatus.latencyMs} ms
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-400 leading-relaxed">
-                  {serverStatus.tested && serverStatus.ok
-                    ? 'AI Vision API এবং ট্রেডিং এনালাইজার ক্লাউডে সক্রিয়ভাবে কাজ করছে।'
-                    : 'ক্লাউড সার্ভার অফলাইন হলেও স্বয়ংক্রিয় অন-ডিভাইস স্মার্ট ভিশন ইঞ্জিন চালু রয়েছে। স্ক্রিন শেয়ারিং ও ফ্লোটিং সিগন্যাল বাবল কোনো বিঘ্ন ছাড়াই রিয়েল-টাইমে কাজ করবে।'}
-                </div>
-              </div>
-            </div>
-
-            {/* Custom Backend URL Input */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className="text-xs font-semibold text-slate-300 block">
                 Backend Server URL
               </label>
@@ -935,7 +1077,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
               <button
                 type="button"

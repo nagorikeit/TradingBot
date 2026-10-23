@@ -1,4 +1,15 @@
 export interface ScreenVisionParsedData {
+  // Universal Screen Recognition & OCR
+  screenCategory?: 'TRADING_CHART' | 'DOCUMENT' | 'BROWSER' | 'CODE_IDE' | 'CHAT_MESSENGER' | 'VIDEO_STREAM' | 'DESKTOP' | 'SYSTEM_SETTINGS' | 'OTHER';
+  detectedAppName?: string; // e.g. "Quotex", "TradingView", "Google Chrome", "VS Code", "YouTube", "Telegram", "Desktop"
+  screenTitle?: string; // e.g. "EUR/USD 1M OTC - Quotex", "React Documentation", "Main.java - IntelliJ", "WhatsApp Web"
+  extractedText?: string[]; // Legible text snippets, numbers, titles, or code read by AI
+  isReadable?: boolean; // Can AI read legible text from this screen?
+  screenSummaryBn?: string; // Bengali summary of what is on this screen
+  screenSummaryEn?: string; // English summary
+  customPromptAnswer?: string; // Answer if user queried the screen
+
+  // Trading specific (when screenCategory === 'TRADING_CHART')
   symbol?: string; // e.g. "BTC/USDT", "ETHUSDT", "EUR/USD"
   timeframe?: string; // e.g. "1m", "5m", "15m", "1h", "4h", "1D"
   marketType: 'CRYPTO' | 'FOREX' | 'STOCKS' | 'COMMODITY' | 'UNKNOWN';
@@ -48,4 +59,13 @@ export interface ScreenAnalysisFinalResult {
     concordance: 'AGREES' | 'CONFLICTS' | 'NO_RULE_DATA';
   };
   safetyDisclaimer: string;
+
+  // Universal Screen Recognition & Switch Tracking
+  screenStatus: 'CHART_DETECTED' | 'OTHER_SCREEN_READING' | 'UNCLEAR_SCREEN';
+  screenTransition?: {
+    previousScreen?: string;
+    currentScreen: string;
+    switchedAt: number;
+  };
 }
+

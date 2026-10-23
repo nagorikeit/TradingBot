@@ -203,13 +203,29 @@ export class VoiceAssistantService {
   }
 
   /**
-   * 6. Full analysis result announced
+   * 6. Full analysis result announced (handles both Trading Charts and Other Screens)
    */
   public announceAnalysisResult(result: ScreenAnalysisFinalResult): void {
     if (!result) return;
 
-    if (!result.visionData?.isClearTradingChart) {
-      this.announceNoChartFound();
+    // Handle screen transition announcement
+    if (result.screenTransition && result.screenTransition.previousScreen) {
+      const cur = result.screenTransition.currentScreen;
+      this.speak(
+        `স্ক্রিন পরিবর্তন সনাক্ত হয়েছে: আপনি এখন ${cur} এ আছেন।`,
+        `TRANSITION_${cur}`
+      );
+      return;
+    }
+
+    // Handle Other Screen Reading (user switched to another app, browser, code, etc.)
+    if (result.screenStatus === 'OTHER_SCREEN_READING' || !result.visionData?.isClearTradingChart) {
+      const appName = result.visionData?.detectedAppName || 'অন্যান্য অ্যাপ্লিকেশন';
+      const dedupKey = `OTHER_SCREEN_${appName}`;
+      this.speak(
+        `স্ক্রিন সনাক্ত: ${appName}। এআই সফলভাবে স্ক্রিন রিড করছে। চার্টে ফিরলে ট্রেড সিগন্যাল শুরু হবে।`,
+        dedupKey
+      );
       return;
     }
 
@@ -229,7 +245,7 @@ export class VoiceAssistantService {
     } else {
       // WAIT / Consolidation / Unsupported broker feed / Price mismatch / Stale data
       this.speak(
-        'বিশ্লেষণ সম্পন্ন। মার্কেট সাইডওয়ে বা অনির্দিষ্ট থাকার কারণে অপেক্ষা করার পরামর্শ দেওয়া হচ্ছে।',
+        'চার্ট বিশ্লেষণ সম্পন্ন। মার্কেট সাইডওয়ে বা অনির্দিষ্ট থাকার কারণে অপেক্ষা করার পরামর্শ দেওয়া হচ্ছে।',
         dedupKey
       );
     }
