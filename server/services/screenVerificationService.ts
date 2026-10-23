@@ -312,14 +312,14 @@ export class ScreenVerificationService {
         timestamp: now,
         frameCapturedAt,
         direction: 'WAIT',
-        confidence: Math.round((visionData.confidenceScore || 0.85) * 100),
-        verdictTitle: `স্ক্রিন সনাক্ত: ${appTitle} (পড়া হয়েছে)`,
+        confidence: 0,
+        verdictTitle: `চার্ট নেই: ${appTitle} (সিগন্যাল স্থগিত)`,
         suggestedExpiry: 'N/A',
         reasoning: [
           `শনাক্তকৃত স্ক্রিন: ${appTitle} [${visionData.screenCategory || 'GENERAL'}]`,
           `এআই বিশ্লেষণ: ${ocrSummary}`,
           extractedSnippets,
-          'ট্রেডিং চার্ট স্ক্রিনে না থাকায় স্বয়ংক্রিয়ভাবে ট্রেড সিগন্যাল হোল্ড (WAIT) রাখা হয়েছে। চার্টে ফিরলে তাৎক্ষণিক ক্যান্ডেল বিশ্লেষণ শুরু হবে।',
+          '⚠️ স্ক্রিনে কোনো ট্রেডিং ক্যান্ডেলস্টিক চার্ট না থাকায় ট্রেড সিগন্যাল সম্পূর্ণ বন্ধ (WAIT, 0% কনফিডেন্স)। চার্টে ফিরলে তাৎক্ষণিক ক্যান্ডেল বিশ্লেষণ শুরু হবে।',
         ],
         visionData,
         marketVerification: {

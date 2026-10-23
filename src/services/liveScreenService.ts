@@ -1071,10 +1071,10 @@ export class LiveScreenService {
                 const b = data[idx + 2];
 
                 // 1. Broker background dark / light themes:
-                // Dark themes (Quotex #121620, Binomo #1b1e2e, PocketOption #1a1d29, TradingView #131722, #1e222d, #2a2e39, dark navy #1a2332)
-                const isDarkBg = r <= 95 && g <= 95 && b <= 110;
-                // Light themes (#ffffff, #f0f3fa, #e8ecf2)
-                const isLightBg = r >= 200 && g >= 200 && b >= 200;
+                // Covers dark themes (Quotex, Binomo, PocketOption, TradingView, MT4/5 #121620, #131722, #1b1e2e, #1a1d29, #262b3d, #2d3142)
+                const isDarkBg = (r <= 135 && g <= 135 && b <= 155) || (Math.max(r, g, b) - Math.min(r, g, b) <= 25 && Math.max(r, g, b) <= 140);
+                // Light themes (#ffffff, #f0f3fa, #e8ecf2, #f5f5f5)
+                const isLightBg = r >= 195 && g >= 195 && b >= 195;
 
                 if (isDarkBg) {
                   darkBgCount++;
@@ -1084,14 +1084,14 @@ export class LiveScreenService {
 
                 // 2. Candlestick green (Quotex teal-green #26a69a, pure green #00c076, emerald #00e676, neon #00ff88, lime #4caf50, cyan #00b0ff):
                 const isGreenCandle =
-                  (g >= 75 && g > r * 1.12 && (g - r) >= 12 && b <= g * 1.25) ||
-                  (g >= 115 && r <= 85 && b <= 190) ||
-                  (g >= 120 && b >= 120 && r <= 80);
+                  (g >= 60 && g > r * 1.08 && (g - r) >= 10) ||
+                  (g >= 100 && r <= 95 && b <= 210) ||
+                  (g >= 110 && b >= 110 && r <= 85);
 
                 // 3. Candlestick red (Quotex red #ef5350, Binomo red #ff4141, PocketOption red #ff3344, TradingView red #f23645, crimson #c62828):
                 const isRedCandle =
-                  (r >= 95 && r > g * 1.18 && (r - g) >= 14 && r > b * 1.15 && (r - b) >= 14) ||
-                  (r >= 140 && g <= 90 && b <= 95);
+                  (r >= 85 && r > g * 1.10 && (r - g) >= 10) ||
+                  (r >= 130 && g <= 100 && b <= 110);
 
                 if (isGreenCandle) {
                   greenPixelsInChart++;
@@ -1119,7 +1119,7 @@ export class LiveScreenService {
 
             for (let x = xStart; x < xEnd; x++) {
               const height = columnMaxY[x] - columnMinY[x] + 1;
-              const hasCandle = columnCandlePixels[x] >= 2 && height >= 4;
+              const hasCandle = columnCandlePixels[x] >= 2 && height >= 3;
 
               if (hasCandle) {
                 if (!inBar) {
@@ -1130,7 +1130,7 @@ export class LiveScreenService {
                   barMidpointsY.push((columnMinY[x] + columnMaxY[x]) / 2);
                 } else {
                   barWidth++;
-                  if (barWidth > 36) {
+                  if (barWidth > 48) {
                     inBar = false;
                   }
                 }
@@ -1146,27 +1146,27 @@ export class LiveScreenService {
             if (barPositionsX.length >= 2) {
               horizontalSpan = barPositionsX[barPositionsX.length - 1] - barPositionsX[0];
             }
-            if (barMidpointsY.length >= 3) {
+            if (barMidpointsY.length >= 2) {
               const minY = Math.min(...barMidpointsY);
               const maxY = Math.max(...barMidpointsY);
               verticalDispersion = maxY - minY;
             }
 
             const bgRatio = (darkBgCount + lightBgCount) / Math.max(1, totalExamined);
-            const hasBrokerBg = bgRatio > 0.22;
+            const hasBrokerBg = bgRatio > 0.15;
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
-            // Strict Candlestick Chart Criteria:
-            // 1. At least 5 distinct candle bars across the chart
-            // 2. Total candle pixels >= 50
-            // 3. Candles span at least 20% of chart width
-            // 4. Vertical price action dispersion >= 8px (rejects horizontal flat status bars or single lines)
+            // Resilient Candlestick Chart Criteria:
+            // 1. At least 2 distinct candle bars across the chart (supports high-zoom 1-minute broker views)
+            // 2. Total candle pixels >= 25
+            // 3. Horizontal span >= 8% of chart width
+            // 4. Vertical price action dispersion >= 4px
             // 5. Must have broker theme background
             const isCandlestickChart =
-              distinctCandleBars >= 5 &&
-              totalCandlePixels >= 50 &&
-              horizontalSpan >= targetWidth * 0.20 &&
-              verticalDispersion >= 8 &&
+              distinctCandleBars >= 2 &&
+              totalCandlePixels >= 25 &&
+              horizontalSpan >= targetWidth * 0.08 &&
+              verticalDispersion >= 4 &&
               hasBrokerBg;
 
             const diagnostic: ChartDetectionDiagnostic = {
@@ -1381,13 +1381,13 @@ export class LiveScreenService {
         timestamp: now,
         frameCapturedAt,
         direction: 'WAIT',
-        confidence: 85,
-        verdictTitle: `স্ক্রিন সনাক্ত: ${appName} (পড়া হয়েছে)`,
+        confidence: 0,
+        verdictTitle: `চার্ট পাওয়া যায়নি / ${appName}`,
         suggestedExpiry: 'N/A',
         reasoning: [
-          `শনাক্তকৃত স্ক্রিন: ${appName} [অন-ডিভাইস ভিশন]`,
-          'এআই স্ক্রিনের টেক্সট এবং ভিজ্যুয়াল ইন্টারফেস সফলভাবে রিড করেছে।',
-          'ট্রেডিং চার্ট না থাকায় স্বয়ংক্রিয়ভাবে ট্রেড সিগন্যাল হোল্ড (WAIT) রাখা হয়েছে।',
+          chartDetection.diagnostic?.failureReason || 'স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট সনাক্ত হয়নি।',
+          'ট্রেডিং চার্ট ছাড়া সিগন্যাল সম্পূর্ণ ব্লক (0% কনফিডেন্স)।',
+          'অনুগ্রহ করে ব্রোকার অ্যাপের (Quotex/Binomo/Pocket Option/TradingView) চার্ট ফুলস্ক্রিন রাখুন।',
         ],
         visionData: {
           screenCategory: 'BROWSER',
@@ -1793,7 +1793,7 @@ export class LiveScreenService {
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout guard for multimodal vision API
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25s resilient timeout for multimodal vision API
     let frameCapturedAt = Date.now();
     let imageBase64 = '';
 

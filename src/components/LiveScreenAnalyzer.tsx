@@ -807,24 +807,37 @@ export const LiveScreenAnalyzer: React.FC = () => {
                   <h3 className="text-lg font-bold text-white tracking-tight">
                     {result.visionData?.detectedAppName || 'অন্যান্য অ্যাপ্লিকেশন স্ক্রিন'}
                   </h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
-                    {result.visionData?.screenCategory || 'GENERAL_SCREEN'}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40">
+                    চার্ট নয় ({result.visionData?.screenCategory || 'NON_CHART'})
                   </span>
                 </div>
-                <div className="text-xs text-emerald-400 font-medium flex items-center gap-1.5 mt-0.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>স্ক্রিন শনাক্ত ও টেক্সট সফলভাবে পড়া হয়েছে (Readability: {result.confidence}%)</span>
+                <div className="text-xs text-amber-400 font-medium flex items-center gap-1.5 mt-0.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  <span>স্ক্রিনে ক্যান্ডেলস্টিক চার্ট অনুপস্থিত — স্ক্রিন টেক্সট রিড হয়েছে (ট্রেড কনফিডেন্স: 0%)</span>
                 </div>
               </div>
             </div>
 
             {/* Status Pill */}
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>ট্রেড সিগন্যাল স্থগিত (WAIT)</span>
+              <span className="px-3 py-1 rounded-lg bg-red-950/80 border border-red-500/50 text-red-300 text-xs font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                <span>ট্রেড সিগন্যাল সম্পূর্ণ বন্ধ (BLOCKED)</span>
               </span>
             </div>
+          </div>
+
+          {/* Quick Troubleshooting Guide for Chart Detection */}
+          <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200/90 space-y-1.5">
+            <div className="font-bold text-amber-300 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>কেন চার্ট শনাক্ত হচ্ছে না এবং কীভাবে চালু করবেন?</span>
+            </div>
+            <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-300 leading-relaxed">
+              <li><strong>১. স্ক্রিন শেয়ার সিলেকশন:</strong> স্ক্রিন শেয়ার করার সময় কেবল একটি ব্রাউজার ট্যাব শেয়ার না করে <em>"Entire Screen" (পুরো স্ক্রিন)</em> অথবা ব্রোকার অ্যাপের উইন্ডো সিলেক্ট করুন।</li>
+              <li><strong>২. চার্ট দৃশ্যমান রাখুন:</strong> আপনার ব্রোকার (Quotex / Binomo / Pocket Option / TradingView) চার্টটি সামনে ফুলস্ক্রিন রাখুন যাতে লাল/সবুজ ক্যান্ডেলগুলো দৃশ্যমান থাকে।</li>
+              <li><strong>৩. স্ক্রিন রিডার বনাম ট্রেড সিগন্যাল:</strong> চার্ট সামনে না থাকলে এআই আপনার বর্তমান স্ক্রিনের টেক্সট পড়ে নিচে দেখায়, তবে কোনো ট্রেড সিগন্যাল তৈরি করে না।</li>
+            </ul>
           </div>
 
           {/* Bengali Visual Summary Banner */}
