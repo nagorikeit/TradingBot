@@ -19,15 +19,6 @@ export interface ScreenVisionParsedData {
   confidenceScore: number;
   isClearTradingChart: boolean;
   containsSensitivePrivateData: boolean;
-  landmarks?: ChartLandmarks;
-}
-
-export interface ChartLandmarks {
-  hasCandlestickSeries: boolean;
-  hasPriceScaleOrGrid: boolean;
-  hasTimeframeOrTimer: boolean;
-  hasBrokerControls: boolean;
-  landmarkScore: number;
 }
 
 export interface MarketVerificationResult {

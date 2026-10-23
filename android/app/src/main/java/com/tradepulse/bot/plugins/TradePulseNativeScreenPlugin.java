@@ -414,15 +414,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(getContext())) {
-                    try {
-                        Intent intent = new Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + getContext().getPackageName())
-                        );
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        getContext().startActivity(intent);
-                    } catch (Exception ignored) {}
-                    call.reject("Overlay permission not granted. Opened Android Settings for 'Display over other apps'.");
+                    call.reject("Overlay permission not granted. Request overlay permission first.");
                     return;
                 }
 

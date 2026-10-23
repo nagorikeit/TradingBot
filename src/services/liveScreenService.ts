@@ -104,20 +104,8 @@ export class LiveScreenService {
     return this.isChartFound;
   }
 
-  public getConsecutiveChartDetections(): number {
-    return this.consecutiveChartDetections;
-  }
-
   public getChartDiagnostic(): ChartDetectionDiagnostic | null {
     return this.latestChartDiagnostic;
-  }
-
-  public getVideoElement(): HTMLVideoElement | null {
-    return this.videoEl;
-  }
-
-  public getStream(): MediaStream | null {
-    return this.stream;
   }
 
   public getExpirySecondsLeft(): number {
@@ -163,6 +151,10 @@ export class LiveScreenService {
 
   public getLastErrorReason(): string | null {
     return this.lastErrorReason;
+  }
+
+  public getStream(): MediaStream | null {
+    return this.stream;
   }
 
   public getScanIntervalSeconds(): number {
@@ -711,7 +703,6 @@ export class LiveScreenService {
             let distinctCandleBars = 0;
             let inBar = false;
             let barWidth = 0;
-            let currentBarPixels = 0;
             const barMidpointsY: number[] = [];
             const barPositionsX: number[] = [];
 
@@ -723,35 +714,18 @@ export class LiveScreenService {
                 if (!inBar) {
                   inBar = true;
                   barWidth = 1;
-                  currentBarPixels = columnCandlePixels[x];
+                  distinctCandleBars++;
                   barPositionsX.push(x);
                   barMidpointsY.push((columnMinY[x] + columnMaxY[x]) / 2);
                 } else {
                   barWidth++;
-                  currentBarPixels += columnCandlePixels[x];
-                  // If a colored block is wider than 16px in a 320px chart,
-                  // it is an app icon (WhatsApp, YouTube, Gallery, Settings) or a UI card/banner, NOT a candlestick!
-                  if (barWidth > 16) {
+                  if (barWidth > 36) {
                     inBar = false;
-                    if (barPositionsX.length > 0 && barPositionsX[barPositionsX.length - 1] === x - barWidth + 1) {
-                      barPositionsX.pop();
-                      barMidpointsY.pop();
-                    }
                   }
                 }
               } else {
-                if (inBar) {
-                  // A valid candlestick bar must have width between 1px and 14px
-                  if (barWidth >= 1 && barWidth <= 14 && currentBarPixels >= 5) {
-                    distinctCandleBars++;
-                  } else {
-                    barPositionsX.pop();
-                    barMidpointsY.pop();
-                  }
-                }
                 inBar = false;
                 barWidth = 0;
-                currentBarPixels = 0;
               }
             }
 
@@ -768,21 +742,20 @@ export class LiveScreenService {
             }
 
             const bgRatio = (darkBgCount + lightBgCount) / Math.max(1, totalExamined);
-            const hasBrokerBg = bgRatio > 0.25;
+            const hasBrokerBg = bgRatio > 0.22;
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
             // Strict Candlestick Chart Criteria:
-            // 1. At least 5 distinct candle bars (widths 1-14px, rejecting app icons >16px)
-            // 2. Total candle pixels between 45 and 3500 (rejecting solid non-chart screens)
+            // 1. At least 5 distinct candle bars across the chart
+            // 2. Total candle pixels >= 50
             // 3. Candles span at least 20% of chart width
-            // 4. Vertical price action dispersion >= 12px (rejects horizontal app dock icons & status bars)
+            // 4. Vertical price action dispersion >= 8px (rejects horizontal flat status bars or single lines)
             // 5. Must have broker theme background
             const isCandlestickChart =
               distinctCandleBars >= 5 &&
-              totalCandlePixels >= 45 &&
-              totalCandlePixels <= 3500 &&
+              totalCandlePixels >= 50 &&
               horizontalSpan >= targetWidth * 0.20 &&
-              verticalDispersion >= 12 &&
+              verticalDispersion >= 8 &&
               hasBrokerBg;
 
             const diagnostic: ChartDetectionDiagnostic = {
@@ -802,17 +775,14 @@ export class LiveScreenService {
               if (!hasBrokerBg) {
                 failureReasons.push('ব্রোকার ব্যাকগ্রাউন্ড অমিল: ট্রেডিং টার্মিনালের ডার্ক বা লাইট চার্ট ব্যাকগ্রাউন্ড শনাক্ত হয়নি।');
               }
-              if (totalCandlePixels < 45) {
+              if (totalCandlePixels < 50) {
                 failureReasons.push(`ক্যান্ডেল পিক্সেল অপর্যাপ্ত: মাত্র ${totalCandlePixels} লাল/সবুজ ক্যান্ডেল পিক্সেল শনাক্ত হয়েছে।`);
-              }
-              if (totalCandlePixels > 3500) {
-                failureReasons.push('স্ক্রিনটি চার্ট নয়: অতিরিক্ত সলিড রঙের উপস্থিতি (অ্যাপ আইকন বা ওয়ালপেপার হতে পারে)।');
               }
               if (horizontalSpan < targetWidth * 0.20) {
                 failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}% (কমপক্ষে ২০% প্রয়োজন)।`);
               }
-              if (verticalDispersion < 12) {
-                failureReasons.push('প্রাইস অ্যাকশন উল্লম্ব ওঠানামাহীন: ক্যান্ডেলগুলোর প্রাইস লেভেল বৈচিত্র্য নেই (ডক আইকন বা স্ট্যাটাস বার হতে পারে)।');
+              if (verticalDispersion < 8) {
+                failureReasons.push('প্রাইস অ্যাকশন অনুভূমিক/ফ্ল্যাট: কোনো উল্লম্ব ট্রেন্ড বা সুইং ওঠানামা নেই।');
               }
               if (failureReasons.length === 0) {
                 failureReasons.push('স্ক্রিনটি সক্রিয় ট্রেডিং টার্মিনাল নয় (হোমস্ক্রিন, চ্যাট বা অন্য অ্যাপ হতে পারে)।');
@@ -958,7 +928,7 @@ export class LiveScreenService {
         direction: 'WAIT',
         confidence: 0,
         verdictTitle: 'আমি চার্ট খুঁজে পাইনি',
-        suggestedExpiry: 'N/A',
+        suggestedExpiry: '01:00',
         reasoning: [
           'স্ক্রিন ফ্রেম অস্পষ্ট বা চার্ট সনাক্ত হয়নি।',
           'অনুগ্রহ করে ট্রেডিং অ্যাপের চার্ট স্ক্রিনে রাখুন।',
@@ -1000,7 +970,7 @@ export class LiveScreenService {
         direction: 'WAIT',
         confidence: 0,
         verdictTitle: chartDetection.pattern || 'আমি চার্ট খুঁজে পাইনি',
-        suggestedExpiry: 'N/A',
+        suggestedExpiry: '01:00',
         reasoning: chartDetection.reason,
         visionData: {
           symbol: chartDetection.symbol || 'UNKNOWN',
@@ -1086,8 +1056,6 @@ export class LiveScreenService {
    */
   private processResult(result: ScreenAnalysisFinalResult, latencyMs: number): void {
     if (!result.visionData?.isClearTradingChart) {
-      // INSTANT FLUSH ON FIRST FRAME WITHOUT CHART
-      this.consecutiveChartDetections = 0;
       this.isChartFound = false;
       this.isSearchingForChart = true;
       if (this.countdownTimer) {
@@ -1137,40 +1105,6 @@ export class LiveScreenService {
 
       voiceAssistantService.announceNoChartFound();
     } else {
-      // Frame indicates a valid trading chart!
-      this.consecutiveChartDetections++;
-
-      // TEMPORAL CONFIRMATION GATE:
-      // Require at least 2 consecutive positive chart frames before releasing trade signals.
-      // This prevents single accidental glitches, app drawer transitions, or popups from triggering signals!
-      if (this.consecutiveChartDetections < 2) {
-        this.isChartFound = false;
-        this.isSearchingForChart = true;
-        this.latestResult = null;
-        if (this.countdownTimer) {
-          clearInterval(this.countdownTimer);
-          this.countdownTimer = null;
-        }
-        this.expirySecondsLeft = 0;
-
-        this.updateFloatingOverlayHUD({
-          direction: 'WAIT',
-          confidence: 0,
-          durationText: '--:--',
-          verdictTitle: 'চার্ট যাচাই চলছে...',
-          reasonText: 'ফ্রেম ১ নিশ্চিত, চূড়ান্ত নিশ্চিতকরণ পেন্ডিং',
-          latencyMs,
-          frameCount: this.latestFrameCount,
-          lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
-          resolution: this.latestResolution,
-          captureState: this.captureState,
-          aiState: this.aiState,
-        });
-        this.notify();
-        return;
-      }
-
-      // 2 or more consecutive frames confirmed! CHART LOCKED!
       this.isChartFound = true;
       this.isSearchingForChart = false;
       this.latestResult = result;
@@ -1185,7 +1119,7 @@ export class LiveScreenService {
           horizontalSpanPercent: 75,
           verticalDispersionPx: 50,
           hasBrokerBackground: true,
-          recommendedAction: 'সক্রিয় ট্রেডিং চার্ট সফলভাবে শনাক্ত ও লক হয়েছে।',
+          recommendedAction: 'সক্রিয় ট্রেডিং চার্ট সফলভাবে শনাক্ত হয়েছে।',
         };
       }
 
@@ -1363,15 +1297,10 @@ export class LiveScreenService {
       this.videoEl.srcObject = null;
     }
 
-    try {
-      await this.hideFloatingOverlayHUD();
-    } catch (e) {
-      console.warn('Overlay hide error:', e);
-    }
-
     if (this.isNativeCaptureActive) {
       try {
         await TradePulseNativeScreen.stopScreenCapture();
+        await TradePulseNativeScreen.hideFloatingOverlay();
       } catch (err) {
         console.warn('Native stop error:', err);
       }

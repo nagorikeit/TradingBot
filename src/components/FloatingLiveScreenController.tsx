@@ -14,11 +14,9 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
-  ExternalLink,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
-import { pictureInPictureService } from '../services/pictureInPictureService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
 
 interface FloatingLiveScreenControllerProps {
@@ -38,7 +36,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
   const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
-  const [isPipActive, setIsPipActive] = useState<boolean>(pictureInPictureService.isPipActive());
 
   // Dragging state for the floating bubble
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -83,43 +80,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     return unsubVoice;
   }, []);
 
-  // Subscribe to OS Picture-in-Picture Floating Mode
-  useEffect(() => {
-    pictureInPictureService.setActionCallbacks({
-      onPause: () => liveScreenService.pause(),
-      onResume: () => liveScreenService.resume(),
-      onDisconnect: () => liveScreenService.disconnect(),
-      onFocusDisplay: () => onNavigateToLiveScreen(),
-    });
-
-    const unsubPip = pictureInPictureService.subscribe((active) => {
-      setIsPipActive(active);
-    });
-    return unsubPip;
-  }, [onNavigateToLiveScreen]);
-
-  const countdownMin = Math.floor(expirySec / 60);
-  const countdownRemainderSec = expirySec % 60;
-  const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
-
-  // Synchronize data to Picture-in-Picture window whenever state updates
-  useEffect(() => {
-    pictureInPictureService.updateData({
-      direction: result?.direction || 'WAIT',
-      confidence: result?.confidence || 0,
-      symbol: result?.visionData?.symbol || 'OTC CHART',
-      durationText: formattedCountdown,
-      expirySec,
-      isChartFound,
-      isStreaming: streamState === 'STREAMING',
-      isPaused: streamState === 'PAUSED',
-      frameCount,
-      verdictTitle: result?.verdictTitle,
-      reasonText: result?.reasoning?.[0],
-      errorReason: errorMessage || undefined,
-    });
-  }, [result, expirySec, isChartFound, streamState, frameCount, errorMessage, formattedCountdown]);
-
   const isStreaming = streamState === 'STREAMING';
   const isPaused = streamState === 'PAUSED';
   const isConnecting = streamState === 'CONNECTING';
@@ -150,57 +110,13 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     liveScreenService.cancelConnecting();
   };
 
-  const handlePromoteToAllScreensOverlay = async (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    try {
-      await pictureInPictureService.requestFloatingOverlay({
-        direction: result?.direction || 'WAIT',
-        confidence: result?.confidence || 0,
-        symbol: result?.visionData?.symbol || 'OTC CHART',
-        durationText: formattedCountdown,
-        expirySec,
-        isChartFound,
-        isStreaming: streamState === 'STREAMING',
-        isPaused: streamState === 'PAUSED',
-        frameCount,
-        verdictTitle: result?.verdictTitle,
-        reasonText: result?.reasoning?.[0],
-        errorReason: errorMessage || undefined,
-      });
-    } catch (err) {
-      console.warn('Float over all screens promotion:', err);
-    }
-  };
-
-  const handleBubbleClick = async (e: React.MouseEvent) => {
+  const handleBubbleClick = (e: React.MouseEvent) => {
     // If user dragged the bubble, don't trigger click action
     if (hasMovedRef.current) {
       hasMovedRef.current = false;
       return;
     }
-
-    // Direct promote: User tapping the bubble promotes it directly to the OS-level floating overlay
-    if (streamState === 'STREAMING' || streamState === 'PAUSED') {
-      const res = await pictureInPictureService.requestFloatingOverlay({
-        direction: result?.direction || 'WAIT',
-        confidence: result?.confidence || 0,
-        symbol: result?.visionData?.symbol || 'OTC CHART',
-        durationText: formattedCountdown,
-        expirySec,
-        isChartFound,
-        isStreaming: streamState === 'STREAMING',
-        isPaused: streamState === 'PAUSED',
-        frameCount,
-        verdictTitle: result?.verdictTitle,
-        reasonText: result?.reasoning?.[0],
-        errorReason: errorMessage || undefined,
-      });
-      if (res.success) {
-        return;
-      }
-    }
-
-    // Fallback: Directly open on the display screen!
+    // Directly open on the display screen!
     onNavigateToLiveScreen();
   };
 
@@ -245,6 +161,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     }
   };
 
+  const countdownMin = Math.floor(expirySec / 60);
+  const countdownRemainderSec = expirySec % 60;
+  const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
+
   // Inline style for draggable positioning
   const style: React.CSSProperties = position
     ? {
@@ -259,13 +179,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         right: '20px',
         zIndex: 60,
       };
-
-  // User Requirement: "আমার কথা হল একটি মাত্র বাবল থাকবে কানেক্ট হওয়ার পর সেটি সকল স্ক্রিনের উপর ভাসমান থাকবে এবং ফলাফল দেখাবে"
-  // When OS Picture-in-Picture window is active, it IS the single bubble floating over all apps/screens.
-  // We do NOT render a duplicate in-page bubble!
-  if (isPipActive) {
-    return null;
-  }
 
   const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
 
@@ -429,16 +342,6 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
         {/* Quick Inline Action Buttons on the Bubble */}
         <div className="flex items-center gap-1 border-l border-slate-700/60 pl-2 shrink-0">
-          {/* All-Screens Always-On-Top Floating Mode */}
-          <button
-            type="button"
-            onClick={handlePromoteToAllScreensOverlay}
-            className="p-1.5 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/60 rounded-lg transition-colors"
-            title="বাবলটি সব অ্যাপের ওপর সর্বদা ভাসমান রাখুন (Always-On-Top)"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
-
           {/* Direct Open Display Button */}
           <button
             type="button"

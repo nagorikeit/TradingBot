@@ -6,6 +6,7 @@ import type {
 } from './TradePulseNativeScreen';
 
 export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNativeScreenPlugin {
+  private overlayElement: HTMLDivElement | null = null;
   private captureIntervalId: any = null;
   private sequenceCounter: number = 0;
   private currentStream: MediaStream | null = null;
@@ -110,53 +111,174 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
   }
 
   async showFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
-    try {
-      const { pictureInPictureService } = await import('../services/pictureInPictureService');
-      await pictureInPictureService.requestFloatingOverlay({
-        direction: data.direction,
-        confidence: data.confidence,
-        symbol: data.symbol || 'CHART',
-        durationText: data.durationText,
-        verdictTitle: data.verdictTitle,
-        reasonText: data.reasonText,
-        errorReason: data.errorReason,
-        frameCount: data.frameCount || 0,
-      });
-    } catch (e) {
-      console.warn('PiP launch in web fallback:', e);
-    }
+    // In web browser, the React FloatingLiveScreenController renders the unified floating HUD bubble.
+    // Avoid creating redundant unstyled DOM elements that block display buttons.
     return { success: true };
   }
 
   async updateFloatingOverlay(data: FloatingOverlayData): Promise<{ success: boolean }> {
-    try {
-      const { pictureInPictureService } = await import('../services/pictureInPictureService');
-      pictureInPictureService.updateData({
-        direction: data.direction,
-        confidence: data.confidence,
-        symbol: data.symbol || 'CHART',
-        durationText: data.durationText,
-        verdictTitle: data.verdictTitle,
-        reasonText: data.reasonText,
-        errorReason: data.errorReason,
-        frameCount: data.frameCount || 0,
-      });
-    } catch (e) {
-      console.warn('PiP update in web fallback:', e);
-    }
     return { success: true };
   }
 
   async hideFloatingOverlay(): Promise<{ success: boolean }> {
-    try {
-      const { pictureInPictureService } = await import('../services/pictureInPictureService');
-      await pictureInPictureService.closeFloatingOverlay();
-    } catch (e) {
-      console.warn('PiP close in web fallback:', e);
+    if (this.overlayElement) {
+      this.overlayElement.remove();
+      this.overlayElement = null;
     }
     return { success: true };
   }
 
+  private renderWebFloatingHUD(data: FloatingOverlayData) {
+    if (!this.overlayElement) {
+      this.overlayElement = document.createElement('div');
+      this.overlayElement.id = 'tradepulse-floating-overlay-badge';
+      this.overlayElement.style.position = 'fixed';
+      this.overlayElement.style.top = '70px';
+      this.overlayElement.style.right = '20px';
+      this.overlayElement.style.zIndex = '99999';
+      this.overlayElement.style.cursor = 'grab';
+      this.overlayElement.style.userSelect = 'none';
+      document.body.appendChild(this.overlayElement);
+
+      // Simple drag handler
+      let isDragging = false;
+      let startX = 0;
+      let startY = 0;
+      let elemX = 0;
+      let elemY = 0;
+
+      this.overlayElement.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = this.overlayElement!.getBoundingClientRect();
+        elemX = rect.left;
+        elemY = rect.top;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging || !this.overlayElement) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        this.overlayElement.style.left = `${elemX + dx}px`;
+        this.overlayElement.style.top = `${elemY + dy}px`;
+        this.overlayElement.style.right = 'auto';
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+    }
+
+    const hasError = Boolean(data.errorReason || data.aiState === 'ERROR' || data.aiState === 'TIMEOUT');
+    const isChartNotFound = !hasError && data.direction === 'WAIT' && (
+      (data.verdictTitle && (
+        data.verdictTitle.includes('পাওয়া যায়নি') ||
+        data.verdictTitle.includes('খুঁজে পাইনি') ||
+        data.verdictTitle.includes('নেই') ||
+        data.verdictTitle.includes('NOT_FOUND')
+      )) || data.confidence <= 0 || data.durationText === '--:--'
+    );
+
+    const isActivelyAnalyzing = !hasError && data.aiState === 'ANALYZING' && !isChartNotFound;
+
+    const badgeColor = hasError
+      ? '#ef4444'
+      : data.direction === 'UP'
+      ? '#10b981'
+      : data.direction === 'DOWN'
+      ? '#ef4444'
+      : '#f59e0b';
+
+    const bgGradient = hasError
+      ? 'linear-gradient(135deg, rgba(127, 29, 29, 0.95), rgba(15, 23, 42, 0.95))'
+      : data.direction === 'UP'
+      ? 'linear-gradient(135deg, rgba(6, 78, 59, 0.95), rgba(15, 23, 42, 0.95))'
+      : data.direction === 'DOWN'
+      ? 'linear-gradient(135deg, rgba(127, 29, 29, 0.95), rgba(15, 23, 42, 0.95))'
+      : 'linear-gradient(135deg, rgba(120, 53, 15, 0.95), rgba(15, 23, 42, 0.95))';
+
+    const symbolText = data.symbol || 'AUD/CHF';
+    const frameStr = data.frameCount ? `#${data.frameCount}` : '#1';
+    const latencyStr = data.latencyMs ? `${data.latencyMs}ms` : '0ms';
+    const resStr = data.resolution || '720p';
+
+    if (hasError) {
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid ${badgeColor}; border-radius: 18px; padding: 10px 16px; box-shadow: 0 14px 35px rgba(0,0,0,0.7); backdrop-filter: blur(14px); min-width: 240px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
+            <span style="font-size: 12px; font-weight: 900; color: #fca5a5; letter-spacing: 0.3px;">⚠️ ${data.errorReason || 'সংযোগ ত্রুটি'}</span>
+            <span style="font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.5); padding: 1px 6px; border-radius: 8px; color: #f87171; font-family: monospace;">Frame ${frameStr}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px; margin-top: 4px;">
+            <span>⏱ ল্যাটেন্সি: ${latencyStr}</span>
+            <span>State: WAIT</span>
+          </div>
+        </div>
+      `;
+    } else if (isChartNotFound) {
+      const headerTitle = data.verdictTitle && data.verdictTitle !== 'ANALYZING'
+        ? data.verdictTitle
+        : 'চার্ট পাওয়া যায়নি';
+      const reasonSub = data.reasonText || 'ট্রেডিং চার্ট সামনে রাখুন';
+
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid #f59e0b; border-radius: 18px; padding: 10px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); min-width: 240px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 12px; font-weight: 800; color: #fbbf24;">⏸ ${headerTitle}</span>
+            </div>
+            <span style="font-size: 10px; font-family: monospace; color: #94a3b8; background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 8px;">${frameStr}</span>
+          </div>
+          <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${reasonSub}
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #94a3b8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 3px;">
+            <span>${resStr}</span>
+            <span style="color: #f59e0b; font-weight: 700;">WAIT (0%)</span>
+          </div>
+        </div>
+      `;
+    } else if (isActivelyAnalyzing) {
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid #38bdf8; border-radius: 18px; padding: 8px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.65); backdrop-filter: blur(12px); min-width: 220px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8; animation: pulse 1.5s infinite;"></span>
+              <span style="font-size: 12px; font-weight: 700; color: #bae6fd;">ফ্রেম বিশ্লেষণ হচ্ছে...</span>
+            </div>
+            <span style="font-size: 10px; font-family: monospace; color: #94a3b8; background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 8px;">${frameStr}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 3px;">
+            <span>${resStr}</span>
+            <span>AI: ANALYZING</span>
+          </div>
+        </div>
+      `;
+    } else {
+      const dirText = data.direction === 'UP' ? '▲ CALL (UP)' : data.direction === 'DOWN' ? '▼ PUT (DOWN)' : '● WAIT';
+      const shortReason = data.reasonText && data.reasonText.length > 28
+        ? data.reasonText.substring(0, 26) + '..'
+        : data.reasonText || 'মোমেন্টাম নিশ্চিত';
+
+      this.overlayElement.innerHTML = `
+        <div style="background: ${bgGradient}; border: 2px solid ${badgeColor}; border-radius: 20px; padding: 10px 16px; box-shadow: 0 14px 35px rgba(0,0,0,0.7); backdrop-filter: blur(14px); min-width: 240px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px;">
+            <span style="font-size: 13px; font-weight: 900; color: ${badgeColor}; letter-spacing: 0.4px;">${dirText}</span>
+            <span style="font-size: 11px; font-weight: 700; background: rgba(0,0,0,0.5); padding: 1px 7px; border-radius: 10px; color: #38bdf8; font-family: monospace;">⏱ ${data.durationText || '01:00'}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1; margin-bottom: 4px;">
+            <span><b>${symbolText}</b> • ${shortReason}</span>
+            <span style="font-size: 10px; color: #94a3b8; margin-left: 6px;">${data.confidence}%</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 3px;">
+            <span>Frame ${frameStr} (${resStr})</span>
+            <span>⚡ ${latencyStr}</span>
+          </div>
+        </div>
+      `;
+    }
+  }
 
   public async speak(options: { text: string }): Promise<{ success: boolean; message?: string }> {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
