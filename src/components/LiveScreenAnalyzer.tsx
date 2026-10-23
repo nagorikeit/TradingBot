@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Monitor,
   Play,
@@ -69,8 +69,13 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [transitions, setTransitions] = useState<ScreenTransitionRecord[]>(liveScreenService.getScreenTransitions());
   const [isOtherScreenActive, setIsOtherScreenActive] = useState<boolean>(liveScreenService.isOtherScreenDetected());
   const [activeScreenName, setActiveScreenName] = useState<string>(liveScreenService.getActiveScreenName());
+  const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
+  const [lastDetectedAppName, setLastDetectedAppName] = useState<string>(liveScreenService.getLastDetectedAppName());
+  const [lastDetectedSummaryBn, setLastDetectedSummaryBn] = useState<string>(liveScreenService.getLastDetectedSummaryBn());
   const [isPiPActive, setIsPiPActive] = useState<boolean>(liveScreenService.isPictureInPictureActive());
   const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
+
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
 
   // Screen Q&A Interactive Assistant
   const [questionInput, setQuestionInput] = useState<string>('');
@@ -132,10 +137,23 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setTransitions(liveScreenService.getScreenTransitions());
       setIsOtherScreenActive(liveScreenService.isOtherScreenDetected());
       setActiveScreenName(liveScreenService.getActiveScreenName());
+      setFrameCount(liveScreenService.getFrameCount());
+      setLastDetectedAppName(liveScreenService.getLastDetectedAppName());
+      setLastDetectedSummaryBn(liveScreenService.getLastDetectedSummaryBn());
       setIsPiPActive(liveScreenService.isPictureInPictureActive());
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const stream = liveScreenService.getStream();
+    if (previewVideoRef.current && stream) {
+      if (previewVideoRef.current.srcObject !== stream) {
+        previewVideoRef.current.srcObject = stream;
+        previewVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [streamState, isChartFound, frameCount]);
 
   useEffect(() => {
     const unsubVoice = voiceAssistantService.subscribe((text) => {
@@ -783,137 +801,122 @@ export const LiveScreenAnalyzer: React.FC = () => {
             </div>
           </div>
         </div>
-      ) : result && (!isChartFound || result.screenStatus === 'OTHER_SCREEN_READING') ? (
-        /* MODE B: Other Screen Recognition & Universal OCR Reading View */
-        <div className="bg-slate-900/95 border border-cyan-500/40 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
-          {/* Header Badge */}
+      ) : (
+        /* MODE B: Live Screen Connected • Actively Searching for Candlestick Chart */
+        <div className="bg-slate-900/95 border border-amber-500/30 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
+          {/* Header & Scanning Indicator */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-lg">
-                {result.visionData?.screenCategory === 'DOCUMENT' ? (
-                  <FileText className="w-6 h-6 text-blue-400" />
-                ) : result.visionData?.screenCategory === 'CODE_IDE' ? (
-                  <Code className="w-6 h-6 text-purple-400" />
-                ) : result.visionData?.screenCategory === 'CHAT_MESSENGER' ? (
-                  <MessageSquare className="w-6 h-6 text-teal-400" />
-                ) : result.visionData?.screenCategory === 'VIDEO_STREAM' ? (
-                  <Video className="w-6 h-6 text-rose-400" />
-                ) : (
-                  <Monitor className="w-6 h-6 text-cyan-400" />
-                )}
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-lg">
+                <Radar className="w-6 h-6 animate-spin" style={{ animationDuration: '4s' }} />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-white tracking-tight">
-                    {result.visionData?.detectedAppName || 'অন্যান্য অ্যাপ্লিকেশন স্ক্রিন'}
+                    ট্রেডিং চার্ট অনুসন্ধান চলছে (Searching for Chart...)
                   </h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40">
-                    চার্ট নয় ({result.visionData?.screenCategory || 'NON_CHART'})
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40 animate-pulse">
+                    SCANNING
                   </span>
                 </div>
-                <div className="text-xs text-amber-400 font-medium flex items-center gap-1.5 mt-0.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  <span>স্ক্রিনে ক্যান্ডেলস্টিক চার্ট অনুপস্থিত — স্ক্রিন টেক্সট রিড হয়েছে (ট্রেড কনফিডেন্স: 0%)</span>
+                <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                  <span>স্ক্রিন শেয়ার সংযুক্ত • এআই লাইভ ফ্রেম বিশ্লেষণ করছে</span>
+                  <span>•</span>
+                  <span className="text-cyan-400 font-mono">ফ্রেম #{frameCount}</span>
+                  {isStreaming && (
+                    <>
+                      <span>•</span>
+                      <span className="text-emerald-400 font-mono">প্রতি {intervalSec} সেকেন্ডে লাইভ স্ক্যান</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Status Pill */}
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-lg bg-red-950/80 border border-red-500/50 text-red-300 text-xs font-semibold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-                <span>ট্রেড সিগন্যাল সম্পূর্ণ বন্ধ (BLOCKED)</span>
+              <span className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>বর্তমান স্ক্রিন: <strong className="text-cyan-300">{lastDetectedAppName}</strong></span>
               </span>
             </div>
           </div>
 
-          {/* Quick Troubleshooting Guide for Chart Detection */}
-          <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200/90 space-y-1.5">
-            <div className="font-bold text-amber-300 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>কেন চার্ট শনাক্ত হচ্ছে না এবং কীভাবে চালু করবেন?</span>
-            </div>
-            <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-300 leading-relaxed">
-              <li><strong>১. স্ক্রিন শেয়ার সিলেকশন:</strong> স্ক্রিন শেয়ার করার সময় কেবল একটি ব্রাউজার ট্যাব শেয়ার না করে <em>"Entire Screen" (পুরো স্ক্রিন)</em> অথবা ব্রোকার অ্যাপের উইন্ডো সিলেক্ট করুন।</li>
-              <li><strong>২. চার্ট দৃশ্যমান রাখুন:</strong> আপনার ব্রোকার (Quotex / Binomo / Pocket Option / TradingView) চার্টটি সামনে ফুলস্ক্রিন রাখুন যাতে লাল/সবুজ ক্যান্ডেলগুলো দৃশ্যমান থাকে।</li>
-              <li><strong>৩. স্ক্রিন রিডার বনাম ট্রেড সিগন্যাল:</strong> চার্ট সামনে না থাকলে এআই আপনার বর্তমান স্ক্রিনের টেক্সট পড়ে নিচে দেখায়, তবে কোনো ট্রেড সিগন্যাল তৈরি করে না।</li>
-            </ul>
-          </div>
-
-          {/* Bengali Visual Summary Banner */}
-          <div className="p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 space-y-1 text-slate-200 text-xs leading-relaxed">
-            <div className="font-bold text-cyan-300 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
-              <span>এআই স্ক্রিন সারসংক্ষেপ:</span>
-            </div>
-            <p className="text-sm font-medium text-slate-100 pl-5">
-              {result.visionData?.screenSummaryBn || result.visionData?.visionSummary || 'স্ক্রিন ফ্রেম পর্যবেক্ষণ করা হয়েছে।'}
-            </p>
-          </div>
-
-          {/* Live Extracted OCR Text Box */}
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 sm:p-5 space-y-3">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-300 border-b border-slate-800/80 pb-2">
-              <span className="flex items-center gap-1.5 text-cyan-400">
-                <BookOpen className="w-4 h-4" />
-                <span>পঠিত প্রধান টেক্সট ও ইন্টারফেস উপাদান (Extracted Text from Screen):</span>
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                {result.visionData?.extractedText?.length || 0} টি উপাদান পঠিত
-              </span>
-            </div>
-
-            {result.visionData?.extractedText && result.visionData.extractedText.length > 0 ? (
-              <div className="space-y-2">
-                {result.visionData.extractedText.map((snippet, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 font-mono flex items-start gap-2"
-                  >
-                    <span className="w-4 h-4 rounded-full bg-slate-800 text-cyan-400 text-[10px] flex items-center justify-center shrink-0 mt-0.5">
-                      ✓
-                    </span>
-                    <span className="break-all">{snippet}</span>
-                  </div>
-                ))}
+          {/* Live Screen Viewport Monitor + Lifecycle Guide */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+            {/* Left: Real-Time Shared Screen Viewport Feed */}
+            <div className="bg-slate-950 border border-cyan-500/30 rounded-xl p-3.5 space-y-2 relative overflow-hidden group shadow-lg">
+              <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-1.5 text-cyan-300 font-semibold">
+                  <Monitor className="w-4 h-4 text-cyan-400" />
+                  <span>লাইভ শেয়ার্ড স্ক্রিন প্রিভিউ (AI Live Viewport)</span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  CONNECTED
+                </span>
               </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">
-                স্ক্রিন ইমেজ প্রসেস করা হয়েছে কিন্তু কোনো নির্দিষ্ট টেক্সট ব্লক পাওয়া যায়নি।
-              </p>
-            )}
-          </div>
 
-          {/* Safe Trading Notice */}
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">
-              <strong>নিরাপদ ট্রেডিং গ্যারান্টি:</strong> ব্যবহারকারী যখনই অন্য যেকোনো অ্যাপ্লিকেশন বা ব্রাউজার পেজে যান, এআই নিশ্চিত করে যে কোনো ভুল বা মিথ্যা ট্রেড সিগন্যাল তৈরি না হয়। আবার ট্রেডিং চার্ট (Quotex/Binomo/TradingView)-এ ফিরে আসলে তাৎক্ষণিক ক্যান্ডেলস্টিক এনালাইসিস চালু হবে।
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* MODE C: Searching / Initial State View */
-        <div className="bg-slate-900/90 border-2 border-dashed border-amber-500/40 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-2xl backdrop-blur-md">
-          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full bg-amber-500/10 animate-ping opacity-60" />
-            <div className="absolute inset-2 rounded-full bg-amber-500/20 animate-pulse" />
-            <div className="w-16 h-16 rounded-full bg-slate-950 border-2 border-amber-500/60 flex items-center justify-center text-amber-400 shadow-lg">
-              <Radar className="w-8 h-8 animate-spin" style={{ animationDuration: '4s' }} />
-            </div>
-          </div>
+              <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center">
+                {liveScreenService.getStream() ? (
+                  <video
+                    ref={previewVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <div className="text-center p-6 text-xs text-slate-400 flex flex-col items-center gap-2">
+                    <Monitor className="w-10 h-10 text-slate-600 animate-pulse" />
+                    <span>স্ক্রিন শেয়ার সংযুক্ত নেই। উপরে "Connect Live Screen" বাটনে ক্লিক করুন।</span>
+                  </div>
+                )}
+                <div className="absolute top-2 left-2 px-2.5 py-1 rounded bg-black/80 backdrop-blur text-[10px] text-cyan-300 font-mono border border-cyan-500/40 shadow">
+                  AI Seeing: {lastDetectedAppName}
+                </div>
+              </div>
 
-          <div className="space-y-2 max-w-lg mx-auto">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/50 text-amber-300 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              <span>স্ক্রিন শেয়ার সংযুক্ত • লাইভ ফ্রেম স্ক্যান চলছে</span>
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                <span>👆 এআই রিয়েল-টাইমে আপনার স্ক্রিনের এই অংশটি দেখতে ও পড়তে পারছে</span>
+                <span className="text-cyan-400 font-mono font-medium">Auto-Scanner Active</span>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-white tracking-tight">
-              যেকোনো অ্যাপ্লিকেশন বা ব্রাউজার স্ক্রিনে যান
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              স্ক্রিন পরিবর্তন করলেই এআই স্বয়ংক্রিয়ভাবে অ্যাপ ও টেক্সট ডিটেক্ট করবে। অথবা উপরের <strong>টেস্ট বেঞ্চের যেকোনো বোতামে ক্লিক করে</strong> তাৎক্ষণিক ফলাফল পরীক্ষা করুন।
-            </p>
+
+            {/* Right: Step-by-Step Lifecycle Explanation Requested by User */}
+            <div className="space-y-3.5 text-xs text-slate-300">
+              <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 space-y-2.5 shadow-md">
+                <div className="font-bold text-amber-300 flex items-center gap-2 text-sm">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>সিস্টেমের সক্রিয় লাইফসাইকেল (Active AI Lifecycle):</span>
+                </div>
+                <ul className="space-y-2 text-[11px] leading-relaxed text-slate-200">
+                  <li className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-950 border border-emerald-500/60 text-emerald-300 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">১</span>
+                    <span><strong>স্ক্রিন দেখা ও পড়া:</strong> এআই সম্পূর্ণ স্ক্রিনকে কানেক্ট করেছে এবং স্ক্রিনের টেক্সট ও উইন্ডো পর্যবেক্ষণ করছে।</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-amber-950 border border-amber-500/60 text-amber-300 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">২</span>
+                    <span><strong>চার্ট অনুসন্ধান (বর্তমান অবস্থা):</strong> এআই স্ক্রিনে তার কাঙ্ক্ষিত ট্রেডিং ক্যান্ডেলস্টিক চার্ট খুঁজছে। চার্ট না পাওয়া পর্যন্ত কোনো ভুল সিগন্যাল তৈরি হবে না।</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-500/60 text-cyan-300 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">৩</span>
+                    <span><strong>চার্ট পেলে ফলাফল:</strong> আপনি আপনার ব্রোকার চার্টে (Quotex/Binomo/Pocket Option/TradingView) গেলেই এআই ক্যান্ডেলস্টিক এনালাইসিস করে লাইভ CALL/PUT সিগন্যাল প্রদর্শন করবে।</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-purple-950 border border-purple-500/60 text-purple-300 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">৪</span>
+                    <span><strong>অন্য স্ক্রিনে গেলে পুনরায় অনুসন্ধান:</strong> ব্রোকার চার্ট ছেড়ে অন্য যেকোনো অ্যাপ বা ব্রাউজার স্ক্রিনে আসলে সাথে সাথে ফলাফল মুছে গিয়ে আবার অনুসন্ধান শুরু করবে।</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Troubleshooting note if chart is open but not detected */}
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong>টিপ:</strong> ব্রোকার চার্ট সামনে থাকা সত্ত্বেও অনুসন্ধান মোডে থাকলে নিশ্চিত করুন স্ক্রিন শেয়ারে <em>"Entire Screen"</em> সিলেক্ট করেছেন এবং ব্রোকারে <em>ক্যান্ডেলস্টিক (Candles)</em> দৃশ্যমান রয়েছে।
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

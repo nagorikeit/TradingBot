@@ -34,6 +34,8 @@ export class LiveScreenService {
   private isOtherScreenActive: boolean = false;
   private screenTransitions: ScreenTransitionRecord[] = [];
   private lastRecordedScreen: string | null = null;
+  private lastDetectedAppName: string | null = null;
+  private lastDetectedSummaryBn: string | null = null;
 
   // Live Chart & Countdown State
   private autoOpenModal: boolean = false;
@@ -143,10 +145,21 @@ export class LiveScreenService {
     if (this.latestResult?.visionData?.detectedAppName) {
       return this.latestResult.visionData.detectedAppName;
     }
+    if (this.lastDetectedAppName) {
+      return this.lastDetectedAppName;
+    }
     if (this.isChartFound) {
       return 'ট্রেডিং চার্ট';
     }
     return 'স্ক্রিন শেয়ার সংযুক্ত';
+  }
+
+  public getLastDetectedAppName(): string {
+    return this.lastDetectedAppName || this.lastRecordedScreen || 'অন্যান্য স্ক্রিন';
+  }
+
+  public getLastDetectedSummaryBn(): string {
+    return this.lastDetectedSummaryBn || '';
   }
 
   public async togglePictureInPicture(): Promise<boolean> {
@@ -1505,7 +1518,7 @@ export class LiveScreenService {
 
     if (!isChart) {
       this.isChartFound = false;
-      this.isSearchingForChart = false;
+      this.isSearchingForChart = true;
       this.isOtherScreenActive = true;
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
@@ -1513,8 +1526,10 @@ export class LiveScreenService {
       }
       this.expirySecondsLeft = 0;
 
-      // Keep result active so user sees exactly what the AI read!
-      this.latestResult = result;
+      // Reset trade result so searching radar is displayed and previous signals are cleared
+      this.latestResult = null;
+      this.lastDetectedAppName = appName;
+      this.lastDetectedSummaryBn = result.visionData?.screenSummaryBn || 'স্ক্রিন ফ্রেম পর্যবেক্ষণ করা হয়েছে। চার্ট অনুসন্ধান চলছে।';
       this.errorMessage = null;
 
       // Ensure chart diagnostic explains the active app
