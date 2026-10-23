@@ -56,6 +56,11 @@ export interface TradePulseNativeScreenPlugin {
   }): Promise<{ success: boolean; message?: string }>;
 
   /**
+   * Captures a single frame on demand and emits onFrameCaptured event
+   */
+  captureSingleFrame(): Promise<{ success: boolean }>;
+
+  /**
    * Stops Native ForegroundService and MediaProjection capture
    */
   stopScreenCapture(): Promise<{ success: boolean }>;
@@ -81,6 +86,22 @@ export interface TradePulseNativeScreenPlugin {
   addListener(
     eventName: 'onFrameCaptured',
     listenerFunc: (frame: NativeCaptureFrameEvent) => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
+   * Subscribes to Scan button click on the floating overlay
+   */
+  addListener(
+    eventName: 'onOverlayScanClicked',
+    listenerFunc: () => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
+   * Subscribes to Stop button click on the floating overlay
+   */
+  addListener(
+    eventName: 'onOverlayStopClicked',
+    listenerFunc: () => void
   ): Promise<{ remove: () => void }>;
 
   /**

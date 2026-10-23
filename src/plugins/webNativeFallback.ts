@@ -54,43 +54,47 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
       await this.hiddenVideo.play().catch(() => {});
 
       this.hiddenCanvas = document.createElement('canvas');
-
-      const intervalMs = (options?.intervalSeconds || 5) * 1000;
-      const targetWidth = options?.targetWidth || 1280;
-      const quality = options?.quality || 0.8;
-
-      if (this.captureIntervalId) clearInterval(this.captureIntervalId);
-
-      this.captureIntervalId = setInterval(() => {
-        if (!this.hiddenVideo || !this.hiddenCanvas || !this.currentStream) return;
-        if (this.hiddenVideo.videoWidth === 0) return;
-
-        const scale = Math.min(1, targetWidth / this.hiddenVideo.videoWidth);
-        this.hiddenCanvas.width = Math.round(this.hiddenVideo.videoWidth * scale);
-        this.hiddenCanvas.height = Math.round(this.hiddenVideo.videoHeight * scale);
-
-        const ctx = this.hiddenCanvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(this.hiddenVideo, 0, 0, this.hiddenCanvas.width, this.hiddenCanvas.height);
-          const imageBase64 = this.hiddenCanvas.toDataURL('image/jpeg', quality);
-
-          this.sequenceCounter += 1;
-          const frameEvent: NativeCaptureFrameEvent = {
-            imageBase64,
-            timestamp: Date.now(),
-            sequenceId: this.sequenceCounter,
-            width: this.hiddenCanvas.width,
-            height: this.hiddenCanvas.height,
-          };
-
-          this.notifyListeners('onFrameCaptured', frameEvent);
-        }
-      }, intervalMs);
-
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err.message || 'Screen capture denied' };
     }
+  }
+
+  async captureSingleFrame(): Promise<{ success: boolean }> {
+    if (!this.hiddenVideo || !this.hiddenCanvas || !this.currentStream) {
+      return { success: false };
+    }
+    if (this.hiddenVideo.videoWidth === 0) {
+      return { success: false };
+    }
+
+    try {
+      const targetWidth = 1280;
+      const scale = Math.min(1, targetWidth / this.hiddenVideo.videoWidth);
+      this.hiddenCanvas.width = Math.round(this.hiddenVideo.videoWidth * scale);
+      this.hiddenCanvas.height = Math.round(this.hiddenVideo.videoHeight * scale);
+
+      const ctx = this.hiddenCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(this.hiddenVideo, 0, 0, this.hiddenCanvas.width, this.hiddenCanvas.height);
+        const imageBase64 = this.hiddenCanvas.toDataURL('image/jpeg', 0.8);
+
+        this.sequenceCounter += 1;
+        const frameEvent: NativeCaptureFrameEvent = {
+          imageBase64,
+          timestamp: Date.now(),
+          sequenceId: this.sequenceCounter,
+          width: this.hiddenCanvas.width,
+          height: this.hiddenCanvas.height,
+        };
+
+        this.notifyListeners('onFrameCaptured', frameEvent);
+        return { success: true };
+      }
+    } catch (e) {
+      console.warn('captureSingleFrame error:', e);
+    }
+    return { success: false };
   }
 
   async stopScreenCapture(): Promise<{ success: boolean }> {

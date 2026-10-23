@@ -1,12 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  Monitor,
-  Play,
-  Pause,
   Square,
   Maximize2,
   RefreshCw,
-  X,
   Clock,
   Volume2,
   VolumeX,
@@ -15,9 +11,8 @@ import {
   TrendingDown,
   AlertTriangle,
   Eye,
-  FileText,
-  Globe,
-  CheckCircle2,
+  Camera,
+  Search,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -29,11 +24,11 @@ interface FloatingLiveScreenControllerProps {
 }
 
 export const FloatingLiveScreenController: React.FC<FloatingLiveScreenControllerProps> = ({
-  currentTab,
   onNavigateToLiveScreen,
 }) => {
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
   const [result, setResult] = useState<ScreenAnalysisFinalResult | null>(liveScreenService.getLatestResult());
+  const [isBusy, setIsBusy] = useState<boolean>(liveScreenService.isBusy());
   const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
   const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
@@ -55,21 +50,14 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       const state = liveScreenService.getState();
       setStreamState(state);
       setResult(liveScreenService.getLatestResult());
+      setIsBusy(liveScreenService.isBusy());
       setErrorMessage(liveScreenService.getErrorMessage());
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
       setFrameCount(liveScreenService.getFrameCount());
-
-      // Requirement: No floating modal! When screenshare starts connecting or streaming,
-      // it directly opens on the main display!
-      if (state === 'STREAMING' || state === 'CONNECTING') {
-        if (currentTab !== 'live-screen') {
-          onNavigateToLiveScreen();
-        }
-      }
     });
     return unsub;
-  }, [currentTab, onNavigateToLiveScreen]);
+  }, []);
 
   // Subscribe to voice assistant announcements
   useEffect(() => {
@@ -85,22 +73,23 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   }, []);
 
   const isStreaming = streamState === 'STREAMING';
-  const isPaused = streamState === 'PAUSED';
   const isConnecting = streamState === 'CONNECTING';
+  const isPaused = streamState === 'PAUSED';
 
-  const handlePause = (e: React.MouseEvent) => {
+  // Do not show floating HUD bubble if screen sharing is completely stopped or idle
+  if (!isStreaming && !isConnecting && !isPaused) {
+    return null;
+  }
+
+  const handleScanClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    liveScreenService.pause();
+    if (isBusy) return;
+    await liveScreenService.triggerSingleScan();
   };
 
-  const handleResume = (e: React.MouseEvent) => {
+  const handleStopClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    liveScreenService.resume();
-  };
-
-  const handleDisconnect = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    liveScreenService.disconnect();
+    await liveScreenService.disconnect('ফ্লোটিং বাবল থেকে স্ক্রিন শেয়ার স্টপ করা হয়েছে');
   };
 
   const handleToggleVoice = (e: React.MouseEvent) => {
@@ -109,24 +98,16 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     setIsVoiceOn(next);
   };
 
-  const handleCancelConnecting = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    liveScreenService.cancelConnecting();
-  };
-
-  const handleBubbleClick = (e: React.MouseEvent) => {
-    // If user dragged the bubble, don't trigger click action
+  const handleBubbleClick = () => {
     if (hasMovedRef.current) {
       hasMovedRef.current = false;
       return;
     }
-    // Directly open on the display screen!
     onNavigateToLiveScreen();
   };
 
-  // Pointer drag event handlers so user can place the HUD bubble anywhere on screen
+  // Dragging logic
   const handlePointerDown = (e: React.PointerEvent) => {
-    // Ignore clicks on inner interactive buttons
     if ((e.target as HTMLElement).closest('button')) {
       return;
     }
@@ -150,8 +131,8 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       hasMovedRef.current = true;
     }
 
-    const newX = Math.max(10, Math.min(window.innerWidth - 280, bubbleStartPos.current.x + dx));
-    const newY = Math.max(10, Math.min(window.innerHeight - 80, bubbleStartPos.current.y + dy));
+    const newX = Math.max(10, Math.min(window.innerWidth - 320, bubbleStartPos.current.x + dx));
+    const newY = Math.max(10, Math.min(window.innerHeight - 90, bubbleStartPos.current.y + dy));
 
     setPosition({ x: newX, y: newY });
   };
@@ -161,7 +142,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     try {
       (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
     } catch {
-      // Ignore if pointer capture already released
+      // Ignored
     }
   };
 
@@ -169,19 +150,18 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const countdownRemainderSec = expirySec % 60;
   const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
 
-  // Inline style for draggable positioning
   const style: React.CSSProperties = position
     ? {
         position: 'fixed',
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: 60,
+        zIndex: 9999,
       }
     : {
         position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        zIndex: 60,
+        bottom: '24px',
+        right: '24px',
+        zIndex: 9999,
       };
 
   const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
@@ -199,19 +179,19 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      className="select-none touch-none"
+      className="select-none touch-none animate-in fade-in zoom-in-95 duration-200"
     >
-      {/* Voice Assistant Speech Bubble (Compact Floating Pill) */}
+      {/* Voice Assistant Speech Bubble */}
       {voiceNotification && (
-        <div className="mb-2 px-3 py-1.5 rounded-full bg-cyan-950/90 border border-cyan-500/60 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs text-cyan-200 animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-xs">
+        <div className="mb-2 px-3.5 py-1.5 rounded-full bg-cyan-950/95 border border-cyan-500/70 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs text-cyan-200 animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-sm">
           <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
           <div className="truncate font-medium">{voiceNotification}</div>
         </div>
       )}
 
-      {/* Error Bubble (If error occurs) */}
+      {/* Error Bubble */}
       {errorMessage && (
-        <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-950/90 border border-red-700/70 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs text-red-200 animate-in fade-in max-w-xs">
+        <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-950/95 border border-red-700/80 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs text-red-200 animate-in fade-in max-w-sm">
           <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
           <div className="truncate text-[11px]">{errorMessage}</div>
         </div>
@@ -220,229 +200,193 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       {/* THE UNIFIED FLOATING HUD BUBBLE */}
       <div
         onClick={handleBubbleClick}
-        className={`group cursor-pointer flex items-center gap-3 px-3.5 py-2.5 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 hover:shadow-cyan-950/40 active:scale-[0.98] ${
+        className={`group cursor-grab active:cursor-grabbing flex flex-col gap-2 p-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 min-w-[280px] max-w-[340px] ${
           isConnecting
             ? 'bg-slate-900/95 border-cyan-500/70 text-slate-100 ring-2 ring-cyan-500/30'
             : hasChartSignal
             ? result.direction === 'UP'
-              ? 'bg-slate-900/95 border-emerald-500/70 text-slate-100 ring-2 ring-emerald-500/40'
+              ? 'bg-slate-900/95 border-emerald-500/80 text-slate-100 ring-2 ring-emerald-500/40 shadow-emerald-950/40'
               : result.direction === 'DOWN'
-              ? 'bg-slate-900/95 border-rose-500/70 text-slate-100 ring-2 ring-rose-500/40'
+              ? 'bg-slate-900/95 border-rose-500/80 text-slate-100 ring-2 ring-rose-500/40 shadow-rose-950/40'
               : 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
             : isReadingOtherScreen
             ? 'bg-slate-900/95 border-sky-500/70 text-slate-100 ring-2 ring-sky-500/30'
             : isStreaming
-            ? 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
-            : isPaused
-            ? 'bg-slate-900/95 border-amber-500/50 text-slate-200'
-            : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:border-cyan-500/50'
+            ? 'bg-slate-900/95 border-cyan-500/60 text-slate-100 ring-2 ring-cyan-500/20'
+            : 'bg-slate-900/95 border-slate-700 text-slate-300'
         }`}
-        title="ক্লিক করে সরাসরি ডিসপ্লে ওপেন করুন (ড্র্যাগ করে সরানো যাবে)"
+        title="ড্র্যাগ করে স্ক্রিনের যেকোনো স্থানে রাখুন"
       >
-        {/* Status Radar / Pulsing Indicator */}
-        <div className="relative flex items-center justify-center shrink-0">
-          {isConnecting ? (
-            <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            </div>
-          ) : hasChartSignal ? (
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center border ${
-                result.direction === 'UP'
-                  ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'
-                  : result.direction === 'DOWN'
-                  ? 'bg-rose-500/20 border-rose-500/60 text-rose-400'
-                  : 'bg-amber-500/20 border-amber-500/60 text-amber-400'
-              }`}
-            >
-              {result.direction === 'UP' && <TrendingUp className="w-4 h-4" />}
-              {result.direction === 'DOWN' && <TrendingDown className="w-4 h-4" />}
-              {result.direction === 'WAIT' && <Clock className="w-4 h-4" />}
-            </div>
-          ) : isReadingOtherScreen ? (
-            <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/60 flex items-center justify-center text-sky-300">
-              <Eye className="w-4 h-4 animate-pulse" />
-            </div>
-          ) : isStreaming ? (
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400">
-              <Radar className="w-4 h-4 animate-pulse" />
-            </div>
-          ) : isPaused ? (
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-              <Pause className="w-4 h-4" />
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
-              <Monitor className="w-4 h-4" />
-            </div>
-          )}
-
-          {/* Active Ping Dot */}
-          {isStreaming && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-              <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  hasChartSignal ? 'bg-emerald-400' : isReadingOtherScreen ? 'bg-sky-400' : 'bg-amber-400'
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                  hasChartSignal ? 'bg-emerald-500' : isReadingOtherScreen ? 'bg-sky-500' : 'bg-amber-500'
-                }`}
-              />
-            </span>
-          )}
-        </div>
-
-        {/* Bubble Information Body */}
-        <div className="flex flex-col text-left min-w-[130px]">
-          {isConnecting ? (
-            <div>
-              <div className="text-xs font-bold text-cyan-300 font-mono">স্ক্রিন কানেক্ট হচ্ছে...</div>
-              <div className="text-[10px] text-slate-400">ডিসপ্লে প্রস্তুত হচ্ছে</div>
-            </div>
-          ) : hasChartSignal ? (
-            <div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-sm font-black font-mono tracking-tight ${
+        {/* Top Info Bar: Status, Signal & Real-Time Data */}
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Status Radar / Signal Icon */}
+            <div className="relative flex items-center justify-center shrink-0">
+              {isBusy ? (
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/60 flex items-center justify-center text-cyan-400">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                </div>
+              ) : isConnecting ? (
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                </div>
+              ) : hasChartSignal ? (
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center border ${
                     result.direction === 'UP'
-                      ? 'text-emerald-400'
+                      ? 'bg-emerald-500/25 border-emerald-500/80 text-emerald-400'
                       : result.direction === 'DOWN'
-                      ? 'text-rose-400'
-                      : 'text-amber-400'
+                      ? 'bg-rose-500/25 border-rose-500/80 text-rose-400'
+                      : 'bg-amber-500/20 border-amber-500/60 text-amber-400'
                   }`}
                 >
-                  {result.direction === 'UP' && '▲ CALL / UP'}
-                  {result.direction === 'DOWN' && '▼ PUT / DOWN'}
-                  {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন'}
-                </span>
-                {(result.direction === 'UP' || result.direction === 'DOWN') && expirySec > 0 && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold">
-                    ⏱ {formattedCountdown}
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-300 font-mono truncate">
-                {result.direction !== 'WAIT'
-                  ? `${result.visionData?.symbol || 'চার্ট'} • ${result.confidence}% কনফিডেন্স`
-                  : `${result.visionData?.symbol || 'চার্ট'} • মোমেন্টামের অপেক্ষায়`}
-              </div>
+                  {result.direction === 'UP' && <TrendingUp className="w-4 h-4" />}
+                  {result.direction === 'DOWN' && <TrendingDown className="w-4 h-4" />}
+                  {result.direction === 'WAIT' && <Clock className="w-4 h-4" />}
+                </div>
+              ) : isReadingOtherScreen ? (
+                <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/60 flex items-center justify-center text-sky-300">
+                  <Eye className="w-4 h-4 animate-pulse" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+                  <Radar className="w-4 h-4" />
+                </div>
+              )}
             </div>
-          ) : isReadingOtherScreen ? (
-            <div>
-              <div className="text-xs font-bold text-sky-300 flex items-center gap-1.5 truncate max-w-[190px]">
-                <Eye className="w-3 h-3 text-sky-400 shrink-0" />
-                <span className="truncate">{result?.visionData?.detectedAppName || 'অন্য স্ক্রিন'}</span>
-                <span className="text-[8px] font-mono bg-sky-950/90 px-1 py-0.5 rounded border border-sky-500/50 text-sky-200">
-                  READING
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-300 font-mono truncate max-w-[190px]">
-                {result?.visionData?.extractedText?.[0]
-                  ? `পড়া হয়েছে: "${result.visionData.extractedText[0].slice(0, 20)}..."`
-                  : (result?.visionData?.screenSummaryBn || 'AI স্ক্রিন পড়ছে')}
-              </div>
+
+            {/* Signal & Verdict Details */}
+            <div className="flex flex-col text-left truncate">
+              {isBusy ? (
+                <div>
+                  <div className="text-xs font-bold text-cyan-300 font-mono flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5 animate-pulse text-cyan-400" />
+                    <span>স্ক্রিন স্ক্যান হচ্ছে...</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">রিয়েল-টাইম ক্যান্ডেল বিশ্লেষণ চলছে</div>
+                </div>
+              ) : isConnecting ? (
+                <div>
+                  <div className="text-xs font-bold text-cyan-300 font-mono">স্ক্রিন কানেক্ট হচ্ছে...</div>
+                  <div className="text-[10px] text-slate-400">প্রস্তুত হচ্ছে...</div>
+                </div>
+              ) : hasChartSignal ? (
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-sm font-black font-mono tracking-tight ${
+                        result.direction === 'UP'
+                          ? 'text-emerald-400'
+                          : result.direction === 'DOWN'
+                          ? 'text-rose-400'
+                          : 'text-amber-400'
+                      }`}
+                    >
+                      {result.direction === 'UP' && '▲ CALL / UP'}
+                      {result.direction === 'DOWN' && '▼ PUT / DOWN'}
+                      {result.direction === 'WAIT' && '⏸ WAIT'}
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-200 border border-slate-700 font-bold">
+                      {result.confidence}%
+                    </span>
+                    {(result.direction === 'UP' || result.direction === 'DOWN') && expirySec > 0 && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold">
+                        ⏱ {formattedCountdown}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-300 font-mono truncate">
+                    {result.visionData?.symbol || 'LIVE CHART'} • {result.visionData?.candlestickPattern || 'মোমেন্টাম নিশ্চিত'}
+                  </div>
+                </div>
+              ) : isReadingOtherScreen ? (
+                <div>
+                  <div className="text-xs font-bold text-sky-300 flex items-center gap-1 truncate">
+                    <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                    <span className="truncate">{result?.visionData?.detectedAppName || 'অন্য স্ক্রিন'}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-300 font-mono truncate">
+                    {result?.visionData?.screenSummaryBn || 'AI স্ক্রিন পড়ছে'}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                    <span>⚡ প্রস্তুত (Ready)</span>
+                  </div>
+                  <div className="text-[10px] text-slate-300 truncate">
+                    স্ক্রিন সক্রিয় • স্ক্যান বাটনে ট্যাপ করুন
+                  </div>
+                </div>
+              )}
             </div>
-          ) : isStreaming ? (
-            <div>
-              <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                <span>⏸ চার্ট খোঁজা হচ্ছে</span>
-                <span className="text-[9px] font-mono bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-600/40 text-amber-200">
-                  WAIT
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                <span>ফ্রেম #{frameCount}</span>
-                <span>•</span>
-                <span className="text-cyan-400">ক্লিক করে ডিসপ্লে দেখুন</span>
-              </div>
-            </div>
-          ) : isPaused ? (
-            <div>
-              <div className="text-xs font-bold text-amber-400">⏸ স্থগিত (PAUSED)</div>
-              <div className="text-[10px] text-slate-400">চালু করতে Resume চাপুন</div>
-            </div>
-          ) : (
-            <div>
-              <div className="text-xs font-bold text-slate-200">Live AI HUD</div>
-              <div className="text-[10px] text-slate-400">ক্লিক করে ডিসপ্লে খুলুন</div>
-            </div>
-          )}
+          </div>
+
+          {/* Quick Utility Icons (Voice & Maximize) */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleVoice}
+              className={`p-1.5 rounded-lg transition-colors ${
+                isVoiceOn
+                  ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/60'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+              }`}
+              title={isVoiceOn ? 'ভয়েস সহকারী বন্ধ করুন' : 'ভয়েস সহকারী চালু করুন'}
+            >
+              {isVoiceOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateToLiveScreen();
+              }}
+              className="p-1.5 text-slate-400 hover:text-cyan-300 hover:bg-slate-800 rounded-lg transition-colors"
+              title="সম্পূর্ণ ডিসপ্লে স্ক্রিন খুলুন"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Quick Inline Action Buttons on the Bubble */}
-        <div className="flex items-center gap-1 border-l border-slate-700/60 pl-2 shrink-0">
-          {/* Direct Open Display Button */}
+        {/* BOTTOM ACTION BUTTONS: [🔍 স্ক্যান] and [⏹ স্টপ] */}
+        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
+          {/* 1. SCAN BUTTON */}
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigateToLiveScreen();
-            }}
-            className="p-1.5 text-slate-400 hover:text-cyan-300 hover:bg-slate-800 rounded-lg transition-colors"
-            title="সরাসরি ডিসপ্লে খুলুন"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Voice Assistant Toggle */}
-          <button
-            type="button"
-            onClick={handleToggleVoice}
-            className={`p-1.5 rounded-lg transition-colors ${
-              isVoiceOn
-                ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/60'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+            onClick={handleScanClick}
+            disabled={isBusy || isConnecting}
+            className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 ${
+              isBusy
+                ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/40 shadow-emerald-950/50 hover:shadow-emerald-900/50'
             }`}
-            title={isVoiceOn ? 'ভয়েস সহকারী বন্ধ করুন' : 'ভয়েস সহকারী চালু করুন'}
+            title="বর্তমান স্ক্রিন একবার স্ক্যান করে তাৎক্ষণিক ফলাফল দেখাবে"
           >
-            {isVoiceOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {isBusy ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>স্ক্যান হচ্ছে...</span>
+              </>
+            ) : (
+              <>
+                <Camera className="w-3.5 h-3.5 text-emerald-200" />
+                <span>স্ক্যান</span>
+              </>
+            )}
           </button>
 
-          {/* Pause / Resume Button */}
-          {isStreaming && (
-            <button
-              type="button"
-              onClick={handlePause}
-              className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors"
-              title="স্থগিত করুন (Pause)"
-            >
-              <Pause className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {isPaused && (
-            <button
-              type="button"
-              onClick={handleResume}
-              className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/60 rounded-lg transition-colors"
-              title="পুনরায় চালু করুন (Resume)"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-            </button>
-          )}
-
-          {/* Disconnect or Cancel Button */}
-          {isConnecting ? (
-            <button
-              type="button"
-              onClick={handleCancelConnecting}
-              className="p-1.5 text-rose-400 hover:text-rose-200 hover:bg-rose-950/60 rounded-lg transition-colors"
-              title="কানেকশন বাতিল করুন"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          ) : (isStreaming || isPaused) ? (
-            <button
-              type="button"
-              onClick={handleDisconnect}
-              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 rounded-lg transition-colors"
-              title="ডিসকানেক্ট করুন"
-            >
-              <Square className="w-3.5 h-3.5" />
-            </button>
-          ) : null}
+          {/* 2. STOP BUTTON */}
+          <button
+            type="button"
+            onClick={handleStopClick}
+            className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border border-rose-400/40 shadow-rose-950/50 hover:shadow-rose-900/50"
+            title="স্ক্রিন শেয়ার ডিসকানেক্ট ও বাবল বন্ধ করুন"
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+            <span>স্টপ</span>
+          </button>
         </div>
       </div>
     </div>

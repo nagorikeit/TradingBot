@@ -244,7 +244,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                             }
 
                             setupVirtualDisplay();
-                            startFrameCaptureLoop();
+                            // Do NOT start automatic frame loop - wait for user to click Scan button!
 
                             JSObject res = new JSObject();
                             res.put("success", true);
@@ -382,6 +382,27 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void captureSingleFrame(final PluginCall call) {
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    captureAndEmitLatestFrame();
+                    if (call != null) {
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        call.resolve(res);
+                    }
+                } catch (Exception e) {
+                    if (call != null) {
+                        call.reject("Single frame capture failed: " + e.getMessage());
+                    }
+                }
+            }
+        });
+    }
+
+    @PluginMethod
     public void stopScreenCapture(PluginCall call) {
         if (captureHandler != null && captureRunnable != null) {
             captureHandler.removeCallbacks(captureRunnable);
@@ -400,12 +421,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
 
         // Stop Foreground Service
-        Intent serviceIntent = new Intent(getContext(), ScreenCaptureService.class);
-        getContext().stopService(serviceIntent);
+        try {
+            Intent serviceIntent = new Intent(getContext(), ScreenCaptureService.class);
+            getContext().stopService(serviceIntent);
+        } catch (Exception ignored) {}
 
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        call.resolve(ret);
+        if (call != null) {
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        }
     }
 
     @PluginMethod
@@ -456,10 +481,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 if (overlayView != null && windowManager != null) {
-                    windowManager.removeView(overlayView);
+                    try {
+                        windowManager.removeView(overlayView);
+                    } catch (Exception ignored) {}
                     overlayView = null;
                 }
-                call.resolve(new JSObject().put("success", true));
+                if (call != null) {
+                    call.resolve(new JSObject().put("success", true));
+                }
             }
         });
     }
@@ -484,15 +513,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         // Dynamic simple programmatically constructed card view
         final android.widget.LinearLayout layout = new android.widget.LinearLayout(getContext());
         layout.setOrientation(android.widget.LinearLayout.VERTICAL);
-        layout.setPadding(36, 20, 36, 20);
+        layout.setPadding(32, 20, 32, 20);
 
         android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
         shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        shape.setCornerRadius(42f);
+        shape.setCornerRadius(38f);
         shape.setColor(0xF50F172A);
         shape.setStroke(3, 0xFF38BDF8);
         layout.setBackground(shape);
         layout.setElevation(30f);
+
+        // Top drag handle container
+        final android.widget.LinearLayout dragContainer = new android.widget.LinearLayout(getContext());
+        dragContainer.setOrientation(android.widget.LinearLayout.VERTICAL);
 
         TextView titleView = new TextView(getContext());
         titleView.setId(android.view.View.generateViewId());
@@ -500,17 +533,88 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         titleView.setTextColor(0xFF38BDF8);
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         titleView.setTag("directionText");
-        layout.addView(titleView);
+        titleView.setText("⚡ প্রস্তুত (Ready)");
+        dragContainer.addView(titleView);
 
         TextView detailsView = new TextView(getContext());
         detailsView.setId(android.view.View.generateViewId());
         detailsView.setTextSize(11);
         detailsView.setTextColor(0xFFCBD5E1);
         detailsView.setTag("detailsText");
-        layout.addView(detailsView);
+        detailsView.setText("স্ক্যান করতে স্ক্যান বাটনে চাপুন");
+        dragContainer.addView(detailsView);
 
-        // Touch listener for dragging overlay across screen
-        layout.setOnTouchListener(new View.OnTouchListener() {
+        layout.addView(dragContainer);
+
+        // Bottom Action Button Row with "Scan" and "Stop" buttons
+        android.widget.LinearLayout buttonRow = new android.widget.LinearLayout(getContext());
+        buttonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        buttonRow.setGravity(Gravity.CENTER_VERTICAL);
+        buttonRow.setPadding(0, 16, 0, 4);
+
+        // 1. Scan Button
+        final TextView scanBtn = new TextView(getContext());
+        scanBtn.setText("🔍 স্ক্যান");
+        scanBtn.setTextSize(12);
+        scanBtn.setTextColor(0xFFFFFFFF);
+        scanBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+        scanBtn.setPadding(26, 12, 26, 12);
+        scanBtn.setClickable(true);
+        scanBtn.setTag("scanBtn");
+
+        android.graphics.drawable.GradientDrawable scanBg = new android.graphics.drawable.GradientDrawable();
+        scanBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        scanBg.setCornerRadius(22f);
+        scanBg.setColor(0xFF059669); // Emerald
+        scanBtn.setBackground(scanBg);
+
+        android.widget.LinearLayout.LayoutParams scanParams = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        scanParams.setMargins(0, 0, 16, 0);
+        scanBtn.setLayoutParams(scanParams);
+
+        scanBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                scanBtn.setText("⏳ স্ক্যান...");
+                notifyListeners("onOverlayScanClicked", new JSObject());
+                captureAndEmitLatestFrame();
+            }
+        });
+        buttonRow.addView(scanBtn);
+
+        // 2. Stop Button
+        final TextView stopBtn = new TextView(getContext());
+        stopBtn.setText("⏹ স্টপ");
+        stopBtn.setTextSize(12);
+        stopBtn.setTextColor(0xFFFFFFFF);
+        stopBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+        stopBtn.setPadding(24, 12, 24, 12);
+        stopBtn.setClickable(true);
+        stopBtn.setTag("stopBtn");
+
+        android.graphics.drawable.GradientDrawable stopBg = new android.graphics.drawable.GradientDrawable();
+        stopBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        stopBg.setCornerRadius(22f);
+        stopBg.setColor(0xFFDC2626); // Rose Red
+        stopBtn.setBackground(stopBg);
+
+        stopBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                notifyListeners("onOverlayStopClicked", new JSObject());
+                stopScreenCapture(null);
+                hideFloatingOverlay(null);
+            }
+        });
+        buttonRow.addView(stopBtn);
+
+        layout.addView(buttonRow);
+
+        // Touch listener on dragContainer for dragging overlay across screen
+        dragContainer.setOnTouchListener(new View.OnTouchListener() {
             private int initialX, initialY;
             private float initialTouchX, initialTouchY;
 
@@ -572,50 +676,45 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         shape.setStroke(3, strokeColor);
         overlayView.setBackground(shape);
 
+        TextView scanBtn = overlayView.findViewWithTag("scanBtn");
+        if (scanBtn != null && !"ANALYZING".equalsIgnoreCase(aiState)) {
+            scanBtn.setText("🔍 স্ক্যান");
+        }
+
         if (dirView != null && detView != null) {
             if (hasError) {
-                // Rule 5: Show clear error state on overlay instead of endless scanning
                 dirView.setTextColor(0xFFEF4444);
                 dirView.setText("⚠️ " + errorReason);
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
+            } else if ("ANALYZING".equalsIgnoreCase(aiState)) {
+                dirView.setTextColor(0xFF38BDF8);
+                dirView.setText("🔍 স্ক্যান করা হচ্ছে...");
+                detView.setVisibility(View.VISIBLE);
+                detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
             } else if ("WAIT".equalsIgnoreCase(direction)) {
                 dirView.setTextColor(0xFFF59E0B);
-                boolean isChartNotFound = (confidence <= 0 || "--:--".equals(durationText)) || (verdictTitle != null && (
-                        verdictTitle.contains("খুঁজে পাইনি") ||
-                        verdictTitle.contains("পাওয়া যায়নি") ||
-                        verdictTitle.contains("NOT_FOUND") ||
-                        verdictTitle.contains("নেই") ||
-                        verdictTitle.contains("WAIT")
-                ));
-
-                boolean isActivelyAnalyzing = "ANALYZING".equalsIgnoreCase(aiState);
-
-                if (isActivelyAnalyzing && !isChartNotFound) {
-                    dirView.setText("● ফ্রেম বিশ্লেষণ হচ্ছে...");
-                    detView.setVisibility(View.VISIBLE);
-                    String meta = "Frame #" + frameCount + " (" + resolution + ")";
-                    if (latencyMs > 0) meta += " • ⚡ " + latencyMs + "ms";
-                    detView.setText(meta);
+                if (verdictTitle != null && !verdictTitle.isEmpty()) {
+                    dirView.setText(verdictTitle);
                 } else {
                     dirView.setText("⏸ চার্ট পাওয়া যায়নি");
-                    detView.setVisibility(View.VISIBLE);
-                    String sub = (reasonText != null && !reasonText.trim().isEmpty() && !reasonText.contains("স্ক্যান"))
-                            ? reasonText
-                            : "ট্রেডিং চার্ট সামনে রাখুন";
-                    if (sub.length() > 30) sub = sub.substring(0, 28) + "..";
-                    detView.setText(sub + " [#" + frameCount + " • State: WAIT]");
                 }
+                detView.setVisibility(View.VISIBLE);
+                String sub = (reasonText != null && !reasonText.trim().isEmpty())
+                        ? reasonText
+                        : "স্ক্যান করতে স্ক্যান বাটনে চাপুন";
+                if (sub.length() > 36) sub = sub.substring(0, 34) + "..";
+                detView.setText(sub);
             } else {
-                // When chart analyzed: ultra-sleek 2-line pill format with signal, countdown, and metrics
+                // When chart analyzed: UP / DOWN
                 detView.setVisibility(View.VISIBLE);
                 String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (UP)" : "DOWN".equalsIgnoreCase(direction) ? "▼ PUT (DOWN)" : "● WAIT";
                 dirView.setTextColor(strokeColor);
-                dirView.setText(badgeText + "  •  ⏱ " + durationText + " (" + confidence + "%)");
+                dirView.setText(badgeText + "  •  " + confidence + "%");
 
-                String shortReason = reasonText.length() > 28 ? reasonText.substring(0, 26) + ".." : reasonText;
-                if (shortReason.isEmpty()) shortReason = "মোমেন্টাম নিশ্চিত";
-                detView.setText(symbol + " • " + shortReason + " [#" + frameCount + " • " + latencyMs + "ms]");
+                String shortReason = (reasonText != null && !reasonText.isEmpty()) ? reasonText : "মোমেন্টাম নিশ্চিত";
+                if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
+                detView.setText(symbol + " • " + shortReason);
             }
         }
     }

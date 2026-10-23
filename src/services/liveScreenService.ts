@@ -279,26 +279,23 @@ export class LiveScreenService {
         }
 
         this.state = 'STREAMING';
-        this.autoOpenModal = true;
-        this.isSearchingForChart = true;
+        this.autoOpenModal = false;
+        this.isSearchingForChart = false;
         this.isChartFound = false;
         this.expirySecondsLeft = 0;
         this.errorMessage = null;
         this.latestResult = null;
         this.notify();
 
-        voiceAssistantService.announceSearchingForChart();
+        voiceAssistantService.speak('স্ক্রিন শেয়ার সংযুক্ত হয়েছে। স্ক্যান করতে স্ক্যান বাটনে চাপুন।');
 
-        this.captureAndAnalyzeCurrentFrame();
-        this.resetIntervalTimer();
-
-        // Show floating overlay simulator in web
+        // Show floating overlay simulator in ready state (no repeated auto scan)
         this.showFloatingOverlayHUD({
           direction: 'WAIT',
           confidence: 0,
           durationText: '--:--',
-          verdictTitle: 'চার্ট পাওয়া যায়নি',
-          reasonText: 'ট্রেডিং চার্ট স্ক্রিনে রাখুন',
+          verdictTitle: '⚡ প্রস্তুত (Ready)',
+          reasonText: 'স্ক্যান করতে "স্ক্যান" বাটনে ট্যাপ করুন',
           latencyMs: 0,
         });
 
@@ -807,12 +804,25 @@ export class LiveScreenService {
       if (result && result.success) {
         this.isNativeCaptureActive = true;
         this.state = 'STREAMING';
-        this.autoOpenModal = true;
-        this.isSearchingForChart = true;
+        this.autoOpenModal = false;
+        this.isSearchingForChart = false;
         this.isChartFound = false;
         this.errorMessage = null;
         this.expirySecondsLeft = 0;
         this.latestResult = null;
+
+        // Register overlay button click listeners
+        try {
+          TradePulseNativeScreen.addListener('onOverlayScanClicked', () => {
+            this.triggerSingleScan();
+          });
+          TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
+            this.disconnect('ফ্লোটিং বাবল থেকে স্টপ করা হয়েছে');
+          });
+        } catch (e) {
+          console.warn('Native overlay listener attachment error:', e);
+        }
+
         this.notify();
 
         // 4. Show Floating HUD widget over other apps if overlay permission is present
@@ -821,13 +831,13 @@ export class LiveScreenService {
             direction: 'WAIT',
             confidence: 0,
             durationText: '--:--',
-            verdictTitle: 'চার্ট পাওয়া যায়নি',
-            reasonText: 'ট্রেডিং চার্ট সামনে রাখুন',
+            verdictTitle: '⚡ প্রস্তুত (Ready)',
+            reasonText: 'স্ক্যান করতে "স্ক্যান" বাটনে ট্যাপ করুন',
             latencyMs: 0,
           });
         }
 
-        voiceAssistantService.announceSearchingForChart();
+        voiceAssistantService.speak('স্ক্রিন শেয়ার সংযুক্ত হয়েছে। স্ক্যান করতে স্ক্যান বাটনে চাপুন।');
         return true;
       } else {
         this.state = 'DISCONNECTED';
@@ -887,13 +897,12 @@ export class LiveScreenService {
       }
 
       if (this.expirySecondsLeft <= 0) {
-        // Candle time ended - announce and evaluate next candle
+        // Candle time ended - announce expiration and wait for user's next manual scan
         voiceAssistantService.announceCandleExpired();
-        this.expirySecondsLeft = 60;
-
-        // Immediate snapshot trigger for next candle
-        if (this.stream) {
-          this.captureAndAnalyzeCurrentFrame();
+        this.expirySecondsLeft = 0;
+        if (this.countdownTimer) {
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = null;
         }
       }
       this.notify();
@@ -1838,17 +1847,59 @@ export class LiveScreenService {
     this.notify();
   }
 
+  /**
+   * Triggers exactly ONE scan on demand.
+   * Analyzes the active screen once, updates the Floating HUD and signals, and halts without looping.
+   */
+  public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+    if (this.state !== 'STREAMING') {
+      const connected = await this.connectScreen();
+      if (!connected) return null;
+    }
+
+    if (this.isProcessingFrame) {
+      return this.latestResult;
+    }
+
+    this.isProcessingFrame = true;
+    this.aiState = 'ANALYZING';
+    this.notify();
+
+    // Immediately update Floating HUD to scanning state
+    this.updateFloatingOverlayHUD({
+      direction: 'WAIT',
+      confidence: 0,
+      durationText: '...',
+      verdictTitle: '🔍 স্ক্যান করা হচ্ছে...',
+      reasonText: 'রিয়েল-টাইম ফ্রেম বিশ্লেষণ চলছে',
+      latencyMs: 0,
+      aiState: 'ANALYZING',
+    });
+
+    try {
+      if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
+        await TradePulseNativeScreen.captureSingleFrame().catch(() => {});
+      } else if (this.stream && this.videoEl && this.canvasEl) {
+        await this.captureAndAnalyzeCurrentFrame();
+      } else if (this.isNativeCaptureActive) {
+        await TradePulseNativeScreen.captureSingleFrame().catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn('Single scan error:', err);
+      this.notifyOverlayError('স্ক্যান সম্পন্ন করা যায়নি');
+    } finally {
+      this.isProcessingFrame = false;
+      this.notify();
+    }
+
+    return this.latestResult;
+  }
+
   private resetIntervalTimer(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
-
-    this.timer = setInterval(() => {
-      if (this.state === 'STREAMING') {
-        this.captureAndAnalyzeCurrentFrame();
-      }
-    }, this.scanIntervalMs);
   }
 
   /**
