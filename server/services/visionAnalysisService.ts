@@ -60,9 +60,17 @@ export class VisionAnalysisService {
 The user is sharing their screen. The user may switch to ANY screen or application window at any moment (e.g., Quotex, Binomo, Pocket Option, TradingView, VS Code / code editor, YouTube / media player, Google Chrome / browser tab, WhatsApp / messaging app, Microsoft Excel / spreadsheet, Word / PDF document, Terminal, or Mobile / Desktop Home Screen).
 
 YOUR CORE DUTIES:
-1. UNIVERSAL SCREEN & APP IDENTIFICATION:
-   - Identify what application, website, or environment is currently on screen (e.g. "Quotex Trading", "TradingView", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Windows Desktop", "Excel").
-   - Classify into one of: 'TRADING_CHART' | 'DOCUMENT' | 'BROWSER' | 'CODE_IDE' | 'CHAT_MESSENGER' | 'VIDEO_STREAM' | 'DESKTOP' | 'SYSTEM_SETTINGS' | 'OTHER'.
+1. UNIVERSAL SCREEN & APP IDENTIFICATION & SELF-CAPTURE PREVENTION:
+   - Identify what application, website, or environment is currently on screen (e.g. "TradePulse App", "Quotex Trading", "Binomo", "Pocket Option", "TradingView", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Windows Desktop", "Excel").
+   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the TradePulse app itself (showing TradePulse header, 'Live Screen Analysis', 'TradePulse', 'ফ্লোটিং HUD', 'ভয়েস অন', 'সার্ভার সক্রিয়', or TradePulse buttons):
+     * Set "screenCategory": "OTHER"
+     * Set "detectedAppName": "TradePulse App (Self-Capture)"
+     * Set "isClearTradingChart": false (MANDATORY: Never classify TradePulse app UI as a trading chart!)
+     * Set "screenSummaryBn": "ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।"
+     * Set "lastCandleDirection": "UNCERTAIN"
+     * Set "candlestickPattern": "ট্রেডপাল্স নিজস্ব ইন্টারফেস"
+     * Set "confidenceScore": 0.0
+   - Otherwise, classify into one of: 'TRADING_CHART' | 'DOCUMENT' | 'BROWSER' | 'CODE_IDE' | 'CHAT_MESSENGER' | 'VIDEO_STREAM' | 'DESKTOP' | 'SYSTEM_SETTINGS' | 'OTHER'.
    - Extract the active screen/window title or page headline.
 
 2. OCR & TEXT EXTRACTION:
@@ -75,14 +83,14 @@ YOUR CORE DUTIES:
    - Provide "screenSummaryEn": The same in English.
 
 4. TRADING CHART ANALYSIS (IF and ONLY IF screenCategory === 'TRADING_CHART'):
-   - If candlesticks (green/red candles) or broker trading terminals (Quotex, Binomo, TradingView, etc.) are visible:
-     - Set "isClearTradingChart": true.
-     - Identify symbol (e.g. AUD/CHF, EUR/USD, BTC/USDT), timeframe (1m, 5m), trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT), last candle direction (BULLISH, BEARISH, DOJI), and candlestick pattern.
-   - If the screen is NOT a trading chart (e.g. browser, code, YouTube, chat, desktop, document):
-     - Set "isClearTradingChart": false.
-     - Set "lastCandleDirection": "UNCERTAIN".
-     - Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন".
-     - Set "marketType": "UNKNOWN".
+   - If real broker candlesticks (green/red candles) or broker trading terminals (Quotex, Binomo, Pocket Option, TradingView, etc.) are visible:
+     * Set "isClearTradingChart": true.
+     * Identify symbol (e.g. AUD/CHF, EUR/USD, BTC/USDT), timeframe (1m, 5m), trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT), last candle direction (BULLISH, BEARISH, DOJI), and candlestick pattern.
+   - If the screen is NOT a trading chart (e.g. TradePulse itself, browser, code, YouTube, chat, desktop, document):
+     * Set "isClearTradingChart": false.
+     * Set "lastCandleDirection": "UNCERTAIN".
+     * Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন".
+     * Set "marketType": "UNKNOWN".
 
 5. SAFETY & PRIVACY:
    - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
@@ -256,7 +264,29 @@ YOUR CORE DUTIES:
       let isChart = false;
       let detectedSymbol = 'AUD/CHF';
 
-      if (bufferStr.includes('quotex') || bufferStr.includes('binomo') || bufferStr.includes('pocket') || bufferStr.includes('tradingview') || bufferStr.includes('candle') || bufferStr.includes('eur/usd')) {
+      if (bufferStr.includes('tradepulse') || bufferStr.includes('ট্রেডপাল্স') || bufferStr.includes('live screen analysis') || bufferStr.includes('inspection interval')) {
+        detectedAppName = 'TradePulse App (Self-Capture)';
+        screenCategory = 'OTHER';
+        isChart = false;
+        return {
+          screenCategory: 'OTHER',
+          detectedAppName: 'TradePulse App (Self-Capture)',
+          screenTitle: 'TradePulse AI Monitor',
+          extractedText: ['TradePulse Active Viewport', 'Self-capture detected', 'Please switch to broker terminal'],
+          isReadable: true,
+          screenSummaryBn: 'ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।',
+          screenSummaryEn: 'TradePulse app interface detected. Please minimize TradePulse and open your trading broker chart.',
+          isClearTradingChart: false,
+          marketType: 'UNKNOWN',
+          lastCandleDirection: 'UNCERTAIN',
+          chartStructure: 'UNCLEAR',
+          candlestickPattern: 'ট্রেডপাল্স নিজস্ব ইন্টারফেস',
+          indicatorsIdentified: [],
+          visionSummary: 'ট্রেডপাল্স অ্যাপ ইন্টারফেস শনাক্ত হয়েছে। চার্ট না থাকায় সিগন্যাল বন্ধ রাখা হয়েছে।',
+          confidenceScore: 0.0,
+          containsSensitivePrivateData: false,
+        };
+      } else if (bufferStr.includes('quotex') || bufferStr.includes('binomo') || bufferStr.includes('pocket') || bufferStr.includes('tradingview') || bufferStr.includes('candle') || bufferStr.includes('eur/usd')) {
         detectedAppName = bufferStr.includes('quotex') ? 'Quotex Trading Terminal' : bufferStr.includes('binomo') ? 'Binomo Terminal' : 'TradingView / Chart';
         screenCategory = 'TRADING_CHART';
         isChart = true;

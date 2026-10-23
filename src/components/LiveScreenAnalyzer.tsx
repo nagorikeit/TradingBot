@@ -841,6 +841,48 @@ export const LiveScreenAnalyzer: React.FC = () => {
             </div>
           </div>
 
+          {/* TradePulse Self-Detection Alert Banner */}
+          {(lastDetectedAppName.toLowerCase().includes('tradepulse') ||
+            lastDetectedAppName.includes('ট্রেডপাল্স') ||
+            Boolean(chartDiagnostic?.failureReason?.includes('ট্রেডপাল্স'))) && (
+            <div className="p-4 rounded-xl bg-amber-500/15 border-2 border-amber-500/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-200 shadow-xl animate-in fade-in duration-200">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/25 border border-amber-500/50 flex items-center justify-center shrink-0 text-amber-300">
+                  <Smartphone className="w-5 h-5 animate-bounce" />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-sm flex items-center gap-2">
+                    <span>⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে (Self-Capture Active)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/30 text-amber-300 font-mono">মিনিমাইজ প্রয়োজন</span>
+                  </div>
+                  <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
+                    আপনি বর্তমানে <strong>TradePulse অ্যাপের ভেতরেই আছেন</strong>। চার্ট বিশ্লেষণের জন্য TradePulse মিনিমাইজ করে আপনার আসল ব্রোকার অ্যাপ (যেমন: <strong>Quotex, Pocket Option বা Binomo</strong>) ওপেন করুন।
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    if (!liveScreenService.isOverlayActive()) {
+                      liveScreenService.showFloatingOverlayHUD({
+                        direction: 'WAIT',
+                        confidence: 0,
+                        durationText: 'অপেক্ষা',
+                        verdictTitle: 'চার্ট অনুসন্ধান চলছে',
+                        reasonText: 'ট্রেডপাল্স মিনিমাইজ করে ব্রোকার ওপেন করুন',
+                        latencyMs: 50,
+                      });
+                    }
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-lg shadow transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>ফ্লোটিং HUD অন করুন</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Live Screen Viewport Monitor + Lifecycle Guide */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
             {/* Left: Real-Time Shared Screen Viewport Feed */}

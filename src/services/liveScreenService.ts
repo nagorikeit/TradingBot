@@ -1123,45 +1123,70 @@ export class LiveScreenService {
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
-            // Group adjacent candle columns into distinct candle bars
+            // Group adjacent candle columns and classify them:
+            // Real candlestick bars are narrow vertical shapes (width 1-16px, height >= 4px).
+            // UI elements (buttons, badges, pills like "ভয়েস অন", "সার্ভার সক্রিয়", "কল / আপ") are wide horizontal shapes (width > 18px).
             let distinctCandleBars = 0;
-            let inBar = false;
-            let barWidth = 0;
-            const barMidpointsY: number[] = [];
-            const barPositionsX: number[] = [];
+            let wideUiElementCount = 0;
+            let currentBarWidth = 0;
+            let currentBarMinY = 999;
+            let currentBarMaxY = -1;
+            const validBarMidpointsY: number[] = [];
+            const validBarPositionsX: number[] = [];
 
             for (let x = xStart; x < xEnd; x++) {
-              const height = columnMaxY[x] - columnMinY[x] + 1;
-              const hasCandle = columnCandlePixels[x] >= 2 && height >= 3;
+              const colHeight = columnMaxY[x] - columnMinY[x] + 1;
+              const hasCandleCol = columnCandlePixels[x] >= 2 && colHeight >= 3;
 
-              if (hasCandle) {
-                if (!inBar) {
-                  inBar = true;
-                  barWidth = 1;
-                  distinctCandleBars++;
-                  barPositionsX.push(x);
-                  barMidpointsY.push((columnMinY[x] + columnMaxY[x]) / 2);
+              if (hasCandleCol) {
+                if (currentBarWidth === 0) {
+                  currentBarWidth = 1;
+                  currentBarMinY = columnMinY[x];
+                  currentBarMaxY = columnMaxY[x];
                 } else {
-                  barWidth++;
-                  if (barWidth > 48) {
-                    inBar = false;
-                  }
+                  currentBarWidth++;
+                  if (columnMinY[x] < currentBarMinY) currentBarMinY = columnMinY[x];
+                  if (columnMaxY[x] > currentBarMaxY) currentBarMaxY = columnMaxY[x];
                 }
               } else {
-                inBar = false;
-                barWidth = 0;
+                if (currentBarWidth > 0) {
+                  const barHeight = currentBarMaxY - currentBarMinY + 1;
+                  if (currentBarWidth > 18) {
+                    // Wide UI button, card header, or banner
+                    wideUiElementCount++;
+                  } else if (currentBarWidth <= 16 && barHeight >= 4 && (currentBarWidth <= 4 || barHeight >= currentBarWidth * 0.65)) {
+                    // Real vertical candlestick body
+                    distinctCandleBars++;
+                    validBarPositionsX.push(x - Math.floor(currentBarWidth / 2));
+                    validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
+                  }
+                  currentBarWidth = 0;
+                  currentBarMinY = 999;
+                  currentBarMaxY = -1;
+                }
               }
             }
 
-            // Calculate horizontal span and vertical dispersion across candles
+            if (currentBarWidth > 0) {
+              const barHeight = currentBarMaxY - currentBarMinY + 1;
+              if (currentBarWidth > 18) {
+                wideUiElementCount++;
+              } else if (currentBarWidth <= 16 && barHeight >= 4 && (currentBarWidth <= 4 || barHeight >= currentBarWidth * 0.65)) {
+                distinctCandleBars++;
+                validBarPositionsX.push(xEnd - Math.floor(currentBarWidth / 2));
+                validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
+              }
+            }
+
+            // Calculate horizontal span and vertical dispersion across verified candles
             let horizontalSpan = 0;
             let verticalDispersion = 0;
-            if (barPositionsX.length >= 2) {
-              horizontalSpan = barPositionsX[barPositionsX.length - 1] - barPositionsX[0];
+            if (validBarPositionsX.length >= 2) {
+              horizontalSpan = validBarPositionsX[validBarPositionsX.length - 1] - validBarPositionsX[0];
             }
-            if (barMidpointsY.length >= 2) {
-              const minY = Math.min(...barMidpointsY);
-              const maxY = Math.max(...barMidpointsY);
+            if (validBarMidpointsY.length >= 2) {
+              const minY = Math.min(...validBarMidpointsY);
+              const maxY = Math.max(...validBarMidpointsY);
               verticalDispersion = maxY - minY;
             }
 
@@ -1169,17 +1194,24 @@ export class LiveScreenService {
             const hasBrokerBg = bgRatio > 0.15;
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
-            // Resilient Candlestick Chart Criteria:
-            // 1. At least 2 distinct candle bars across the chart (supports high-zoom 1-minute broker views)
-            // 2. Total candle pixels >= 25
-            // 3. Horizontal span >= 8% of chart width
-            // 4. Vertical price action dispersion >= 4px
+            // TradePulse Self-Capture Guard:
+            // If wide UI buttons exist and there are few candles, or if TradePulse is foregrounded
+            const isTradePulseScreen =
+              wideUiElementCount >= 1 && distinctCandleBars < 5;
+
+            // Strict Candlestick Chart Criteria:
+            // 1. At least 5 distinct narrow candle bars across the chart
+            // 2. Total candle pixels >= 40
+            // 3. Horizontal span >= 18% of chart width
+            // 4. Vertical price action dispersion >= 6px
             // 5. Must have broker theme background
+            // 6. No dominant wide UI buttons across the chart area
             const isCandlestickChart =
-              distinctCandleBars >= 2 &&
-              totalCandlePixels >= 25 &&
-              horizontalSpan >= targetWidth * 0.08 &&
-              verticalDispersion >= 4 &&
+              !isTradePulseScreen &&
+              distinctCandleBars >= 5 &&
+              totalCandlePixels >= 40 &&
+              horizontalSpan >= targetWidth * 0.18 &&
+              verticalDispersion >= 6 &&
               hasBrokerBg;
 
             const diagnostic: ChartDetectionDiagnostic = {
@@ -1193,38 +1225,39 @@ export class LiveScreenService {
 
             if (!isCandlestickChart) {
               const failureReasons: string[] = [];
-              if (distinctCandleBars < 5) {
+              if (isTradePulseScreen) {
+                failureReasons.push('⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে: আপনি বর্তমানে ট্রেডপাল্স অ্যাপের স্ক্রিনেই আছেন।');
+              } else if (distinctCandleBars < 5) {
                 failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: স্ক্রিনে মাত্র ${distinctCandleBars}টি ক্যান্ডেলস্টিক বার পাওয়া গেছে (কমপক্ষে ৫টি স্পষ্ট ক্যান্ডেল প্রয়োজন)।`);
-              }
-              if (!hasBrokerBg) {
+              } else if (!hasBrokerBg) {
                 failureReasons.push('ব্রোকার ব্যাকগ্রাউন্ড অমিল: ট্রেডিং টার্মিনালের ডার্ক বা লাইট চার্ট ব্যাকগ্রাউন্ড শনাক্ত হয়নি।');
-              }
-              if (totalCandlePixels < 50) {
+              } else if (totalCandlePixels < 40) {
                 failureReasons.push(`ক্যান্ডেল পিক্সেল অপর্যাপ্ত: মাত্র ${totalCandlePixels} লাল/সবুজ ক্যান্ডেল পিক্সেল শনাক্ত হয়েছে।`);
-              }
-              if (horizontalSpan < targetWidth * 0.20) {
-                failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}% (কমপক্ষে ২০% প্রয়োজন)।`);
-              }
-              if (verticalDispersion < 8) {
+              } else if (horizontalSpan < targetWidth * 0.18) {
+                failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}% (কমপক্ষে ১৮% প্রয়োজন)।`);
+              } else if (verticalDispersion < 6) {
                 failureReasons.push('প্রাইস অ্যাকশন অনুভূমিক/ফ্ল্যাট: কোনো উল্লম্ব ট্রেন্ড বা সুইং ওঠানামা নেই।');
-              }
-              if (failureReasons.length === 0) {
+              } else {
                 failureReasons.push('স্ক্রিনটি সক্রিয় ট্রেডিং টার্মিনাল নয় (হোমস্ক্রিন, চ্যাট বা অন্য অ্যাপ হতে পারে)।');
               }
 
               diagnostic.failureReason = failureReasons[0];
-              diagnostic.recommendedAction = 'ব্রোকার অ্যাপ (Quotex, Binomo, Pocket Option) খুলে ক্যান্ডেলস্টিক চার্টটি ফুলস্ক্রিনে রাখুন।';
+              diagnostic.recommendedAction = isTradePulseScreen
+                ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ফুলস্ক্রিনে নিয়ে আসুন।'
+                : 'ব্রোকার অ্যাপ (Quotex, Binomo, Pocket Option) খুলে ক্যান্ডেলস্টিক চার্টটি ফুলস্ক্রিনে রাখুন।';
 
               return resolve({
                 isChart: false,
                 dir: 'WAIT',
                 confidence: 0,
-                symbol: 'UNKNOWN',
-                pattern: 'চার্ট পাওয়া যায়নি',
+                symbol: isTradePulseScreen ? 'TRADEPULSE_APP' : 'UNKNOWN',
+                pattern: isTradePulseScreen ? 'ট্রেডপাল্স অ্যাপ শনাক্ত' : 'চার্ট পাওয়া যায়নি',
                 reason: [
                   failureReasons[0],
-                  'ট্রেডিং চার্ট ছাড়া ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ (BLOCKED)।',
-                  'অনুগ্রহ করে ব্রোকার অ্যাপের (Quotex/Binomo/TradingView/MT4) চার্ট ফুলস্ক্রিন রাখুন।',
+                  isTradePulseScreen
+                    ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে ব্রোকার চার্ট স্ক্রিনে আনলে তাৎক্ষণিক সিগন্যাল শুরু হবে।'
+                    : 'ট্রেডিং চার্ট ছাড়া ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ (BLOCKED)।',
+                  'উপরে ফ্লোটিং HUD চালু রাখুন যাতে ব্রোকারের ওপরেই লাইভ সিগন্যাল দেখতে পান।',
                 ],
                 diagnostic,
               });
@@ -1388,27 +1421,36 @@ export class LiveScreenService {
     }
 
     if (!chartDetection.isChart || chartDetection.dir === 'WAIT') {
-      const appName = 'অন্যান্য অ্যাপ্লিকেশন / ব্রাউজার উইন্ডো';
+      const isTradePulse =
+        chartDetection.symbol === 'TRADEPULSE_APP' ||
+        chartDetection.pattern.includes('ট্রেডপাল্স') ||
+        (chartDetection.diagnostic?.failureReason && chartDetection.diagnostic.failureReason.includes('ট্রেডপাল্স'));
+
+      const appName = isTradePulse ? 'TradePulse App (Self-Capture)' : 'অন্যান্য অ্যাপ্লিকেশন / ব্রাউজার উইন্ডো';
       return {
         analysisId,
         timestamp: now,
         frameCapturedAt,
         direction: 'WAIT',
         confidence: 0,
-        verdictTitle: `চার্ট পাওয়া যায়নি / ${appName}`,
+        verdictTitle: isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত' : `চার্ট পাওয়া যায়নি / ${appName}`,
         suggestedExpiry: 'N/A',
         reasoning: [
-          chartDetection.diagnostic?.failureReason || 'স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট সনাক্ত হয়নি।',
-          'ট্রেডিং চার্ট ছাড়া সিগন্যাল সম্পূর্ণ ব্লক (0% কনফিডেন্স)।',
-          'অনুগ্রহ করে ব্রোকার অ্যাপের (Quotex/Binomo/Pocket Option/TradingView) চার্ট ফুলস্ক্রিন রাখুন।',
+          chartDetection.diagnostic?.failureReason || (isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে — অনুগ্রহ করে এটি মিনিমাইজ করে ব্রোকার চার্ট (Quotex/Binomo) ওপেন করুন।' : 'স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট সনাক্ত হয়নি।'),
+          isTradePulse ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে Quotex/Binomo চার্ট ফুলস্ক্রিনে আনলে লাইভ সিগন্যাল শুরু হবে।' : 'ট্রেডিং চার্ট ছাড়া সিগন্যাল সম্পূর্ণ ব্লক (0% কনফিডেন্স)।',
+          'উপরে ফ্লোটিং HUD চালু রাখুন যাতে ব্রোকারের ওপরেই লাইভ সিগন্যাল দেখতে পান।',
         ],
         visionData: {
-          screenCategory: 'BROWSER',
-          detectedAppName: appName,
-          screenTitle: 'সক্রিয় স্ক্রিন উইন্ডো',
-          extractedText: ['Active Application: Other Screen', 'Screen interface elements read', 'Waiting for Chart'],
+          screenCategory: isTradePulse ? 'SYSTEM_SETTINGS' : 'BROWSER',
+          detectedAppName: isTradePulse ? 'TradePulse App (নিজস্ব স্ক্রিন)' : appName,
+          screenTitle: isTradePulse ? 'TradePulse AI Monitor' : 'সক্রিয় স্ক্রিন উইন্ডো',
+          extractedText: isTradePulse
+            ? ['TradePulse Active Viewport', 'Self-capture detected', 'Please switch to broker terminal (Quotex/Binomo)']
+            : ['Active Application: Other Screen', 'Screen interface elements read', 'Waiting for Chart'],
           isReadable: true,
-          screenSummaryBn: 'এআই স্ক্রিনের অ্যাপ ও ইন্টারফেস সফলভাবে শনাক্ত করেছে। ট্রেডিং চার্টে ফিরলে তাৎক্ষণিক ক্যান্ডেল অ্যানালাইসিস শুরু হবে।',
+          screenSummaryBn: isTradePulse
+            ? 'ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।'
+            : 'এআই স্ক্রিনের অ্যাপ ও ইন্টারফেস সফলভাবে শনাক্ত করেছে। ট্রেডিং চার্টে ফিরলে তাৎক্ষণিক ক্যান্ডেল অ্যানালাইসিস শুরু হবে।',
           symbol: 'UNKNOWN',
           timeframe: '1m',
           marketType: 'UNKNOWN',
@@ -1532,6 +1574,11 @@ export class LiveScreenService {
       this.lastDetectedSummaryBn = result.visionData?.screenSummaryBn || 'স্ক্রিন ফ্রেম পর্যবেক্ষণ করা হয়েছে। চার্ট অনুসন্ধান চলছে।';
       this.errorMessage = null;
 
+      const isTradePulse =
+        appName.toLowerCase().includes('tradepulse') ||
+        appName.includes('ট্রেডপাল্স') ||
+        Boolean(result.visionData?.screenSummaryBn?.includes('ট্রেডপাল্স'));
+
       // Ensure chart diagnostic explains the active app
       this.latestChartDiagnostic = {
         isChart: false,
@@ -1540,16 +1587,22 @@ export class LiveScreenService {
         horizontalSpanPercent: 0,
         verticalDispersionPx: 0,
         hasBrokerBackground: false,
-        failureReason: `স্ক্রিনে "${appName}" সনাক্ত হয়েছে। কন্টেন্ট সফলভাবে পড়া হয়েছে।`,
-        recommendedAction: 'ট্রেডিং চার্ট স্ক্রিনে আনলে তাৎক্ষণিক সিগন্যাল চালু হবে।',
+        failureReason: isTradePulse
+          ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে — অনুগ্রহ করে এটি মিনিমাইজ করে ব্রোকার চার্ট (Quotex/Binomo) ওপেন করুন।'
+          : `স্ক্রিনে "${appName}" সনাক্ত হয়েছে। কন্টেন্ট সফলভাবে পড়া হয়েছে।`,
+        recommendedAction: isTradePulse
+          ? 'ট্রেডপাল্স মিনিমাইজ করে Quotex/Binomo ওপেন করুন। ফ্লোটিং HUD ব্রোকারের ওপরেই লাইভ সিগন্যাল দেবে।'
+          : 'ট্রেডিং চার্ট স্ক্রিনে আনলে তাৎক্ষণিক সিগন্যাল চালু হবে।',
       };
 
       this.updateFloatingOverlayHUD({
         direction: 'WAIT',
-        confidence: result.confidence || 85,
-        durationText: 'রিডিং...',
-        verdictTitle: `স্ক্রিন: ${appName.slice(0, 16)}`,
-        reasonText: result.visionData?.screenSummaryBn?.slice(0, 36) || 'এআই স্ক্রিন রিড করছে...',
+        confidence: 0,
+        durationText: isTradePulse ? 'মিনিমাইজ' : 'চার্ট খুঁজছে',
+        verdictTitle: isTradePulse ? '⚠️ ট্রেডপাল্স মিনিমাইজ করুন' : `স্ক্রিন: ${appName.slice(0, 16)}`,
+        reasonText: isTradePulse
+          ? 'ব্রোকার অ্যাপ (Quotex/Binomo) ওপেন করুন'
+          : result.visionData?.screenSummaryBn?.slice(0, 36) || 'এআই চার্ট অনুসন্ধান করছে...',
         latencyMs,
         frameCount: this.latestFrameCount,
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
