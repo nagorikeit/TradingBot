@@ -1208,6 +1208,29 @@ export class LiveScreenService {
             const hasBrokerBg = bgRatio > 0.15;
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
+            // Scan for Broker Trade Action Buttons (Buy/Sell or Call/Put) in lower zone
+            let brokerBuyBtnPixels = 0;
+            let brokerSellBtnPixels = 0;
+            const yBtnStart = Math.floor(targetHeight * 0.68);
+            const yBtnEnd = Math.floor(targetHeight * 0.95);
+            for (let y = yBtnStart; y < yBtnEnd; y++) {
+              for (let x = xStart; x < xEnd; x++) {
+                const idx = (y * targetWidth + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                // Quotex/Broker Buy green (#00b06f, #00c076, #00a65a)
+                if (g >= 115 && g > r * 1.22 && g > b * 1.15) {
+                  brokerBuyBtnPixels++;
+                }
+                // Quotex/Broker Sell red (#ef5350, #e53935, #d32f2f)
+                else if (r >= 130 && r > g * 1.22 && r > b * 1.15) {
+                  brokerSellBtnPixels++;
+                }
+              }
+            }
+            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 15 && brokerSellBtnPixels >= 15;
+
             // TradePulse Self-Capture Guard:
             // Only triggered if TradePulse's own tab is currently focused/visible in the browser
             // When the user switches to Quotex, document.visibilityState is 'hidden'
@@ -1219,18 +1242,18 @@ export class LiveScreenService {
               distinctCandleBars < 3;
 
             // Resilient Broker Candlestick Chart Criteria:
-            // 1. At least 3 candle bars across the timeline
-            // 2. Total candle pixels >= 25
-            // 3. Horizontal span >= 12% of chart width
-            // 4. Vertical price action dispersion >= 4px
-            // 5. Must have broker theme background
+            // 1. Either 3+ candle bars with dispersion and broker background
+            // 2. OR verified broker Buy & Sell buttons + broker theme + 2+ candle bars (handles HUD overlapping candles)
             const isCandlestickChart =
               !isTradePulseScreen &&
-              distinctCandleBars >= 3 &&
-              totalCandlePixels >= 25 &&
-              horizontalSpan >= targetWidth * 0.12 &&
-              verticalDispersion >= 4 &&
-              hasBrokerBg;
+              ((distinctCandleBars >= 3 &&
+                totalCandlePixels >= 25 &&
+                horizontalSpan >= targetWidth * 0.10 &&
+                verticalDispersion >= 4 &&
+                hasBrokerBg) ||
+               (hasBrokerTradeButtons &&
+                hasBrokerBg &&
+                (distinctCandleBars >= 2 || totalCandlePixels >= 18)));
 
             const diagnostic: ChartDetectionDiagnostic = {
               isChart: isCandlestickChart,
@@ -1451,12 +1474,12 @@ export class LiveScreenService {
         frameCapturedAt,
         direction: 'WAIT',
         confidence: 0,
-        verdictTitle: isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত' : `চার্ট পাওয়া যায়নি / ${appName}`,
+        verdictTitle: isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত' : '⏸ চার্ট মেলেনি (WAIT)',
         suggestedExpiry: 'N/A',
         reasoning: [
-          chartDetection.diagnostic?.failureReason || (isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে — অনুগ্রহ করে এটি মিনিমাইজ করে ব্রোকার চার্ট (Quotex/Binomo) ওপেন করুন।' : 'স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট সনাক্ত হয়নি।'),
-          isTradePulse ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে Quotex/Binomo চার্ট ফুলস্ক্রিনে আনলে লাইভ সিগন্যাল শুরু হবে।' : 'ট্রেডিং চার্ট ছাড়া সিগন্যাল সম্পূর্ণ ব্লক (0% কনফিডেন্স)।',
-          'উপরে ফ্লোটিং HUD চালু রাখুন যাতে ব্রোকারের ওপরেই লাইভ সিগন্যাল দেখতে পান।',
+          chartDetection.diagnostic?.failureReason || (isTradePulse ? '⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে — অনুগ্রহ করে এটি মিনিমাইজ করে ব্রোকার চার্ট (Quotex/Binomo) ওপেন করুন।' : 'স্ক্রিনে কোনো সক্রিয় ক্যান্ডেলস্টিক চার্ট মেলেনি।'),
+          isTradePulse ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে Quotex/Binomo চার্ট ফুলস্ক্রিনে আনলে লাইভ সিগন্যাল শুরু হবে।' : 'ক্যান্ডেল চার্ট দৃশ্যমান রাখুন অথবা ফ্লোটিং বাবলটি চার্টের বাইরে একপাশে ড্র্যাগ করুন।',
+          'চার্ট শনাক্ত না হওয়া পর্যন্ত এআই কোনো অনুমানভিত্তিক সিগন্যাল দেয় না।',
         ],
         visionData: {
           screenCategory: isTradePulse ? 'SYSTEM_SETTINGS' : 'BROWSER',
@@ -1613,14 +1636,20 @@ export class LiveScreenService {
           : 'ট্রেডিং চার্ট স্ক্রিনে আনলে তাৎক্ষণিক সিগন্যাল চালু হবে।',
       };
 
+      const displayTitle = isTradePulse
+        ? '⚠️ ট্রেডপাল্স মিনিমাইজ করুন'
+        : '⏸ চার্ট মেলেনি (WAIT)';
+
+      const displayReason = isTradePulse
+        ? 'ব্রোকার অ্যাপ (Quotex/Binomo) ওপেন করুন'
+        : 'ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান';
+
       this.updateFloatingOverlayHUD({
         direction: 'WAIT',
         confidence: 0,
         durationText: isTradePulse ? 'মিনিমাইজ' : 'চার্ট খুঁজছে',
-        verdictTitle: isTradePulse ? '⚠️ ট্রেডপাল্স মিনিমাইজ করুন' : `স্ক্রিন: ${appName.slice(0, 16)}`,
-        reasonText: isTradePulse
-          ? 'ব্রোকার অ্যাপ (Quotex/Binomo) ওপেন করুন'
-          : result.visionData?.screenSummaryBn?.slice(0, 36) || 'এআই চার্ট অনুসন্ধান করছে...',
+        verdictTitle: displayTitle,
+        reasonText: displayReason,
         latencyMs,
         frameCount: this.latestFrameCount,
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,

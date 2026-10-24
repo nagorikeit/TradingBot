@@ -61,20 +61,32 @@ The user is sharing their screen. The user may switch to ANY screen or applicati
 
 YOUR CORE DUTIES:
 1. UNIVERSAL SCREEN & APP IDENTIFICATION & SELF-CAPTURE PREVENTION:
-   - Identify what application, website, or environment is currently on screen (e.g. "TradePulse App", "Quotex Trading", "Binomo", "Pocket Option", "TradingView", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Windows Desktop", "Excel").
-   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the TradePulse app itself (showing TradePulse header, 'Live Screen Analysis', 'TradePulse', 'ফ্লোটিং HUD', 'ভয়েস অন', 'সার্ভার সক্রিয়', or TradePulse buttons):
+   - Identify what application, website, or environment is currently on screen (e.g. "Quotex Trading Terminal", "Binomo", "Pocket Option", "TradingView", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Windows Desktop", "Excel").
+   
+   - CRITICAL WEB BROKER IN MOBILE/DESKTOP BROWSER (MANDATORY RULE):
+     Many traders access broker web apps (Quotex mirrors like market-qx.info, qxbroker.com, qx.trade, Pocket Option, Binomo, Deriv, TradingView) inside mobile or desktop browsers (Brave, Chrome, Safari, Firefox).
+     Even though a browser URL bar (e.g. 'market-qx.info/en/trade', Brave shield/lion icon) or browser navigation bar is visible at the top/bottom:
+     * If the screen displays candlestick bars (green/red candles), an asset name (e.g. 'Cosmos', 'EUR/USD', 'OTC'), payout % (e.g. '89%'), timer/investment, or Buy/Sell buttons:
+       - You MUST set "screenCategory": "TRADING_CHART" (NEVER classify as BROWSER or OTHER!).
+       - Set "detectedAppName": "Quotex Web Trading Terminal" (or the respective broker name).
+       - Set "isClearTradingChart": true.
+       - Extract asset symbol (e.g. "ATOM/USD (Cosmos)"), payout percentage, timeframe, and candlestick direction!
+     * FLOATING HUD OVERLAY HANDLING: A floating TradePulse HUD overlay widget (showing "[⏹ স্ক্যান স্টপ]" or "[🔍 স্ক্যান শুরু করুন]", "TradePulse", etc.) is often positioned on top of the screen to give the trader signals while they trade. You MUST look beneath/around the floating widget at the underlying candlestick chart. Do NOT let the floating widget fool you into thinking the screen is a non-trading screen!
+
+   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the FULL TradePulse app itself (showing TradePulse header, 'Live Screen Analysis', full TradePulse settings page, or inspection history without any broker chart):
      * Set "screenCategory": "OTHER"
      * Set "detectedAppName": "TradePulse App (Self-Capture)"
-     * Set "isClearTradingChart": false (MANDATORY: Never classify TradePulse app UI as a trading chart!)
+     * Set "isClearTradingChart": false (Never classify TradePulse app UI as a trading chart!)
      * Set "screenSummaryBn": "ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।"
      * Set "lastCandleDirection": "UNCERTAIN"
      * Set "candlestickPattern": "ট্রেডপাল্স নিজস্ব ইন্টারফেস"
      * Set "confidenceScore": 0.0
+
    - Otherwise, classify into one of: 'TRADING_CHART' | 'DOCUMENT' | 'BROWSER' | 'CODE_IDE' | 'CHAT_MESSENGER' | 'VIDEO_STREAM' | 'DESKTOP' | 'SYSTEM_SETTINGS' | 'OTHER'.
    - Extract the active screen/window title or page headline.
 
 2. OCR & TEXT EXTRACTION:
-   - Read the prominent visible text, code snippets, numbers, labels, tabs, or document paragraphs on the screen.
+   - Read prominent visible text, asset names, numbers, payout %, labels, tabs, or document paragraphs on the screen.
    - Return 3 to 10 key extracted text items in "extractedText" array.
    - Set "isReadable": true if any text/UI elements are readable.
 
@@ -82,11 +94,11 @@ YOUR CORE DUTIES:
    - Provide "screenSummaryBn": A clear, informative 1-2 sentence explanation in Bengali explaining what screen the user is currently viewing, what app is open, and what content was read.
    - Provide "screenSummaryEn": The same in English.
 
-4. TRADING CHART ANALYSIS (IF and ONLY IF screenCategory === 'TRADING_CHART'):
-   - If real broker candlesticks (green/red candles) or broker trading terminals (Quotex, Binomo, Pocket Option, TradingView, etc.) are visible:
+4. TRADING CHART ANALYSIS (WHEN screenCategory === 'TRADING_CHART'):
+   - When real broker candlesticks (green/red candles) or broker trading terminals (Quotex, Binomo, Pocket Option, TradingView, etc.) are visible:
      * Set "isClearTradingChart": true.
-     * Identify symbol (e.g. AUD/CHF, EUR/USD, BTC/USDT), timeframe (1m, 5m), trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT), last candle direction (BULLISH, BEARISH, DOJI), and candlestick pattern.
-   - If the screen is NOT a trading chart (e.g. TradePulse itself, browser, code, YouTube, chat, desktop, document):
+     * Identify symbol (e.g. Cosmos / ATOM, AUD/CHF, EUR/USD, BTC/USDT), timeframe (e.g. 1m, 5s), trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT), last candle direction (BULLISH, BEARISH, DOJI), and candlestick pattern.
+   - If the screen is NOT a trading chart (e.g. TradePulse itself, general web articles, code, YouTube, chat, desktop, document):
      * Set "isClearTradingChart": false.
      * Set "lastCandleDirection": "UNCERTAIN".
      * Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন".
@@ -264,7 +276,30 @@ YOUR CORE DUTIES:
       let isChart = false;
       let detectedSymbol = 'AUD/CHF';
 
-      if (bufferStr.includes('tradepulse') || bufferStr.includes('ট্রেডপাল্স') || bufferStr.includes('live screen analysis') || bufferStr.includes('inspection interval')) {
+      const isSelfCapture =
+        (bufferStr.includes('live screen analysis') || bufferStr.includes('inspection interval')) &&
+        !bufferStr.includes('market-qx') &&
+        !bufferStr.includes('qx.info') &&
+        !bufferStr.includes('trade') &&
+        !bufferStr.includes('cosmos');
+
+      const isBrokerTerminal =
+        bufferStr.includes('quotex') ||
+        bufferStr.includes('market-qx') ||
+        bufferStr.includes('qx.info') ||
+        bufferStr.includes('qxbroker') ||
+        bufferStr.includes('qx.trade') ||
+        bufferStr.includes('binomo') ||
+        bufferStr.includes('pocket') ||
+        bufferStr.includes('tradingview') ||
+        bufferStr.includes('deriv') ||
+        bufferStr.includes('olymptrade') ||
+        bufferStr.includes('cosmos') ||
+        bufferStr.includes('payout') ||
+        (bufferStr.includes('deposit') && bufferStr.includes('trade')) ||
+        (bufferStr.includes('timer') && bufferStr.includes('investment'));
+
+      if (isSelfCapture) {
         detectedAppName = 'TradePulse App (Self-Capture)';
         screenCategory = 'OTHER';
         isChart = false;
@@ -286,26 +321,17 @@ YOUR CORE DUTIES:
           confidenceScore: 0.0,
           containsSensitivePrivateData: false,
         };
-      } else if (
-        bufferStr.includes('quotex') ||
-        bufferStr.includes('market-qx') ||
-        bufferStr.includes('qx.info') ||
-        bufferStr.includes('qxbroker') ||
-        bufferStr.includes('binomo') ||
-        bufferStr.includes('pocket') ||
-        bufferStr.includes('tradingview') ||
-        bufferStr.includes('candle') ||
-        bufferStr.includes('eur/usd') ||
-        bufferStr.includes('cosmos')
-      ) {
-        detectedAppName = (bufferStr.includes('quotex') || bufferStr.includes('market-qx') || bufferStr.includes('qx.info'))
-          ? 'Quotex Trading Terminal'
+      } else if (isBrokerTerminal) {
+        detectedAppName = (bufferStr.includes('quotex') || bufferStr.includes('market-qx') || bufferStr.includes('qx.info') || bufferStr.includes('cosmos'))
+          ? 'Quotex Web Trading Terminal'
           : bufferStr.includes('binomo')
           ? 'Binomo Terminal'
+          : bufferStr.includes('pocket')
+          ? 'Pocket Option'
           : 'TradingView / Broker Chart';
         screenCategory = 'TRADING_CHART';
         isChart = true;
-        if (bufferStr.includes('cosmos')) detectedSymbol = 'ATOM/USD (Cosmos)';
+        if (bufferStr.includes('cosmos')) detectedSymbol = 'ATOM/USD (Cosmos 89%)';
       } else if (bufferStr.includes('youtube') || bufferStr.includes('video') || bufferStr.includes('watch')) {
         detectedAppName = 'YouTube ভিডিও প্লেয়ার';
         screenCategory = 'VIDEO_STREAM';
@@ -315,8 +341,8 @@ YOUR CORE DUTIES:
       } else if (bufferStr.includes('whatsapp') || bufferStr.includes('telegram') || bufferStr.includes('chat') || bufferStr.includes('message')) {
         detectedAppName = 'মেসেজিং অ্যাপ (WhatsApp / Telegram)';
         screenCategory = 'CHAT_MESSENGER';
-      } else if (bufferStr.includes('chrome') || bufferStr.includes('google') || bufferStr.includes('http') || bufferStr.includes('html')) {
-        detectedAppName = 'গুগল ক্রোম ব্রাউজার';
+      } else if (bufferStr.includes('chrome') || bufferStr.includes('google') || bufferStr.includes('brave') || bufferStr.includes('http') || bufferStr.includes('html')) {
+        detectedAppName = 'ওয়েব ব্রাউজার';
         screenCategory = 'BROWSER';
       }
 

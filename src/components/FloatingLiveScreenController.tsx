@@ -307,12 +307,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 </div>
               ) : isReadingOtherScreen ? (
                 <div>
-                  <div className="text-xs font-bold text-sky-300 flex items-center gap-1 truncate">
-                    <Eye className="w-3 h-3 text-sky-400 shrink-0" />
-                    <span className="truncate">{result?.visionData?.detectedAppName || 'অন্য স্ক্রিন'}</span>
+                  <div className="text-xs font-bold text-amber-300 flex items-center gap-1 truncate">
+                    <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">⏸ চার্ট মেলেনি (WAIT)</span>
                   </div>
                   <div className="text-[10px] text-slate-300 font-mono truncate">
-                    {result?.visionData?.screenSummaryBn || 'AI স্ক্রিন পড়ছে'}
+                    ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান
                   </div>
                 </div>
               ) : (
