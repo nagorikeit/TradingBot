@@ -395,13 +395,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         event.put("height", latestFrameHeight);
 
         notifyListeners("onFrameCaptured", event);
+        // Clear cached frame once emitted so next scan must capture a fresh frame
+        latestFrameBase64 = null;
     }
 
     private void captureAndEmitLatestFrame() {
-        if (latestFrameBase64 != null) {
+        boolean isFresh = latestFrameBase64 != null && (System.currentTimeMillis() - latestFrameTimestamp) < 2500;
+        if (isFresh) {
             emitCachedFrame();
             return;
         }
+        latestFrameBase64 = null;
         isScanRequested = true;
     }
 
@@ -411,7 +415,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    if (latestFrameBase64 != null) {
+                    boolean isFresh = latestFrameBase64 != null && (System.currentTimeMillis() - latestFrameTimestamp) < 2500;
+                    if (isFresh) {
                         sequenceCounter++;
                         JSObject res = new JSObject();
                         res.put("success", true);
@@ -421,12 +426,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
 
+                        // Clear cached frame so next call captures fresh frame
+                        latestFrameBase64 = null;
+
                         notifyListeners("onFrameCaptured", res);
 
                         if (call != null) {
                             call.resolve(res);
                         }
                     } else {
+                        latestFrameBase64 = null;
                         isScanRequested = true;
                         pendingCaptureCall = call;
                         captureHandler.postDelayed(new Runnable() {
@@ -443,6 +452,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                         res.put("width", latestFrameWidth);
                                         res.put("height", latestFrameHeight);
 
+                                        latestFrameBase64 = null;
                                         notifyListeners("onFrameCaptured", res);
                                         pendingCaptureCall.resolve(res);
                                     } else {
@@ -653,13 +663,33 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 isScanningActive = !isScanningActive;
                 updateScanButtonVisual(scanToggleBtn, isScanningActive);
 
+                TextView dirView = overlayView != null ? (TextView) overlayView.findViewWithTag("directionText") : null;
+                TextView detView = overlayView != null ? (TextView) overlayView.findViewWithTag("detailsText") : null;
+
+                if (isScanningActive) {
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("🔍 স্ক্যান করা হচ্ছে...");
+                    }
+                    if (detView != null) {
+                        detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
+                    }
+                    captureAndEmitLatestFrame();
+                } else {
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("⚡ প্রস্তুত (Ready)");
+                    }
+                    if (detView != null) {
+                        detView.setText("স্ক্যান করতে বাটনে চাপুন");
+                    }
+                    // Invalidate cached frame so old screen data is destroyed
+                    latestFrameBase64 = null;
+                }
+
                 JSObject data = new JSObject();
                 data.put("isScanning", isScanningActive);
                 notifyListeners("onOverlayScanToggle", data);
-
-                if (isScanningActive) {
-                    captureAndEmitLatestFrame();
-                }
             }
         });
         buttonRow.addView(scanToggleBtn);
@@ -760,6 +790,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 dirView.setText("⚠️ " + errorReason);
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
+            } else if (!isScanningActive) {
+                dirView.setTextColor(0xFF38BDF8);
+                dirView.setText("⚡ প্রস্তুত (Ready)");
+                detView.setVisibility(View.VISIBLE);
+                detView.setText("স্ক্যান করতে বাটনে চাপুন");
             } else if ("ANALYZING".equalsIgnoreCase(aiState)) {
                 dirView.setTextColor(0xFF38BDF8);
                 dirView.setText("🔍 স্ক্যান করা হচ্ছে...");
@@ -770,12 +805,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 if (verdictTitle != null && !verdictTitle.isEmpty()) {
                     dirView.setText(verdictTitle);
                 } else {
-                    dirView.setText("⏸ চার্ট পাওয়া যায়নি");
+                    dirView.setText("⏸ চার্ট মেলেনি (WAIT)");
                 }
                 detView.setVisibility(View.VISIBLE);
                 String sub = (reasonText != null && !reasonText.trim().isEmpty())
                         ? reasonText
-                        : "স্ক্যান করতে স্ক্যান বাটনে চাপুন";
+                        : "ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান";
                 if (sub.length() > 36) sub = sub.substring(0, 34) + "..";
                 detView.setText(sub);
             } else {

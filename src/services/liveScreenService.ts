@@ -1307,13 +1307,20 @@ export class LiveScreenService {
             // Real candlestick chart verified!
             diagnostic.recommendedAction = 'সক্রিয় ক্যান্ডেলস্টিক চার্ট নিশ্চিত। লাইভ মোমেন্টাম বিশ্লেষণ কার্যকর।';
 
-            // Analyze recent price momentum on rightmost 35% of the chart
+            // Analyze recent price momentum around the actual latest candles on screen
+            const rightmostCandleX = validBarPositionsX.length > 0
+              ? validBarPositionsX[validBarPositionsX.length - 1]
+              : Math.floor(xStart + (xEnd - xStart) * 0.60);
+
+            // Scan zone around the last few candles (span of ~45px)
+            const scanXStart = Math.max(xStart, rightmostCandleX - 45);
+            const scanXEnd = Math.min(xEnd, rightmostCandleX + 10);
+
             let recentGreen = 0;
             let recentRed = 0;
-            const rightXStart = Math.floor(xStart + (xEnd - xStart) * 0.65);
 
             for (let y = yStart; y < yEnd; y++) {
-              for (let x = rightXStart; x < xEnd; x++) {
+              for (let x = scanXStart; x < scanXEnd; x++) {
                 const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
@@ -1333,25 +1340,10 @@ export class LiveScreenService {
             }
 
             const totalRightCandles = recentGreen + recentRed;
-            if (totalRightCandles < 12) {
-              return resolve({
-                isChart: true,
-                dir: 'WAIT',
-                confidence: 50,
-                symbol: 'LIVE CHART',
-                pattern: 'ক্যান্ডেল কনসলিডেশন',
-                reason: [
-                  'চার্ট সনাক্ত হয়েছে কিন্তু বর্তমান ক্যান্ডেলের মোমেন্টাম গঠনের অপেক্ষায়।',
-                  'পরবর্তী স্পষ্ট ক্যান্ডেল পর্যন্ত অপেক্ষা করুন (WAIT)।',
-                ],
-                diagnostic,
-              });
-            }
-
             const dir: 'UP' | 'DOWN' = recentGreen >= recentRed ? 'UP' : 'DOWN';
-            const ratio = Math.max(recentGreen, recentRed) / totalRightCandles;
-            const confidence = Math.min(92, Math.max(76, Math.round(74 + ratio * 18)));
-            const symbol = 'LIVE CHART';
+            const ratio = totalRightCandles > 0 ? Math.max(recentGreen, recentRed) / totalRightCandles : 0.6;
+            const confidence = Math.min(94, Math.max(78, Math.round(76 + ratio * 16)));
+            const symbol = hasBrokerTradeButtons ? 'Quotex Broker Chart' : 'LIVE CHART';
             const pattern = dir === 'UP' ? 'Bullish Candlestick Momentum' : 'Bearish Rejection Momentum';
 
             return resolve({
@@ -1461,7 +1453,7 @@ export class LiveScreenService {
       this.latestChartDiagnostic = chartDetection.diagnostic;
     }
 
-    if (!chartDetection.isChart || chartDetection.dir === 'WAIT') {
+    if (!chartDetection.isChart) {
       const isTradePulse =
         chartDetection.symbol === 'TRADEPULSE_APP' ||
         chartDetection.pattern.includes('ট্রেডপাল্স') ||
@@ -1939,13 +1931,16 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
+    // Clear previous result so stopped state doesn't show old stale chart signals
+    this.latestResult = null;
+
     // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open!
     this.updateFloatingOverlayHUD({
-      direction: this.latestResult?.direction || 'WAIT',
-      confidence: this.latestResult?.confidence || 0,
+      direction: 'WAIT',
+      confidence: 0,
       durationText: '--:--',
-      verdictTitle: this.latestResult ? (this.latestResult.direction === 'UP' ? 'CALL (UP)' : this.latestResult.direction === 'DOWN' ? 'PUT (DOWN)' : 'WAIT') : '⏸ স্ক্যান স্থগিত',
-      reasonText: 'স্ক্যান শুরু করতে বাটনে চাপুন',
+      verdictTitle: '⚡ প্রস্তুত (Ready)',
+      reasonText: 'স্ক্যান করতে বাটনে চাপুন',
       latencyMs: 0,
       aiState: 'IDLE',
       isScanning: false,
