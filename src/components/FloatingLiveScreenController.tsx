@@ -29,6 +29,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
   const [result, setResult] = useState<ScreenAnalysisFinalResult | null>(liveScreenService.getLatestResult());
   const [isBusy, setIsBusy] = useState<boolean>(liveScreenService.isBusy());
+  const [isScanning, setIsScanning] = useState<boolean>(liveScreenService.isScanning());
   const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
   const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
@@ -51,6 +52,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       setStreamState(state);
       setResult(liveScreenService.getLatestResult());
       setIsBusy(liveScreenService.isBusy());
+      setIsScanning(liveScreenService.isScanning());
       setErrorMessage(liveScreenService.getErrorMessage());
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
@@ -81,15 +83,19 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     return null;
   }
 
-  const handleScanClick = async (e: React.MouseEvent) => {
+  // Single button: toggles scanning without disconnecting screenshare!
+  const handleToggleScan = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isBusy) return;
-    await liveScreenService.triggerSingleScan();
+    if (isScanning) {
+      liveScreenService.stopScanning();
+    } else {
+      liveScreenService.startScanning();
+    }
   };
 
-  const handleStopClick = async (e: React.MouseEvent) => {
+  const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
-    await liveScreenService.disconnect('ফ্লোটিং বাবল থেকে স্ক্রিন শেয়ার স্টপ করা হয়েছে');
+    liveScreenService.disconnect('ফ্লোটিং বাবল বন্ধ করা হয়েছে');
   };
 
   const handleToggleVoice = (e: React.MouseEvent) => {
@@ -347,45 +353,46 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             >
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/60 rounded-lg transition-colors"
+              title="স্ক্রিন শেয়ার ডিসকানেক্ট ও বাবল বন্ধ করুন"
+            >
+              <span className="text-xs font-bold leading-none">✕</span>
+            </button>
           </div>
         </div>
 
-        {/* BOTTOM ACTION BUTTONS: [🔍 স্ক্যান] and [⏹ স্টপ] */}
-        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
-          {/* 1. SCAN BUTTON */}
+        {/* BOTTOM ACTION: SINGLE [🔍 স্ক্যান শুরু করুন] / [⏹ স্ক্যান স্টপ] TOGGLE BUTTON */}
+        <div className="pt-1 border-t border-slate-800/80">
           <button
             type="button"
-            onClick={handleScanClick}
-            disabled={isBusy || isConnecting}
-            className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 ${
-              isBusy
-                ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
-                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/40 shadow-emerald-950/50 hover:shadow-emerald-900/50'
+            onClick={handleToggleScan}
+            disabled={isConnecting}
+            className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 ${
+              isScanning
+                ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border border-rose-400/50 shadow-rose-950/50'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/50 shadow-emerald-950/50'
             }`}
-            title="বর্তমান স্ক্রিন একবার স্ক্যান করে তাৎক্ষণিক ফলাফল দেখাবে"
+            title={isScanning ? 'স্ক্যান থামান (স্ক্রিন শেয়ার চালু থাকবে)' : 'লাইভ স্ক্যান শুরু করুন'}
           >
             {isBusy ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span>স্ক্যান হচ্ছে...</span>
               </>
+            ) : isScanning ? (
+              <>
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>⏹ স্ক্যান স্টপ</span>
+              </>
             ) : (
               <>
-                <Camera className="w-3.5 h-3.5 text-emerald-200" />
-                <span>স্ক্যান</span>
+                <Camera className="w-3.5 h-3.5 text-emerald-100" />
+                <span>🔍 স্ক্যান শুরু করুন</span>
               </>
             )}
-          </button>
-
-          {/* 2. STOP BUTTON */}
-          <button
-            type="button"
-            onClick={handleStopClick}
-            className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border border-rose-400/40 shadow-rose-950/50 hover:shadow-rose-900/50"
-            title="স্ক্রিন শেয়ার ডিসকানেক্ট ও বাবল বন্ধ করুন"
-          >
-            <Square className="w-3.5 h-3.5 fill-current" />
-            <span>স্টপ</span>
           </button>
         </div>
       </div>

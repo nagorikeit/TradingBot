@@ -811,13 +811,17 @@ export class LiveScreenService {
         this.expirySecondsLeft = 0;
         this.latestResult = null;
 
-        // Register overlay button click listeners
+        // Register overlay toggle button listener
         try {
-          TradePulseNativeScreen.addListener('onOverlayScanClicked', () => {
-            this.triggerSingleScan();
+          TradePulseNativeScreen.addListener('onOverlayScanToggle', (data: { isScanning: boolean }) => {
+            if (data && data.isScanning) {
+              this.startScanning();
+            } else {
+              this.stopScanning();
+            }
           });
           TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
-            this.disconnect('ফ্লোটিং বাবল থেকে স্টপ করা হয়েছে');
+            this.disconnect('ফ্লোটিং বাবল বন্ধ করা হয়েছে');
           });
         } catch (e) {
           console.warn('Native overlay listener attachment error:', e);
@@ -938,19 +942,24 @@ export class LiveScreenService {
     this.latestResolution = `${frame.width}x${frame.height}`;
     this.captureState = 'RUNNING';
 
-    // Rule 7: Discard old frame sequence or concurrent ongoing frame
-    if (frame.sequenceId <= this.latestProcessedSequenceId || this.isProcessingFrame) {
+    // Discard only if an ongoing frame is already processing
+    if (this.isProcessingFrame) {
       return;
     }
+    await this.processNativeFrameData(frame);
+  }
 
-    this.latestProcessedSequenceId = frame.sequenceId;
+  public async processNativeFrameData(frame: NativeCaptureFrameEvent): Promise<void> {
+    this.latestFrameCount = frame.sequenceId;
+    this.latestFrameTimestamp = frame.timestamp;
+    this.latestResolution = `${frame.width}x${frame.height}`;
+    this.captureState = 'RUNNING';
     this.isProcessingFrame = true;
     this.aiState = 'ANALYZING';
     this.notify();
 
     const startTime = Date.now();
     const controller = new AbortController();
-    // 15-second timeout guard for reliable mobile network transport
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
@@ -979,7 +988,6 @@ export class LiveScreenService {
           this.aiState = 'READY';
           this.processResult(result, latencyMs);
         } else {
-          // Graceful fallback to on-device engine
           const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
           this.aiState = 'READY';
           this.lastErrorReason = null;
@@ -987,7 +995,6 @@ export class LiveScreenService {
           this.processResult(localResult, latencyMs);
         }
       } else {
-        // Server unreachable or non-200: seamless fallback to on-device analyzer
         const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
         this.aiState = 'READY';
         this.lastErrorReason = null;
@@ -998,8 +1005,6 @@ export class LiveScreenService {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
-
-      // On-Device Vision Fallback: Keeps screen capture, floating HUD, and signals uninterrupted
       const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
       this.aiState = 'READY';
       this.lastErrorReason = null;
@@ -1847,51 +1852,89 @@ export class LiveScreenService {
     this.notify();
   }
 
+  private isScanningActive: boolean = false;
+  private scanTimer: any = null;
+
+  public isScanning(): boolean {
+    return this.isScanningActive;
+  }
+
   /**
-   * Triggers exactly ONE scan on demand.
-   * Analyzes the active screen once, updates the Floating HUD and signals, and halts without looping.
+   * Starts active scanning on the connected screen.
+   * Performs immediate frame analysis and runs recurring analysis every 3.5s.
+   * Does NOT disconnect.
    */
-  public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+  public async startScanning(): Promise<void> {
     if (this.state !== 'STREAMING') {
-      const connected = await this.connectScreen();
-      if (!connected) return null;
+      const ok = await this.connectScreen();
+      if (!ok) return;
     }
 
-    if (this.isProcessingFrame) {
-      return this.latestResult;
-    }
-
-    this.isProcessingFrame = true;
+    this.isScanningActive = true;
     this.aiState = 'ANALYZING';
     this.notify();
 
-    // Immediately update Floating HUD to scanning state
+    // Immediately update HUD to scanning feedback
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,
       durationText: '...',
       verdictTitle: '🔍 স্ক্যান করা হচ্ছে...',
-      reasonText: 'রিয়েল-টাইম ফ্রেম বিশ্লেষণ চলছে',
+      reasonText: 'স্ক্রিন ফ্রেম রিয়েল-টাইম বিশ্লেষণ চলছে',
       latencyMs: 0,
       aiState: 'ANALYZING',
+      isScanning: true,
     });
 
-    try {
-      if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
-        await TradePulseNativeScreen.captureSingleFrame().catch(() => {});
-      } else if (this.stream && this.videoEl && this.canvasEl) {
-        await this.captureAndAnalyzeCurrentFrame();
-      } else if (this.isNativeCaptureActive) {
-        await TradePulseNativeScreen.captureSingleFrame().catch(() => {});
+    // Run first immediate scan
+    await this.captureAndAnalyzeCurrentFrame();
+
+    // Recurring scan while isScanningActive is true
+    if (this.scanTimer) clearInterval(this.scanTimer);
+    this.scanTimer = setInterval(() => {
+      if (this.isScanningActive && this.state === 'STREAMING') {
+        this.captureAndAnalyzeCurrentFrame();
       }
-    } catch (err: any) {
-      console.warn('Single scan error:', err);
-      this.notifyOverlayError('স্ক্যান সম্পন্ন করা যায়নি');
-    } finally {
-      this.isProcessingFrame = false;
-      this.notify();
+    }, this.scanIntervalMs);
+  }
+
+  /**
+   * Stops active scanning.
+   * Halts analysis loops, but keeps screenshare connected and HUD active!
+   */
+  public stopScanning(): void {
+    this.isScanningActive = false;
+    this.aiState = 'IDLE';
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = null;
     }
 
+    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open!
+    this.updateFloatingOverlayHUD({
+      direction: this.latestResult?.direction || 'WAIT',
+      confidence: this.latestResult?.confidence || 0,
+      durationText: '--:--',
+      verdictTitle: this.latestResult ? (this.latestResult.direction === 'UP' ? 'CALL (UP)' : this.latestResult.direction === 'DOWN' ? 'PUT (DOWN)' : 'WAIT') : '⏸ স্ক্যান স্থগিত',
+      reasonText: 'স্ক্যান শুরু করতে বাটনে চাপুন',
+      latencyMs: 0,
+      aiState: 'IDLE',
+      isScanning: false,
+    });
+
+    this.notify();
+  }
+
+  public toggleScanning(): void {
+    if (this.isScanningActive) {
+      this.stopScanning();
+    } else {
+      this.startScanning();
+    }
+  }
+
+  public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+    await this.captureAndAnalyzeCurrentFrame();
     return this.latestResult;
   }
 
@@ -1906,7 +1949,29 @@ export class LiveScreenService {
    * Grabs high-fidelity frame snapshot and calls backend Vision API
    */
   public async captureAndAnalyzeCurrentFrame(): Promise<void> {
-    if (this.isProcessingFrame || !this.videoEl || !this.canvasEl || !this.stream) return;
+    if (this.isProcessingFrame) return;
+
+    // 1. Android Native capture via MediaProjection Surface
+    if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
+      try {
+        const frameRes = await TradePulseNativeScreen.captureSingleFrame();
+        if (frameRes && frameRes.imageBase64) {
+          await this.processNativeFrameData({
+            imageBase64: frameRes.imageBase64,
+            timestamp: frameRes.timestamp || Date.now(),
+            sequenceId: frameRes.sequenceId || Date.now(),
+            width: frameRes.width || 720,
+            height: frameRes.height || 1280,
+          });
+        }
+      } catch (err) {
+        console.warn('Native capture frame error:', err);
+      }
+      return;
+    }
+
+    // 2. Browser getDisplayMedia capture
+    if (!this.videoEl || !this.canvasEl || !this.stream) return;
 
     const video = this.videoEl;
     if (video.videoWidth === 0 || video.videoHeight === 0) return;

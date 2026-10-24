@@ -283,13 +283,16 @@ export const LiveScreenAnalyzer: React.FC = () => {
                   <span>Pause</span>
                 </button>
                 <button
-                  onClick={() => liveScreenService.triggerSingleScan()}
-                  disabled={isBusy}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 active:scale-95"
-                  title="বর্তমান স্ক্রিন একবার স্ক্যান করে তাৎক্ষণিক ফলাফল দেখাবে"
+                  onClick={() => liveScreenService.toggleScanning()}
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                    liveScreenService.isScanning()
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                  }`}
+                  title={liveScreenService.isScanning() ? 'স্ক্যান থামান (ডিসকানেক্ট হবে না)' : 'লাইভ স্ক্যান শুরু করুন'}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-                  <span>{isBusy ? 'স্ক্যান হচ্ছে...' : '🔍 স্ক্যান করুন (Scan)'}</span>
+                  <span>{liveScreenService.isScanning() ? '⏹ স্ক্যান স্টপ' : '🔍 স্ক্যান শুরু করুন'}</span>
                 </button>
                 <button
                   onClick={handleDisconnect}

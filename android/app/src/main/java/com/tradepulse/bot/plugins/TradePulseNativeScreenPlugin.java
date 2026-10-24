@@ -59,6 +59,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private int captureIntervalMs = 3000; // 3 seconds default
     private int sequenceCounter = 0;
 
+    // Real-time Frame Cache & Scan Toggle State
+    private volatile String latestFrameBase64 = null;
+    private volatile int latestFrameWidth = 720;
+    private volatile int latestFrameHeight = 1280;
+    private volatile long latestFrameTimestamp = 0;
+    private volatile boolean isScanningActive = false;
+    private volatile boolean isScanRequested = false;
+    private PluginCall pendingCaptureCall = null;
+
     // Floating overlay window state
     private WindowManager windowManager;
     private View overlayView;
@@ -298,6 +307,71 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         int density = metrics.densityDpi > 0 ? metrics.densityDpi : DisplayMetrics.DENSITY_DEFAULT;
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+        imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+            @Override
+            public void onImageAvailable(ImageReader reader) {
+                Image image = null;
+                try {
+                    image = reader.acquireLatestImage();
+                    if (image == null) return;
+
+                    Image.Plane[] planes = image.getPlanes();
+                    ByteBuffer buffer = planes[0].getBuffer();
+                    int pixelStride = planes[0].getPixelStride();
+                    int rowStride = planes[0].getRowStride();
+                    int w = image.getWidth();
+                    int h = image.getHeight();
+                    int rowPadding = rowStride - pixelStride * w;
+
+                    Bitmap bitmap = Bitmap.createBitmap(
+                            w + rowPadding / pixelStride,
+                            h,
+                            Bitmap.Config.ARGB_8888
+                    );
+                    bitmap.copyPixelsFromBuffer(buffer);
+
+                    Bitmap cropped = Bitmap.createBitmap(bitmap, 0, 0, w, h);
+                    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                    cropped.compress(Bitmap.CompressFormat.JPEG, 75, byteArrayOutputStream);
+                    byte[] byteArray = byteArrayOutputStream.toByteArray();
+
+                    latestFrameBase64 = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP);
+                    latestFrameWidth = w;
+                    latestFrameHeight = h;
+                    latestFrameTimestamp = System.currentTimeMillis();
+
+                    bitmap.recycle();
+                    cropped.recycle();
+
+                    // If a pending captureSingleFrame call was waiting for a fresh frame
+                    if (pendingCaptureCall != null) {
+                        sequenceCounter++;
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        res.put("imageBase64", latestFrameBase64);
+                        res.put("timestamp", latestFrameTimestamp);
+                        res.put("sequenceId", sequenceCounter);
+                        res.put("width", latestFrameWidth);
+                        res.put("height", latestFrameHeight);
+                        pendingCaptureCall.resolve(res);
+                        pendingCaptureCall = null;
+                    }
+
+                    // If a scan was requested
+                    if (isScanRequested) {
+                        isScanRequested = false;
+                        emitCachedFrame();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    if (image != null) {
+                        image.close();
+                    }
+                }
+            }
+        }, captureHandler);
+
         virtualDisplay = mediaProjection.createVirtualDisplay(
                 "TradePulseLiveCapture",
                 width,
@@ -310,75 +384,25 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         );
     }
 
-    private void startFrameCaptureLoop() {
-        if (captureHandler != null && captureRunnable != null) {
-            captureHandler.removeCallbacks(captureRunnable);
-        }
-        captureRunnable = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    captureAndEmitLatestFrame();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                // Never stop automatically - only stops on explicit stopScreenCapture
-                if (mediaProjection != null && captureHandler != null) {
-                    captureHandler.postDelayed(this, captureIntervalMs);
-                }
-            }
-        };
-        captureHandler.postDelayed(captureRunnable, 1000);
+    private void emitCachedFrame() {
+        if (latestFrameBase64 == null) return;
+        sequenceCounter++;
+        JSObject event = new JSObject();
+        event.put("imageBase64", latestFrameBase64);
+        event.put("timestamp", latestFrameTimestamp > 0 ? latestFrameTimestamp : System.currentTimeMillis());
+        event.put("sequenceId", sequenceCounter);
+        event.put("width", latestFrameWidth);
+        event.put("height", latestFrameHeight);
+
+        notifyListeners("onFrameCaptured", event);
     }
 
     private void captureAndEmitLatestFrame() {
-        if (imageReader == null) return;
-        Image image = null;
-        try {
-            image = imageReader.acquireLatestImage();
-            if (image == null) return;
-
-            Image.Plane[] planes = image.getPlanes();
-            ByteBuffer buffer = planes[0].getBuffer();
-            int pixelStride = planes[0].getPixelStride();
-            int rowStride = planes[0].getRowStride();
-            int width = image.getWidth();
-            int height = image.getHeight();
-            int rowPadding = rowStride - pixelStride * width;
-
-            Bitmap bitmap = Bitmap.createBitmap(
-                    width + rowPadding / pixelStride,
-                    height,
-                    Bitmap.Config.ARGB_8888
-            );
-            bitmap.copyPixelsFromBuffer(buffer);
-
-            // Crop excess row padding
-            Bitmap cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height);
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            cropped.compress(Bitmap.CompressFormat.JPEG, 75, byteArrayOutputStream);
-            byte[] byteArray = byteArrayOutputStream.toByteArray();
-            String base64Image = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP);
-
-            sequenceCounter++;
-            JSObject event = new JSObject();
-            event.put("imageBase64", base64Image);
-            event.put("timestamp", System.currentTimeMillis());
-            event.put("sequenceId", sequenceCounter);
-            event.put("width", width);
-            event.put("height", height);
-
-            notifyListeners("onFrameCaptured", event);
-
-            bitmap.recycle();
-            cropped.recycle();
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            if (image != null) {
-                image.close();
-            }
+        if (latestFrameBase64 != null) {
+            emitCachedFrame();
+            return;
         }
+        isScanRequested = true;
     }
 
     @PluginMethod
@@ -387,11 +411,47 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    captureAndEmitLatestFrame();
-                    if (call != null) {
+                    if (latestFrameBase64 != null) {
+                        sequenceCounter++;
                         JSObject res = new JSObject();
                         res.put("success", true);
-                        call.resolve(res);
+                        res.put("imageBase64", latestFrameBase64);
+                        res.put("timestamp", latestFrameTimestamp > 0 ? latestFrameTimestamp : System.currentTimeMillis());
+                        res.put("sequenceId", sequenceCounter);
+                        res.put("width", latestFrameWidth);
+                        res.put("height", latestFrameHeight);
+
+                        notifyListeners("onFrameCaptured", res);
+
+                        if (call != null) {
+                            call.resolve(res);
+                        }
+                    } else {
+                        isScanRequested = true;
+                        pendingCaptureCall = call;
+                        captureHandler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (pendingCaptureCall != null) {
+                                    if (latestFrameBase64 != null) {
+                                        sequenceCounter++;
+                                        JSObject res = new JSObject();
+                                        res.put("success", true);
+                                        res.put("imageBase64", latestFrameBase64);
+                                        res.put("timestamp", System.currentTimeMillis());
+                                        res.put("sequenceId", sequenceCounter);
+                                        res.put("width", latestFrameWidth);
+                                        res.put("height", latestFrameHeight);
+
+                                        notifyListeners("onFrameCaptured", res);
+                                        pendingCaptureCall.resolve(res);
+                                    } else {
+                                        pendingCaptureCall.reject("No frame available from screen");
+                                    }
+                                    pendingCaptureCall = null;
+                                }
+                            }
+                        }, 400);
                     }
                 } catch (Exception e) {
                     if (call != null) {
@@ -527,6 +587,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         final android.widget.LinearLayout dragContainer = new android.widget.LinearLayout(getContext());
         dragContainer.setOrientation(android.widget.LinearLayout.VERTICAL);
 
+        android.widget.LinearLayout headerRow = new android.widget.LinearLayout(getContext());
+        headerRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView titleView = new TextView(getContext());
         titleView.setId(android.view.View.generateViewId());
         titleView.setTextSize(13);
@@ -534,74 +598,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         titleView.setTypeface(null, android.graphics.Typeface.BOLD);
         titleView.setTag("directionText");
         titleView.setText("⚡ প্রস্তুত (Ready)");
-        dragContainer.addView(titleView);
-
-        TextView detailsView = new TextView(getContext());
-        detailsView.setId(android.view.View.generateViewId());
-        detailsView.setTextSize(11);
-        detailsView.setTextColor(0xFFCBD5E1);
-        detailsView.setTag("detailsText");
-        detailsView.setText("স্ক্যান করতে স্ক্যান বাটনে চাপুন");
-        dragContainer.addView(detailsView);
-
-        layout.addView(dragContainer);
-
-        // Bottom Action Button Row with "Scan" and "Stop" buttons
-        android.widget.LinearLayout buttonRow = new android.widget.LinearLayout(getContext());
-        buttonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        buttonRow.setGravity(Gravity.CENTER_VERTICAL);
-        buttonRow.setPadding(0, 16, 0, 4);
-
-        // 1. Scan Button
-        final TextView scanBtn = new TextView(getContext());
-        scanBtn.setText("🔍 স্ক্যান");
-        scanBtn.setTextSize(12);
-        scanBtn.setTextColor(0xFFFFFFFF);
-        scanBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-        scanBtn.setPadding(26, 12, 26, 12);
-        scanBtn.setClickable(true);
-        scanBtn.setTag("scanBtn");
-
-        android.graphics.drawable.GradientDrawable scanBg = new android.graphics.drawable.GradientDrawable();
-        scanBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        scanBg.setCornerRadius(22f);
-        scanBg.setColor(0xFF059669); // Emerald
-        scanBtn.setBackground(scanBg);
-
-        android.widget.LinearLayout.LayoutParams scanParams = new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        android.widget.LinearLayout.LayoutParams titleParams = new android.widget.LinearLayout.LayoutParams(
+                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f
         );
-        scanParams.setMargins(0, 0, 16, 0);
-        scanBtn.setLayoutParams(scanParams);
+        headerRow.addView(titleView, titleParams);
 
-        scanBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                scanBtn.setText("⏳ স্ক্যান...");
-                notifyListeners("onOverlayScanClicked", new JSObject());
-                captureAndEmitLatestFrame();
-            }
-        });
-        buttonRow.addView(scanBtn);
-
-        // 2. Stop Button
-        final TextView stopBtn = new TextView(getContext());
-        stopBtn.setText("⏹ স্টপ");
-        stopBtn.setTextSize(12);
-        stopBtn.setTextColor(0xFFFFFFFF);
-        stopBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-        stopBtn.setPadding(24, 12, 24, 12);
-        stopBtn.setClickable(true);
-        stopBtn.setTag("stopBtn");
-
-        android.graphics.drawable.GradientDrawable stopBg = new android.graphics.drawable.GradientDrawable();
-        stopBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        stopBg.setCornerRadius(22f);
-        stopBg.setColor(0xFFDC2626); // Rose Red
-        stopBtn.setBackground(stopBg);
-
-        stopBtn.setOnClickListener(new View.OnClickListener() {
+        // Subtle close button to dismiss if user explicitly wants to close
+        TextView closeBtn = new TextView(getContext());
+        closeBtn.setText("✕");
+        closeBtn.setTextSize(13);
+        closeBtn.setTextColor(0xFF94A3B8);
+        closeBtn.setPadding(12, 4, 12, 4);
+        closeBtn.setClickable(true);
+        closeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 notifyListeners("onOverlayStopClicked", new JSObject());
@@ -609,7 +618,51 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 hideFloatingOverlay(null);
             }
         });
-        buttonRow.addView(stopBtn);
+        headerRow.addView(closeBtn);
+        dragContainer.addView(headerRow);
+
+        TextView detailsView = new TextView(getContext());
+        detailsView.setId(android.view.View.generateViewId());
+        detailsView.setTextSize(11);
+        detailsView.setTextColor(0xFFCBD5E1);
+        detailsView.setTag("detailsText");
+        detailsView.setText("স্ক্যান করতে বাটনে চাপুন");
+        dragContainer.addView(detailsView);
+
+        layout.addView(dragContainer);
+
+        // Bottom Action Button Row with ONE SINGLE Scan / Stop Toggle Button
+        android.widget.LinearLayout buttonRow = new android.widget.LinearLayout(getContext());
+        buttonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        buttonRow.setGravity(Gravity.CENTER);
+        buttonRow.setPadding(0, 16, 0, 4);
+
+        final TextView scanToggleBtn = new TextView(getContext());
+        scanToggleBtn.setId(android.view.View.generateViewId());
+        scanToggleBtn.setTag("scanToggleBtn");
+        scanToggleBtn.setTextSize(13);
+        scanToggleBtn.setTextColor(0xFFFFFFFF);
+        scanToggleBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+        scanToggleBtn.setPadding(46, 14, 46, 14);
+        scanToggleBtn.setClickable(true);
+        updateScanButtonVisual(scanToggleBtn, isScanningActive);
+
+        scanToggleBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isScanningActive = !isScanningActive;
+                updateScanButtonVisual(scanToggleBtn, isScanningActive);
+
+                JSObject data = new JSObject();
+                data.put("isScanning", isScanningActive);
+                notifyListeners("onOverlayScanToggle", data);
+
+                if (isScanningActive) {
+                    captureAndEmitLatestFrame();
+                }
+            }
+        });
+        buttonRow.addView(scanToggleBtn);
 
         layout.addView(buttonRow);
 
@@ -639,6 +692,24 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         overlayView = layout;
         windowManager.addView(overlayView, overlayParams);
+    }
+
+    private void updateScanButtonVisual(TextView btn, boolean isScanning) {
+        if (btn == null) return;
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        bg.setCornerRadius(24f);
+
+        if (isScanning) {
+            btn.setText("⏹ স্ক্যান স্টপ");
+            bg.setColor(0xFFDC2626); // Rose red
+            bg.setStroke(2, 0xFFEF4444);
+        } else {
+            btn.setText("🔍 স্ক্যান শুরু করুন");
+            bg.setColor(0xFF059669); // Emerald green
+            bg.setStroke(2, 0xFF10B981);
+        }
+        btn.setBackground(bg);
     }
 
     private void updateOverlayContent(PluginCall call) {
@@ -676,9 +747,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         shape.setStroke(3, strokeColor);
         overlayView.setBackground(shape);
 
-        TextView scanBtn = overlayView.findViewWithTag("scanBtn");
-        if (scanBtn != null && !"ANALYZING".equalsIgnoreCase(aiState)) {
-            scanBtn.setText("🔍 স্ক্যান");
+        boolean isScanning = call.getBoolean("isScanning", isScanningActive);
+        isScanningActive = isScanning;
+        TextView toggleBtn = overlayView.findViewWithTag("scanToggleBtn");
+        if (toggleBtn != null) {
+            updateScanButtonVisual(toggleBtn, isScanningActive);
         }
 
         if (dirView != null && detView != null) {

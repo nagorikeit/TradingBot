@@ -60,7 +60,14 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
     }
   }
 
-  async captureSingleFrame(): Promise<{ success: boolean }> {
+  async captureSingleFrame(): Promise<{
+    success: boolean;
+    imageBase64?: string;
+    timestamp?: number;
+    sequenceId?: number;
+    width?: number;
+    height?: number;
+  }> {
     if (!this.hiddenVideo || !this.hiddenCanvas || !this.currentStream) {
       return { success: false };
     }
@@ -89,7 +96,14 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
         };
 
         this.notifyListeners('onFrameCaptured', frameEvent);
-        return { success: true };
+        return {
+          success: true,
+          imageBase64,
+          timestamp: frameEvent.timestamp,
+          sequenceId: frameEvent.sequenceId,
+          width: frameEvent.width,
+          height: frameEvent.height,
+        };
       }
     } catch (e) {
       console.warn('captureSingleFrame error:', e);

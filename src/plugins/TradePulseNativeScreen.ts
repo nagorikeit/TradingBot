@@ -21,6 +21,7 @@ export interface FloatingOverlayData {
   captureState?: 'RUNNING' | 'STOPPED' | 'PAUSED' | 'PERMISSION_REQ';
   aiState?: 'IDLE' | 'ANALYZING' | 'READY' | 'ERROR' | 'TIMEOUT';
   errorReason?: string;
+  isScanning?: boolean;
 }
 
 export interface NativeCaptureFrameEvent {
@@ -56,9 +57,16 @@ export interface TradePulseNativeScreenPlugin {
   }): Promise<{ success: boolean; message?: string }>;
 
   /**
-   * Captures a single frame on demand and emits onFrameCaptured event
+   * Captures a single frame on demand and returns the frame base64
    */
-  captureSingleFrame(): Promise<{ success: boolean }>;
+  captureSingleFrame(): Promise<{
+    success: boolean;
+    imageBase64?: string;
+    timestamp?: number;
+    sequenceId?: number;
+    width?: number;
+    height?: number;
+  }>;
 
   /**
    * Stops Native ForegroundService and MediaProjection capture
@@ -86,6 +94,14 @@ export interface TradePulseNativeScreenPlugin {
   addListener(
     eventName: 'onFrameCaptured',
     listenerFunc: (frame: NativeCaptureFrameEvent) => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
+   * Subscribes to Scan/Stop toggle button click on the floating overlay
+   */
+  addListener(
+    eventName: 'onOverlayScanToggle',
+    listenerFunc: (data: { isScanning: boolean }) => void
   ): Promise<{ remove: () => void }>;
 
   /**
