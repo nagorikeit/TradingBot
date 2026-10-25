@@ -66,6 +66,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private volatile long latestFrameTimestamp = 0;
     private volatile boolean isScanningActive = false;
     private volatile boolean isScanRequested = false;
+    private volatile boolean isAppInForeground = true;
+    private volatile long lastAutoEmittedTimestamp = 0;
     private PluginCall pendingCaptureCall = null;
 
     // Floating overlay window state
@@ -76,6 +78,18 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     // Android Native Text-To-Speech engine for floating overlay audio guidance
     private TextToSpeech textToSpeech;
     private boolean isTtsInitialized = false;
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        isAppInForeground = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        isAppInForeground = false;
+    }
 
     @Override
     public void load() {
@@ -353,13 +367,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("sequenceId", sequenceCounter);
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
+                        res.put("isAppInForeground", isAppInForeground);
                         pendingCaptureCall.resolve(res);
                         pendingCaptureCall = null;
                     }
 
-                    // If a scan was requested
-                    if (isScanRequested) {
+                    // If a scan was explicitly requested or recurring scan is active
+                    long now = System.currentTimeMillis();
+                    if (isScanRequested || (isScanningActive && (now - lastAutoEmittedTimestamp) >= captureIntervalMs)) {
                         isScanRequested = false;
+                        lastAutoEmittedTimestamp = now;
                         emitCachedFrame();
                     }
                 } catch (Exception e) {
@@ -393,6 +410,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         event.put("sequenceId", sequenceCounter);
         event.put("width", latestFrameWidth);
         event.put("height", latestFrameHeight);
+        event.put("isAppInForeground", isAppInForeground);
 
         notifyListeners("onFrameCaptured", event);
         // Do NOT nullify latestFrameBase64 - preserve current screen state for instant resumption
@@ -438,7 +456,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    if (latestFrameBase64 != null) {
+                    long now = System.currentTimeMillis();
+                    // If a very fresh frame exists from the last 300ms, use it; otherwise request a brand new frame
+                    boolean isFresh = latestFrameBase64 != null && (now - latestFrameTimestamp) < 300;
+                    if (isFresh) {
                         sequenceCounter++;
                         JSObject res = new JSObject();
                         res.put("success", true);
@@ -447,11 +468,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("sequenceId", sequenceCounter);
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
+                        res.put("isAppInForeground", isAppInForeground);
 
                         if (call != null) {
                             call.resolve(res);
                         }
                     } else {
+                        // Request a fresh frame from the active display
                         isScanRequested = true;
                         pendingCaptureCall = call;
                         captureHandler.postDelayed(new Runnable() {
@@ -467,6 +490,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                         res.put("sequenceId", sequenceCounter);
                                         res.put("width", latestFrameWidth);
                                         res.put("height", latestFrameHeight);
+                                        res.put("isAppInForeground", isAppInForeground);
                                         pendingCaptureCall.resolve(res);
                                     } else {
                                         pendingCaptureCall.reject("No frame available from screen");
@@ -688,8 +712,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
                     }
+                    // Reset cache so a completely fresh frame is captured from the live display
+                    latestFrameBase64 = null;
+                    latestFrameTimestamp = 0;
+                    isScanRequested = true;
                     startNativeScanningLoop();
-                    captureAndEmitLatestFrame();
                 } else {
                     if (dirView != null) {
                         dirView.setTextColor(0xFF38BDF8);
@@ -699,6 +726,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         detView.setText("স্ক্যান করতে বাটনে চাপুন");
                     }
                     stopNativeScanningLoop();
+                    latestFrameBase64 = null;
+                    latestFrameTimestamp = 0;
+                    isScanRequested = false;
                 }
 
                 JSObject data = new JSObject();

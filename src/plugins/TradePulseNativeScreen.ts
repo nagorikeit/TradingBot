@@ -30,6 +30,7 @@ export interface NativeCaptureFrameEvent {
   sequenceId: number;
   width: number;
   height: number;
+  isAppInForeground?: boolean;
 }
 
 export interface TradePulseNativeScreenPlugin {
@@ -66,6 +67,7 @@ export interface TradePulseNativeScreenPlugin {
     sequenceId?: number;
     width?: number;
     height?: number;
+    isAppInForeground?: boolean;
   }>;
 
   /**

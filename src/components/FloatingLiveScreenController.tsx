@@ -17,6 +17,7 @@ import {
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
+import { Capacitor } from '@capacitor/core';
 
 interface FloatingLiveScreenControllerProps {
   currentTab: string;
@@ -77,6 +78,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const isStreaming = streamState === 'STREAMING';
   const isConnecting = streamState === 'CONNECTING';
   const isPaused = streamState === 'PAUSED';
+
+  // On Native Android, the native floating overlay (SYSTEM_ALERT_WINDOW) is active over all apps.
+  // Never show the in-DOM HTML bubble on Capacitor native platform to eliminate double-bubble confusion!
+  if (Capacitor.isNativePlatform()) {
+    return null;
+  }
 
   // Do not show floating HUD bubble if screen sharing is completely stopped or idle
   if (!isStreaming && !isConnecting && !isPaused) {
