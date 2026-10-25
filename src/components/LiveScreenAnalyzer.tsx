@@ -51,6 +51,7 @@ import {
 export const LiveScreenAnalyzer: React.FC = () => {
   const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
+  const [isScanning, setIsScanning] = useState<boolean>(liveScreenService.isScanning());
   const [result, setResult] = useState<ScreenAnalysisFinalResult | null>(liveScreenService.getLatestResult());
   const [isBusy, setIsBusy] = useState<boolean>(liveScreenService.isBusy());
   const [intervalSec, setIntervalSec] = useState<number>(liveScreenService.getScanIntervalSeconds());
@@ -127,6 +128,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   useEffect(() => {
     const unsub = liveScreenService.subscribe(() => {
       setStreamState(liveScreenService.getState());
+      setIsScanning(liveScreenService.isScanning());
       setResult(liveScreenService.getLatestResult());
       setIsBusy(liveScreenService.isBusy());
       setIntervalSec(liveScreenService.getScanIntervalSeconds());
@@ -285,14 +287,14 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 <button
                   onClick={() => liveScreenService.toggleScanning()}
                   className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                    liveScreenService.isScanning()
+                    isScanning
                       ? 'bg-rose-600 hover:bg-rose-500 text-white'
                       : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                   }`}
-                  title={liveScreenService.isScanning() ? 'স্ক্যান থামান (ডিসকানেক্ট হবে না)' : 'লাইভ স্ক্যান শুরু করুন'}
+                  title={isScanning ? 'স্ক্যান থামান (ডিসকানেক্ট হবে না)' : 'লাইভ স্ক্যান শুরু করুন'}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-                  <span>{liveScreenService.isScanning() ? '⏹ স্ক্যান স্টপ' : '🔍 স্ক্যান শুরু করুন'}</span>
+                  <span>{isScanning ? '⏹ স্ক্যান স্টপ' : '🔍 স্ক্যান শুরু করুন'}</span>
                 </button>
                 <button
                   onClick={handleDisconnect}

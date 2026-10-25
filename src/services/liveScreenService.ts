@@ -947,14 +947,14 @@ export class LiveScreenService {
       return;
     }
 
-    // Discard stale out-of-order frames
-    if (frame.sequenceId < this.latestProcessedSequenceId) {
+    // Discard stale out-of-order frames only after an active sequence has been recorded
+    if (this.latestProcessedSequenceId > 0 && frame.sequenceId < this.latestProcessedSequenceId) {
       return;
     }
 
-    // Freshness check: discard frames older than 3.5s
+    // Freshness check: discard frames older than 6s
     const frameAge = Date.now() - frame.timestamp;
-    if (frameAge > 3500) {
+    if (frameAge > 6000) {
       return;
     }
 
@@ -996,7 +996,7 @@ export class LiveScreenService {
       this.latestApiLatencyMs = latencyMs;
 
       // Discard if user stopped scanning or a newer frame was processed while awaiting
-      if (!this.isScanningActive || frame.sequenceId < this.latestProcessedSequenceId) {
+      if (!this.isScanningActive || (this.latestProcessedSequenceId > frame.sequenceId)) {
         return;
       }
 
@@ -2104,6 +2104,8 @@ export class LiveScreenService {
 
     this.isScanningActive = true;
     this.aiState = 'ANALYZING';
+    this.isProcessingFrame = false;
+    this.latestProcessedSequenceId = 0;
     this.notify();
 
     // Immediately update HUD to scanning feedback
@@ -2137,6 +2139,8 @@ export class LiveScreenService {
   public stopScanning(): void {
     this.isScanningActive = false;
     this.aiState = 'IDLE';
+    this.isProcessingFrame = false;
+    this.latestProcessedSequenceId = 0;
     if (this.scanTimer) {
       clearInterval(this.scanTimer);
       this.scanTimer = null;
@@ -2197,11 +2201,11 @@ export class LiveScreenService {
     if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
       try {
         const frameRes = await TradePulseNativeScreen.captureSingleFrame();
-        if (frameRes && frameRes.imageBase64) {
+        if (frameRes && frameRes.imageBase64 && this.isScanningActive) {
           await this.processNativeFrameData({
             imageBase64: frameRes.imageBase64,
             timestamp: frameRes.timestamp || Date.now(),
-            sequenceId: frameRes.sequenceId || Date.now(),
+            sequenceId: frameRes.sequenceId || ++this.latestFrameCount,
             width: frameRes.width || 720,
             height: frameRes.height || 1280,
           });

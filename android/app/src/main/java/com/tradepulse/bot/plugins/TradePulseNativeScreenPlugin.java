@@ -395,18 +395,41 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         event.put("height", latestFrameHeight);
 
         notifyListeners("onFrameCaptured", event);
-        // Clear cached frame once emitted so next scan must capture a fresh frame
-        latestFrameBase64 = null;
+        // Do NOT nullify latestFrameBase64 - preserve current screen state for instant resumption
     }
 
     private void captureAndEmitLatestFrame() {
-        boolean isFresh = latestFrameBase64 != null && (System.currentTimeMillis() - latestFrameTimestamp) < 2500;
-        if (isFresh) {
+        if (latestFrameBase64 != null) {
             emitCachedFrame();
             return;
         }
-        latestFrameBase64 = null;
         isScanRequested = true;
+    }
+
+    private void startNativeScanningLoop() {
+        if (captureHandler == null) {
+            captureHandler = new Handler(Looper.getMainLooper());
+        }
+        stopNativeScanningLoop();
+        captureRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isScanningActive) {
+                    captureAndEmitLatestFrame();
+                    if (captureHandler != null) {
+                        captureHandler.postDelayed(this, captureIntervalMs);
+                    }
+                }
+            }
+        };
+        captureHandler.post(captureRunnable);
+    }
+
+    private void stopNativeScanningLoop() {
+        if (captureHandler != null && captureRunnable != null) {
+            captureHandler.removeCallbacks(captureRunnable);
+            captureRunnable = null;
+        }
     }
 
     @PluginMethod
@@ -415,8 +438,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    boolean isFresh = latestFrameBase64 != null && (System.currentTimeMillis() - latestFrameTimestamp) < 2500;
-                    if (isFresh) {
+                    if (latestFrameBase64 != null) {
                         sequenceCounter++;
                         JSObject res = new JSObject();
                         res.put("success", true);
@@ -426,16 +448,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
 
-                        // Clear cached frame so next call captures fresh frame
-                        latestFrameBase64 = null;
-
-                        notifyListeners("onFrameCaptured", res);
-
                         if (call != null) {
                             call.resolve(res);
                         }
                     } else {
-                        latestFrameBase64 = null;
                         isScanRequested = true;
                         pendingCaptureCall = call;
                         captureHandler.postDelayed(new Runnable() {
@@ -447,13 +463,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                         JSObject res = new JSObject();
                                         res.put("success", true);
                                         res.put("imageBase64", latestFrameBase64);
-                                        res.put("timestamp", System.currentTimeMillis());
+                                        res.put("timestamp", latestFrameTimestamp > 0 ? latestFrameTimestamp : System.currentTimeMillis());
                                         res.put("sequenceId", sequenceCounter);
                                         res.put("width", latestFrameWidth);
                                         res.put("height", latestFrameHeight);
-
-                                        latestFrameBase64 = null;
-                                        notifyListeners("onFrameCaptured", res);
                                         pendingCaptureCall.resolve(res);
                                     } else {
                                         pendingCaptureCall.reject("No frame available from screen");
@@ -461,7 +474,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                     pendingCaptureCall = null;
                                 }
                             }
-                        }, 400);
+                        }, 2500);
                     }
                 } catch (Exception e) {
                     if (call != null) {
@@ -474,9 +487,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     @PluginMethod
     public void stopScreenCapture(PluginCall call) {
-        if (captureHandler != null && captureRunnable != null) {
-            captureHandler.removeCallbacks(captureRunnable);
-        }
+        stopNativeScanningLoop();
+        isScanningActive = false;
+        latestFrameBase64 = null;
+        latestFrameTimestamp = 0;
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -674,6 +688,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
                     }
+                    startNativeScanningLoop();
                     captureAndEmitLatestFrame();
                 } else {
                     if (dirView != null) {
@@ -683,8 +698,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("স্ক্যান করতে বাটনে চাপুন");
                     }
-                    // Invalidate cached frame so old screen data is destroyed
-                    latestFrameBase64 = null;
+                    stopNativeScanningLoop();
                 }
 
                 JSObject data = new JSObject();
@@ -777,8 +791,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         shape.setStroke(3, strokeColor);
         overlayView.setBackground(shape);
 
-        boolean isScanning = call.getBoolean("isScanning", isScanningActive);
-        isScanningActive = isScanning;
+        if (call.getData().has("isScanning")) {
+            boolean isScanning = call.getBoolean("isScanning", isScanningActive);
+            if (isScanning != isScanningActive) {
+                isScanningActive = isScanning;
+                if (isScanningActive) {
+                    startNativeScanningLoop();
+                } else {
+                    stopNativeScanningLoop();
+                }
+            }
+        }
         TextView toggleBtn = overlayView.findViewWithTag("scanToggleBtn");
         if (toggleBtn != null) {
             updateScanButtonVisual(toggleBtn, isScanningActive);
