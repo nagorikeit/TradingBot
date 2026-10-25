@@ -942,14 +942,31 @@ export class LiveScreenService {
     this.latestResolution = `${frame.width}x${frame.height}`;
     this.captureState = 'RUNNING';
 
-    // Discard only if an ongoing frame is already processing
-    if (this.isProcessingFrame) {
+    // Discard if scanning is stopped or ongoing frame is processing
+    if (!this.isScanningActive || this.isProcessingFrame) {
       return;
     }
+
+    // Discard stale out-of-order frames
+    if (frame.sequenceId < this.latestProcessedSequenceId) {
+      return;
+    }
+
+    // Freshness check: discard frames older than 3.5s
+    const frameAge = Date.now() - frame.timestamp;
+    if (frameAge > 3500) {
+      return;
+    }
+
     await this.processNativeFrameData(frame);
   }
 
   public async processNativeFrameData(frame: NativeCaptureFrameEvent): Promise<void> {
+    if (!this.isScanningActive) {
+      return;
+    }
+
+    this.latestProcessedSequenceId = frame.sequenceId;
     this.latestFrameCount = frame.sequenceId;
     this.latestFrameTimestamp = frame.timestamp;
     this.latestResolution = `${frame.width}x${frame.height}`;
@@ -960,7 +977,7 @@ export class LiveScreenService {
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
     try {
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
@@ -978,6 +995,11 @@ export class LiveScreenService {
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
 
+      // Discard if user stopped scanning or a newer frame was processed while awaiting
+      if (!this.isScanningActive || frame.sequenceId < this.latestProcessedSequenceId) {
+        return;
+      }
+
       if (res.ok) {
         const data = await res.json();
         if (data && data.ok && data.result) {
@@ -989,6 +1011,7 @@ export class LiveScreenService {
           this.processResult(result, latencyMs);
         } else {
           const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
+          if (!this.isScanningActive) return;
           this.aiState = 'READY';
           this.lastErrorReason = null;
           this.errorMessage = null;
@@ -996,6 +1019,7 @@ export class LiveScreenService {
         }
       } else {
         const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
+        if (!this.isScanningActive) return;
         this.aiState = 'READY';
         this.lastErrorReason = null;
         this.errorMessage = null;
@@ -1005,6 +1029,7 @@ export class LiveScreenService {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
+      if (!this.isScanningActive) return;
       const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
       this.aiState = 'READY';
       this.lastErrorReason = null;
@@ -1038,7 +1063,7 @@ export class LiveScreenService {
             dir: 'WAIT',
             confidence: 0,
             symbol: 'UNKNOWN',
-            pattern: 'চার্ট পাওয়া যায়নি',
+            pattern: 'চার্ট মেলেনি (WAIT)',
             reason: ['চার্ট অনুসন্ধান অব্যাহত রয়েছে...'],
           });
         }
@@ -1050,7 +1075,7 @@ export class LiveScreenService {
             const naturalH = img.naturalHeight || img.height || 1280;
             const isPortrait = naturalH > naturalW;
 
-            // Preserve true aspect ratio with 320px target width for crisp candle wicks and bodies
+            // Normalize to 320px target width for crisp morphology analysis
             const targetWidth = 320;
             const targetHeight = Math.max(160, Math.min(640, Math.round((naturalH / naturalW) * targetWidth)));
 
@@ -1064,8 +1089,8 @@ export class LiveScreenService {
                 dir: 'WAIT',
                 confidence: 0,
                 symbol: 'UNKNOWN',
-                pattern: 'চার্ট পাওয়া যায়নি',
-                reason: ['চার্ট অনুসন্ধান অব্যাহত রয়েছে...'],
+                pattern: 'চার্ট মেলেনি (WAIT)',
+                reason: ['ক্যানভাস প্রসেসিং ব্যর্থ হয়েছে।'],
               });
             }
 
@@ -1073,26 +1098,119 @@ export class LiveScreenService {
             const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
             const data = imgData.data;
 
-            // Active chart zone:
-            // Mobile Portrait: ~17% to ~70% of screen height
-            // Automatically skips:
-            // - Top browser URL bar, balance, deposit button, and 50% deposit bonus promotional banners (0% to ~16%)
-            // - Bottom asset selector, timer, investment controls, and Buy/Sell giant buttons (71% to 100%)
-            // - Right vertical price scale (88% to 100%)
-            // Focuses 100% on pure candlestick price action (bodies and wicks)!
-            const yStart = isPortrait ? Math.floor(targetHeight * 0.17) : Math.floor(targetHeight * 0.08);
-            const yEnd = isPortrait ? Math.floor(targetHeight * 0.70) : Math.floor(targetHeight * 0.92);
-            const xStart = Math.floor(targetWidth * 0.02);
+            // 1. Delineate Active Chart Viewport:
+            // Mobile Portrait: ~16% to ~72% of screen height
+            // Landscape/Desktop: ~8% to ~92%
+            // Left/Right: 3% to 88% (avoids broker right-hand vertical price scale)
+            const yStart = isPortrait ? Math.floor(targetHeight * 0.16) : Math.floor(targetHeight * 0.08);
+            const yEnd = isPortrait ? Math.floor(targetHeight * 0.72) : Math.floor(targetHeight * 0.92);
+            const xStart = Math.floor(targetWidth * 0.03);
             const xEnd = Math.floor(targetWidth * 0.88);
+            const totalExamined = (yEnd - yStart) * (xEnd - xStart);
 
-            let darkBgCount = 0;
-            let lightBgCount = 0;
+            if (totalExamined <= 0) {
+              return resolve({
+                isChart: false,
+                dir: 'WAIT',
+                confidence: 0,
+                symbol: 'UNKNOWN',
+                pattern: 'চার্ট মেলেনি (WAIT)',
+                reason: ['ভিউস্পেস খালি'],
+              });
+            }
+
+            // 2. Stage 1: Uniform Canvas Background Histogram & Dark/Light Theme Check
+            // A genuine broker chart has a uniform solid background (Quotex dark navy, Binomo dark, or clean white).
+            // Natural photos, wallpapers (flowers, trees, widgets) have dispersed high entropy.
+            const colorHistogram = new Map<number, number>();
+            let pureBlackPixels = 0;
+            let pureWhitePixels = 0;
+
+            for (let y = yStart; y < yEnd; y += 2) {
+              for (let x = xStart; x < xEnd; x += 2) {
+                const idx = (y * targetWidth + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+
+                if (r <= 12 && g <= 12 && b <= 12) pureBlackPixels++;
+                if (r >= 245 && g >= 245 && b >= 245) pureWhitePixels++;
+
+                // Quantize to 5-bit RGB bins (32x32x32)
+                const bin = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+                colorHistogram.set(bin, (colorHistogram.get(bin) || 0) + 1);
+              }
+            }
+
+            const totalSampled = Math.ceil((yEnd - yStart) / 2) * Math.ceil((xEnd - xStart) / 2);
+            let dominantBin = 0;
+            let dominantBinCount = 0;
+            colorHistogram.forEach((count, bin) => {
+              if (count > dominantBinCount) {
+                dominantBinCount = count;
+                dominantBin = bin;
+              }
+            });
+
+            // Sum closely adjacent shade bins to account for minor compression artifacts
+            const domR = (dominantBin >> 10) & 0x1f;
+            const domG = (dominantBin >> 5) & 0x1f;
+            const domB = dominantBin & 0x1f;
+            let adjacentBgCount = 0;
+
+            colorHistogram.forEach((count, bin) => {
+              const bR = (bin >> 10) & 0x1f;
+              const bG = (bin >> 5) & 0x1f;
+              const bB = bin & 0x1f;
+              if (Math.abs(bR - domR) <= 1 && Math.abs(bG - domG) <= 1 && Math.abs(bB - domB) <= 1) {
+                adjacentBgCount += count;
+              }
+            });
+
+            const bgUniformityRatio = adjacentBgCount / Math.max(1, totalSampled);
+            const backgroundUniformityPercent = Math.round(bgUniformityRatio * 100);
+
+            // Is the dominant background compatible with known broker dark/light themes?
+            const domRGB_R = domR << 3;
+            const domRGB_G = domG << 3;
+            const domRGB_B = domB << 3;
+            const isBrokerDarkTheme = domRGB_R <= 60 && domRGB_G <= 65 && domRGB_B <= 85;
+            const isBrokerLightTheme = domRGB_R >= 225 && domRGB_G >= 225 && domRGB_B >= 225;
+            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.35;
+
+            // Scenario 1 & 2: Pure Black or Pure White display check
+            const blackRatio = pureBlackPixels / Math.max(1, totalSampled);
+            const whiteRatio = pureWhitePixels / Math.max(1, totalSampled);
+            if (blackRatio > 0.88 || whiteRatio > 0.88) {
+              const diag: ChartDetectionDiagnostic = {
+                isChart: false,
+                distinctCandleBars: 0,
+                totalCandlePixels: 0,
+                horizontalSpanPercent: 0,
+                verticalDispersionPx: 0,
+                hasBrokerBackground: false,
+                backgroundUniformityPercent: 99,
+                failureReason: blackRatio > 0.88
+                  ? 'কালো স্ক্রিন সনাক্ত: ডিসপ্লে সম্পূর্ণ অন্ধকার, চার্ট লোড হওয়ার অপেক্ষায়...'
+                  : 'সাদা স্ক্রিন সনাক্ত: ডিসপ্লে সম্পূর্ণ সাদা, চার্ট লোড হওয়ার অপেক্ষায়...',
+                recommendedAction: 'ব্রোকার অ্যাপে ক্যান্ডেলস্টিক চার্টটি সঠিকভাবে ওপেন রাখুন।',
+              };
+              return resolve({
+                isChart: false,
+                dir: 'WAIT',
+                confidence: 0,
+                symbol: 'BLANK_SCREEN',
+                pattern: 'চার্ট মেলেনি (WAIT)',
+                reason: [diag.failureReason!, 'কোনো ক্যান্ডেল বা প্রাইস অ্যাকশন দৃশ্যমান নেই।'],
+                diagnostic: diag,
+              });
+            }
+
+            // 3. Stage 2: Strict Candlestick Color Signature
+            // Rejects natural wallpaper greens/browns/skin/flowers
             let greenPixelsInChart = 0;
             let redPixelsInChart = 0;
-
-            const columnCandlePixels: number[] = new Array(targetWidth).fill(0);
-            const columnMinY: number[] = new Array(targetWidth).fill(999);
-            const columnMaxY: number[] = new Array(targetWidth).fill(-1);
+            const candlePixelGrid: Uint8Array = new Uint8Array(targetWidth * targetHeight); // 1 = green, 2 = red
 
             for (let y = yStart; y < yEnd; y++) {
               for (let x = xStart; x < xEnd; x++) {
@@ -1101,159 +1219,259 @@ export class LiveScreenService {
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // 1. Broker background dark / light themes:
-                // Covers dark themes (Quotex, Binomo, PocketOption, TradingView, MT4/5 #121620, #131722, #1b1e2e, #1a1d29, #262b3d, #2d3142)
-                const isDarkBg = (r <= 135 && g <= 135 && b <= 155) || (Math.max(r, g, b) - Math.min(r, g, b) <= 25 && Math.max(r, g, b) <= 140);
-                // Light themes (#ffffff, #f0f3fa, #e8ecf2, #f5f5f5)
-                const isLightBg = r >= 195 && g >= 195 && b >= 195;
+                // Strict Broker Green (Emerald #00e676, Quotex teal #00c076, #26a69a)
+                // High saturation green with large delta over red
+                const isGreen =
+                  (g >= 90 && g > r * 1.30 && g > b * 1.10 && (g - r) >= 28) ||
+                  (g >= 120 && b >= 95 && g > r * 1.38 && (g - r) >= 36);
 
-                if (isDarkBg) {
-                  darkBgCount++;
-                } else if (isLightBg) {
-                  lightBgCount++;
-                }
+                // Strict Broker Red (Quotex red #ef5350, #e53935, #ff3344, #f23645)
+                // High saturation red with large delta over green and blue
+                const isRed =
+                  (r >= 110 && r > g * 1.35 && r > b * 1.25 && (r - g) >= 30 && (r - b) >= 24);
 
-                // 2. Candlestick green (Quotex teal-green #26a69a, pure green #00c076, emerald #00e676, neon #00ff88, lime #4caf50, cyan #00b0ff):
-                const isGreenCandle =
-                  (g >= 60 && g > r * 1.08 && (g - r) >= 10) ||
-                  (g >= 100 && r <= 95 && b <= 210) ||
-                  (g >= 110 && b >= 110 && r <= 85);
-
-                // 3. Candlestick red (Quotex red #ef5350, Binomo red #ff4141, PocketOption red #ff3344, TradingView red #f23645, crimson #c62828):
-                const isRedCandle =
-                  (r >= 85 && r > g * 1.10 && (r - g) >= 10) ||
-                  (r >= 130 && g <= 100 && b <= 110);
-
-                if (isGreenCandle) {
+                if (isGreen) {
                   greenPixelsInChart++;
-                  columnCandlePixels[x]++;
-                  if (y < columnMinY[x]) columnMinY[x] = y;
-                  if (y > columnMaxY[x]) columnMaxY[x] = y;
-                } else if (isRedCandle) {
+                  candlePixelGrid[y * targetWidth + x] = 1;
+                } else if (isRed) {
                   redPixelsInChart++;
-                  columnCandlePixels[x]++;
-                  if (y < columnMinY[x]) columnMinY[x] = y;
-                  if (y > columnMaxY[x]) columnMaxY[x] = y;
+                  candlePixelGrid[y * targetWidth + x] = 2;
                 }
               }
             }
 
-            const totalExamined = (yEnd - yStart) * (xEnd - xStart);
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
-            // Group adjacent candle columns:
-            // In real broker charts, consecutive candles often touch or sit closely side-by-side in a trend.
-            // When candles form a continuous span (e.g. 4 consecutive red candles in Quotex),
-            // we estimate the number of distinct candle bars from the cluster width (~7-9px per candle body).
-            let distinctCandleBars = 0;
-            let currentBarWidth = 0;
-            let currentBarMinY = 999;
-            let currentBarMaxY = -1;
-            const validBarMidpointsY: number[] = [];
-            const validBarPositionsX: number[] = [];
+            // 4. Stage 3: Scan Vertical Columns for Candlestick Morphology & Filter Noise/Wide Blobs
+            interface CandleColumnRun {
+              x: number;
+              topY: number;
+              bottomY: number;
+              height: number;
+              color: 1 | 2;
+            }
+
+            const columnRuns: CandleColumnRun[] = [];
 
             for (let x = xStart; x < xEnd; x++) {
-              const colHeight = columnMaxY[x] - columnMinY[x] + 1;
-              const hasCandleCol = columnCandlePixels[x] >= 1 && colHeight >= 2;
+              let runStart = -1;
+              let runColor: 1 | 2 = 1;
 
-              if (hasCandleCol) {
-                if (currentBarWidth === 0) {
-                  currentBarWidth = 1;
-                  currentBarMinY = columnMinY[x];
-                  currentBarMaxY = columnMaxY[x];
-                } else {
-                  currentBarWidth++;
-                  if (columnMinY[x] < currentBarMinY) currentBarMinY = columnMinY[x];
-                  if (columnMaxY[x] > currentBarMaxY) currentBarMaxY = columnMaxY[x];
-                }
-              } else {
-                if (currentBarWidth > 0) {
-                  const barHeight = currentBarMaxY - currentBarMinY + 1;
-                  if (barHeight >= 3) {
-                    const candlesInSpan = Math.max(1, Math.min(8, Math.round(currentBarWidth / 7.5)));
-                    distinctCandleBars += candlesInSpan;
-                    validBarPositionsX.push(x - Math.floor(currentBarWidth / 2));
-                    validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
+              for (let y = yStart; y < yEnd; y++) {
+                const color = candlePixelGrid[y * targetWidth + x];
+                if (color === 1 || color === 2) {
+                  if (runStart === -1) {
+                    runStart = y;
+                    runColor = color;
+                  } else if (runColor !== color) {
+                    // Color switched
+                    const runHeight = y - runStart;
+                    if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
+                      columnRuns.push({ x, topY: runStart, bottomY: y - 1, height: runHeight, color: runColor });
+                    }
+                    runStart = y;
+                    runColor = color;
                   }
-                  currentBarWidth = 0;
-                  currentBarMinY = 999;
-                  currentBarMaxY = -1;
+                } else {
+                  if (runStart !== -1) {
+                    const runHeight = y - runStart;
+                    if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
+                      columnRuns.push({ x, topY: runStart, bottomY: y - 1, height: runHeight, color: runColor });
+                    }
+                    runStart = -1;
+                  }
+                }
+              }
+
+              if (runStart !== -1) {
+                const runHeight = yEnd - runStart;
+                if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
+                  columnRuns.push({ x, topY: runStart, bottomY: yEnd - 1, height: runHeight, color: runColor });
                 }
               }
             }
 
-            if (currentBarWidth > 0) {
-              const barHeight = currentBarMaxY - currentBarMinY + 1;
-              if (barHeight >= 3) {
-                const candlesInSpan = Math.max(1, Math.min(8, Math.round(currentBarWidth / 7.5)));
-                distinctCandleBars += candlesInSpan;
-                validBarPositionsX.push(xEnd - Math.floor(currentBarWidth / 2));
-                validBarMidpointsY.push((currentBarMinY + currentBarMaxY) / 2);
-              }
+            // 5. Stage 4: Cluster Adjacent Runs into Geometric Candle Bodies
+            // A candle body is between 2px and 20px wide!
+            // Anything > 22px wide is an app icon, prayer widget, banner, or photo object — NEVER A CANDLE!
+            interface VerifiedCandle {
+              leftX: number;
+              rightX: number;
+              centerX: number;
+              topY: number;
+              bottomY: number;
+              centerY: number;
+              width: number;
+              height: number;
+              color: 'GREEN' | 'RED';
+              hasUpperWick: boolean;
+              hasLowerWick: boolean;
             }
 
-            // Calculate horizontal span and vertical dispersion across verified candles
+            const verifiedCandles: VerifiedCandle[] = [];
+            let currentCluster: CandleColumnRun[] = [];
+
+            const evaluateCluster = (cluster: CandleColumnRun[]) => {
+              if (cluster.length === 0) return;
+              const leftX = cluster[0].x;
+              const rightX = cluster[cluster.length - 1].x;
+              const width = rightX - leftX + 1;
+
+              // REJECT WIDE OBJECTS (app icons, cards, widgets)
+              if (width < 2 || width > 22) return;
+
+              let minTop = 999;
+              let maxBottom = -1;
+              cluster.forEach((run) => {
+                if (run.topY < minTop) minTop = run.topY;
+                if (run.bottomY > maxBottom) maxBottom = run.bottomY;
+              });
+
+              const height = maxBottom - minTop + 1;
+              if (height < 4) return;
+
+              // Aspect ratio check: prevent thin horizontal stripes
+              if (width >= 6 && height < width * 0.65) return;
+
+              const centerX = Math.round((leftX + rightX) / 2);
+              const centerY = Math.round((minTop + maxBottom) / 2);
+              const color: 'GREEN' | 'RED' = cluster[0].color === 1 ? 'GREEN' : 'RED';
+
+              // 6. Wick (Shadow) Detection: Look above and below the body along centerX (+-1px)
+              let hasUpperWick = false;
+              let hasLowerWick = false;
+
+              // Check upper wick: 1-2px wide vertical projection above body
+              for (let dy = 1; dy <= 16; dy++) {
+                const checkY = minTop - dy;
+                if (checkY < yStart) break;
+                for (const dx of [0, -1, 1]) {
+                  const xCoord = centerX + dx;
+                  if (xCoord > xStart && xCoord < xEnd) {
+                    const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
+                    const leftNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord - 1)];
+                    const rightNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord + 1)];
+                    if (pixColor > 0 && leftNeighbor === 0 && rightNeighbor === 0) {
+                      hasUpperWick = true;
+                      break;
+                    }
+                  }
+                }
+                if (hasUpperWick) break;
+              }
+
+              // Check lower wick: 1-2px wide vertical projection below body
+              for (let dy = 1; dy <= 16; dy++) {
+                const checkY = maxBottom + dy;
+                if (checkY >= yEnd) break;
+                for (const dx of [0, -1, 1]) {
+                  const xCoord = centerX + dx;
+                  if (xCoord > xStart && xCoord < xEnd) {
+                    const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
+                    const leftNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord - 1)];
+                    const rightNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord + 1)];
+                    if (pixColor > 0 && leftNeighbor === 0 && rightNeighbor === 0) {
+                      hasLowerWick = true;
+                      break;
+                    }
+                  }
+                }
+                if (hasLowerWick) break;
+              }
+
+              verifiedCandles.push({
+                leftX,
+                rightX,
+                centerX,
+                topY: minTop,
+                bottomY: maxBottom,
+                centerY,
+                width,
+                height,
+                color,
+                hasUpperWick,
+                hasLowerWick,
+              });
+            };
+
+            for (let i = 0; i < columnRuns.length; i++) {
+              const run = columnRuns[i];
+              if (currentCluster.length === 0) {
+                currentCluster.push(run);
+              } else {
+                const prevRun = currentCluster[currentCluster.length - 1];
+                const isAdjacent = run.x === prevRun.x + 1;
+                const isSameColor = run.color === prevRun.color;
+                const hasVerticalOverlap = Math.max(run.topY, prevRun.topY) <= Math.min(run.bottomY, prevRun.bottomY) + 3;
+
+                if (isAdjacent && isSameColor && hasVerticalOverlap) {
+                  currentCluster.push(run);
+                } else {
+                  evaluateCluster(currentCluster);
+                  currentCluster = [run];
+                }
+              }
+            }
+            if (currentCluster.length > 0) {
+              evaluateCluster(currentCluster);
+            }
+
+            // 7. Stage 5: Time Series Arrangement & Price Dispersion Validation
+            const distinctCandleBars = verifiedCandles.length;
+            let verifiedWicksCount = 0;
+            verifiedCandles.forEach((c) => {
+              if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
+            });
+
             let horizontalSpan = 0;
             let verticalDispersion = 0;
-            if (validBarPositionsX.length >= 2) {
-              horizontalSpan = validBarPositionsX[validBarPositionsX.length - 1] - validBarPositionsX[0];
-            }
-            if (validBarMidpointsY.length >= 2) {
-              const minY = Math.min(...validBarMidpointsY);
-              const maxY = Math.max(...validBarMidpointsY);
-              verticalDispersion = maxY - minY;
+            if (distinctCandleBars >= 2) {
+              horizontalSpan = verifiedCandles[distinctCandleBars - 1].centerX - verifiedCandles[0].centerX;
+              const centerYs = verifiedCandles.map((c) => c.centerY);
+              verticalDispersion = Math.max(...centerYs) - Math.min(...centerYs);
             }
 
-            const bgRatio = (darkBgCount + lightBgCount) / Math.max(1, totalExamined);
-            const hasBrokerBg = bgRatio > 0.15;
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
 
-            // Scan for Broker Trade Action Buttons (Buy/Sell or Call/Put) in lower zone
+            // 8. Stage 6: Scan for Broker Controls / Dashed Price Line
             let brokerBuyBtnPixels = 0;
             let brokerSellBtnPixels = 0;
             const yBtnStart = Math.floor(targetHeight * 0.68);
-            const yBtnEnd = Math.floor(targetHeight * 0.95);
+            const yBtnEnd = Math.floor(targetHeight * 0.96);
+
             for (let y = yBtnStart; y < yBtnEnd; y++) {
               for (let x = xStart; x < xEnd; x++) {
                 const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
-                // Quotex/Broker Buy green (#00b06f, #00c076, #00a65a)
-                if (g >= 115 && g > r * 1.22 && g > b * 1.15) {
-                  brokerBuyBtnPixels++;
-                }
-                // Quotex/Broker Sell red (#ef5350, #e53935, #d32f2f)
-                else if (r >= 130 && r > g * 1.22 && r > b * 1.15) {
-                  brokerSellBtnPixels++;
-                }
+                if (g >= 115 && g > r * 1.30 && g > b * 1.20) brokerBuyBtnPixels++;
+                else if (r >= 130 && r > g * 1.30 && r > b * 1.20) brokerSellBtnPixels++;
               }
             }
-            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 15 && brokerSellBtnPixels >= 15;
+            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 25 && brokerSellBtnPixels >= 25;
 
-            // TradePulse Self-Capture Guard:
-            // Only triggered if TradePulse's own tab is currently focused/visible in the browser
-            // When the user switches to Quotex, document.visibilityState is 'hidden'
+            // 9. Stage 7: Comprehensive Multi-Condition Candlestick Chart Verification
+            // REJECTS phone home screens, wallpapers, photo widgets, and menus
+            const hasSufficientCandles = distinctCandleBars >= 4;
+            const hasSufficientSpan = horizontalSpan >= targetWidth * 0.18; // At least 58px span
+            const hasSufficientDispersion = verticalDispersion >= 10; // Vertical price movement
+            const hasCandleMorphology = verifiedWicksCount >= 1 || distinctCandleBars >= 6;
+
+            // TradePulse Self-Capture Guard
             const isTradePulseScreen =
               typeof document !== 'undefined' &&
               document.visibilityState === 'visible' &&
               !this.isNativeCaptureActive &&
-              isPortrait &&
               distinctCandleBars < 3;
 
-            // Resilient Broker Candlestick Chart Criteria:
-            // 1. Either 3+ candle bars with dispersion and broker background
-            // 2. OR verified broker Buy & Sell buttons + broker theme + 2+ candle bars (handles HUD overlapping candles)
             const isCandlestickChart =
               !isTradePulseScreen &&
-              ((distinctCandleBars >= 3 &&
-                totalCandlePixels >= 25 &&
-                horizontalSpan >= targetWidth * 0.10 &&
-                verticalDispersion >= 4 &&
-                hasBrokerBg) ||
-               (hasBrokerTradeButtons &&
-                hasBrokerBg &&
-                (distinctCandleBars >= 2 || totalCandlePixels >= 18)));
+              hasBrokerTheme &&
+              hasSufficientCandles &&
+              hasSufficientSpan &&
+              hasSufficientDispersion &&
+              (hasCandleMorphology || hasBrokerTradeButtons);
 
             const diagnostic: ChartDetectionDiagnostic = {
               isChart: isCandlestickChart,
@@ -1261,90 +1479,81 @@ export class LiveScreenService {
               totalCandlePixels,
               horizontalSpanPercent,
               verticalDispersionPx: Math.round(verticalDispersion),
-              hasBrokerBackground: hasBrokerBg,
+              hasBrokerBackground: hasBrokerTheme,
+              hasCandleWicks: verifiedWicksCount > 0,
+              verifiedWicksCount,
+              backgroundUniformityPercent,
             };
 
+            // If verification failed, explain precisely WHY with actionable Bengali reason
             if (!isCandlestickChart) {
               const failureReasons: string[] = [];
               if (isTradePulseScreen) {
-                failureReasons.push('⚠️ ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে: আপনি বর্তমানে ট্রেডপাল্স অ্যাপের স্ক্রিনেই আছেন।');
-              } else if (distinctCandleBars < 3) {
-                failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: স্ক্রিনে মাত্র ${distinctCandleBars}টি ক্যান্ডেলস্টিক বার পাওয়া গেছে।`);
-              } else if (!hasBrokerBg) {
-                failureReasons.push('ব্রোকার ব্যাকগ্রাউন্ড অমিল: ট্রেডিং টার্মিনালের ডার্ক বা লাইট চার্ট ব্যাকগ্রাউন্ড শনাক্ত হয়নি।');
-              } else if (totalCandlePixels < 25) {
-                failureReasons.push(`ক্যান্ডেল পিক্সেল অপর্যাপ্ত: মাত্র ${totalCandlePixels} লাল/সবুজ ক্যান্ডেল পিক্সেল শনাক্ত হয়েছে।`);
-              } else if (horizontalSpan < targetWidth * 0.12) {
-                failureReasons.push(`ক্যান্ডেল বিস্তৃতি স্বল্প: অনুভূমিক বিস্তার মাত্র ${horizontalSpanPercent}%।`);
-              } else if (verticalDispersion < 4) {
-                failureReasons.push('প্রাইস অ্যাকশন অনুভূমিক/ফ্ল্যাট: কোনো উল্লম্ব ট্রেন্ড বা সুইং ওঠানামা নেই।');
+                failureReasons.push('⚠️ ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে ব্রোকার চার্ট খুলুন।');
+              } else if (!hasBrokerTheme) {
+                failureReasons.push(`নন-ট্রেডিং বা অসম ডিসপ্লে: চার্টের ডার্ক/লাইট সলিড ক্যানভাস মেলেনি (ব্যাকগ্রাউন্ড ইউনিফর্মিটি ${backgroundUniformityPercent}%)। হোমস্ক্রিন বা ছবি শনাক্ত।`);
+              } else if (distinctCandleBars < 4) {
+                failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: মাত্র ${distinctCandleBars}টি জ্যামিতিক ক্যান্ডেল বার শনাক্ত হয়েছে (ন্যূনতম ৪টি ক্যান্ডেল প্রয়োজন)।`);
+              } else if (!hasSufficientSpan) {
+                failureReasons.push(`অনুভূমিক টাইমলাইন বিস্তার স্বল্প (${horizontalSpanPercent}%): ক্যান্ডেলগুলো ক্রমানুসারে সাজানো নেই।`);
+              } else if (!hasSufficientDispersion) {
+                failureReasons.push('প্রাইস অ্যাকশন ফ্ল্যাট: উল্লম্ব সুইং বা প্রাইস ওঠানামা পাওয়া যায়নি (আইকন বা রেখা হতে পারে)।');
+              } else if (!hasCandleMorphology && !hasBrokerTradeButtons) {
+                failureReasons.push('ক্যান্ডেলস্টিক উইক (ছায়া) বা ব্রোকার ট্রেডিং বাটন শনাক্ত হয়নি — সাধারণ রঙিন ডিসপ্লে বাতিল।');
               } else {
-                failureReasons.push('স্ক্রিনটি সক্রিয় ট্রেডিং টার্মিনাল নয় (হোমস্ক্রিন, চ্যাট বা অন্য অ্যাপ হতে পারে)।');
+                failureReasons.push('সক্রিয় ট্রেডিং চার্ট শনাক্ত হয়নি (হোমস্ক্রিন, বিজ্ঞাপন বা অন্য অ্যাপ হতে পারে)।');
               }
 
               diagnostic.failureReason = failureReasons[0];
-              diagnostic.recommendedAction = isTradePulseScreen
-                ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ফুলস্ক্রিনে নিয়ে আসুন।'
-                : 'ব্রোকার অ্যাপ (Quotex, Binomo, Pocket Option) খুলে ক্যান্ডেলস্টিক চার্টটি ফুলস্ক্রিনে রাখুন।';
+              diagnostic.recommendedAction = 'Quotex, Binomo বা Pocket Option ব্রোকার অ্যাপটি ফুলস্ক্রিনে নিয়ে আসুন।';
 
               return resolve({
                 isChart: false,
                 dir: 'WAIT',
                 confidence: 0,
                 symbol: isTradePulseScreen ? 'TRADEPULSE_APP' : 'UNKNOWN',
-                pattern: isTradePulseScreen ? 'ট্রেডপাল্স অ্যাপ শনাক্ত' : 'চার্ট পাওয়া যায়নি',
+                pattern: 'চার্ট মেলেনি (WAIT)',
                 reason: [
                   failureReasons[0],
-                  isTradePulseScreen
-                    ? 'ট্রেডপাল্স অ্যাপ মিনিমাইজ করে ব্রোকার চার্ট স্ক্রিনে আনলে তাৎক্ষণিক সিগন্যাল শুরু হবে।'
-                    : 'ট্রেডিং চার্ট ছাড়া ফলাফল প্রদর্শন সম্পূর্ণ বন্ধ (BLOCKED)।',
-                  'উপরে ফ্লোটিং HUD চালু রাখুন যাতে ব্রোকারের ওপরেই লাইভ সিগন্যাল দেখতে পান।',
+                  'চার্ট নিশ্চিত না হওয়া পর্যন্ত এআই কোনো অনুমানভিত্তিক UP/DOWN সিগন্যাল প্রদান করে না (WAIT সংরক্ষিত)।',
+                  'ফ্লোটিং HUD-তে নজর রাখুন।',
                 ],
                 diagnostic,
               });
             }
 
-            // Real candlestick chart verified!
+            // 10. Genuine Candlestick Chart Confirmed! Analyze Rightmost Candles for True Momentum
             diagnostic.recommendedAction = 'সক্রিয় ক্যান্ডেলস্টিক চার্ট নিশ্চিত। লাইভ মোমেন্টাম বিশ্লেষণ কার্যকর।';
 
-            // Analyze recent price momentum around the actual latest candles on screen
-            const rightmostCandleX = validBarPositionsX.length > 0
-              ? validBarPositionsX[validBarPositionsX.length - 1]
-              : Math.floor(xStart + (xEnd - xStart) * 0.60);
+            // Take the 3-4 rightmost verified candles
+            const recentCandles = verifiedCandles.slice(-4);
+            let greenCount = 0;
+            let redCount = 0;
+            recentCandles.forEach((c) => {
+              if (c.color === 'GREEN') greenCount++;
+              if (c.color === 'RED') redCount++;
+            });
 
-            // Scan zone around the last few candles (span of ~45px)
-            const scanXStart = Math.max(xStart, rightmostCandleX - 45);
-            const scanXEnd = Math.min(xEnd, rightmostCandleX + 10);
+            const lastCandle = recentCandles[recentCandles.length - 1];
+            let dir: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
+            let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
+            let confidence = 0;
 
-            let recentGreen = 0;
-            let recentRed = 0;
-
-            for (let y = yStart; y < yEnd; y++) {
-              for (let x = scanXStart; x < scanXEnd; x++) {
-                const idx = (y * targetWidth + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-
-                const isGreen =
-                  (g >= 75 && g > r * 1.12 && (g - r) >= 12 && b <= g * 1.25) ||
-                  (g >= 115 && r <= 85 && b <= 190) ||
-                  (g >= 120 && b >= 120 && r <= 80);
-                const isRed =
-                  (r >= 95 && r > g * 1.18 && (r - g) >= 14 && r > b * 1.15 && (r - b) >= 14) ||
-                  (r >= 140 && g <= 90 && b <= 95);
-
-                if (isGreen) recentGreen++;
-                if (isRed) recentRed++;
-              }
+            if (lastCandle.color === 'GREEN' && greenCount >= redCount) {
+              dir = 'UP';
+              confidence = Math.min(94, 82 + greenCount * 3);
+              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Marubozu';
+            } else if (lastCandle.color === 'RED' && redCount >= greenCount) {
+              dir = 'DOWN';
+              confidence = Math.min(94, 82 + redCount * 3);
+              pattern = lastCandle.hasLowerWick ? 'Bearish Candlestick Rejection' : 'Strong Bearish Marubozu';
+            } else {
+              dir = 'WAIT';
+              confidence = 0;
+              pattern = 'কনসোলিডেশন ক্যান্ডেল (WAIT)';
             }
 
-            const totalRightCandles = recentGreen + recentRed;
-            const dir: 'UP' | 'DOWN' = recentGreen >= recentRed ? 'UP' : 'DOWN';
-            const ratio = totalRightCandles > 0 ? Math.max(recentGreen, recentRed) / totalRightCandles : 0.6;
-            const confidence = Math.min(94, Math.max(78, Math.round(76 + ratio * 16)));
-            const symbol = hasBrokerTradeButtons ? 'Quotex Broker Chart' : 'LIVE CHART';
-            const pattern = dir === 'UP' ? 'Bullish Candlestick Momentum' : 'Bearish Rejection Momentum';
+            const symbol = hasBrokerTradeButtons ? 'Quotex Broker Live' : 'BROKER CHART';
 
             return resolve({
               isChart: true,
@@ -1353,22 +1562,24 @@ export class LiveScreenService {
               symbol,
               pattern,
               reason: [
-                'স্ক্রিনে সক্রিয় ট্রেডিং ক্যান্ডেলস্টিক চার্ট সফলভাবে সনাক্ত হয়েছে।',
+                `স্ক্রিনে ${distinctCandleBars}টি ক্রমানুসারে সজ্জিত ক্যান্ডেলস্টিক বার ও উইক সফলভাবে নিশ্চিত হয়েছে।`,
                 dir === 'UP'
                   ? 'সাম্প্রতিক ক্যান্ডেলগুলোতে বায়ার্স প্রেসার ও বুলিশ মোমেন্টাম নিশ্চিত।'
-                  : 'সাম্প্রতিক ক্যান্ডেলগুলোতে সেলার্স প্রেসার ও বিয়ারিশ রিজেকশন নিশ্চিত।',
+                  : dir === 'DOWN'
+                  ? 'সাম্প্রতিক ক্যান্ডেলগুলোতে সেলার্স প্রেসার ও বিয়ারিশ রিজেকশন নিশ্চিত।'
+                  : 'ক্যান্ডেল প্যাটার্নে স্পষ্ট মোমেন্টাম নেই — কনসোলিডেশন ব্রেকআউটের জন্য WAIT।',
                 '১ মিনিট পরবর্তী ক্যান্ডেল এক্সপায়ারি উপযোগী সিগন্যাল।',
               ],
               diagnostic,
             });
-          } catch {
+          } catch (e: any) {
             resolve({
               isChart: false,
               dir: 'WAIT',
               confidence: 0,
               symbol: 'UNKNOWN',
-              pattern: 'চার্ট অনুসন্ধান চলছে',
-              reason: ['চার্ট বিশ্লেষণে অপেক্ষমাণ।'],
+              pattern: 'চার্ট মেলেনি (WAIT)',
+              reason: ['ফ্রেম বিশ্লেষণে ত্রুটি: ' + (e?.message || 'অজানা')],
             });
           }
         };
@@ -1379,20 +1590,20 @@ export class LiveScreenService {
             dir: 'WAIT',
             confidence: 0,
             symbol: 'UNKNOWN',
-            pattern: 'চার্ট অনুসন্ধান চলছে',
-            reason: ['স্ক্রিন ফ্রেম অস্পষ্ট বা চার্ট সনাক্ত হয়নি।'],
+            pattern: 'চার্ট মেলেনি (WAIT)',
+            reason: ['স্ক্রিন ফ্রেম ইমেজ লোড ব্যর্থ।'],
           });
         };
 
         img.src = base64.startsWith('data:') ? base64 : `data:image/jpeg;base64,${base64}`;
-      } catch {
+      } catch (err: any) {
         resolve({
           isChart: false,
           dir: 'WAIT',
           confidence: 0,
           symbol: 'UNKNOWN',
-          pattern: 'চার্ট পাওয়া যায়নি',
-          reason: ['চার্ট সনাক্তকরণে অপেক্ষা করা হচ্ছে।'],
+          pattern: 'চার্ট মেলেনি (WAIT)',
+          reason: ['চার্ট প্রক্রিয়াকরণ ব্যর্থ: ' + (err?.message || 'অজানা')],
         });
       }
     });
@@ -1931,10 +2142,17 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
-    // Clear previous result so stopped state doesn't show old stale chart signals
+    // Completely wipe previous result, active countdown, and chart flags
     this.latestResult = null;
+    this.expirySecondsLeft = 0;
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    this.isChartFound = false;
+    this.isSearchingForChart = false;
 
-    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open!
+    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open in Ready state!
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,

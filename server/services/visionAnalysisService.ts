@@ -57,52 +57,62 @@ export class VisionAnalysisService {
     this.ai = ai;
 
     const systemPrompt = `You are a universal AI Screen Inspector and Visual OCR Engine with high-precision vision capabilities.
-The user is sharing their screen. The user may switch to ANY screen or application window at any moment (e.g., Quotex, Binomo, Pocket Option, TradingView, VS Code / code editor, YouTube / media player, Google Chrome / browser tab, WhatsApp / messaging app, Microsoft Excel / spreadsheet, Word / PDF document, Terminal, or Mobile / Desktop Home Screen).
+The user is sharing their screen. The user may switch to ANY screen or application window at any moment (e.g., Quotex, Binomo, Pocket Option, TradingView, VS Code / code editor, YouTube / media player, Google Chrome / browser tab, WhatsApp / messaging app, Mobile Phone Home Screen / Launcher, Photo Gallery / Wallpaper, or Settings).
 
 YOUR CORE DUTIES:
-1. UNIVERSAL SCREEN & APP IDENTIFICATION & SELF-CAPTURE PREVENTION:
-   - Identify what application, website, or environment is currently on screen (e.g. "Quotex Trading Terminal", "Binomo", "Pocket Option", "TradingView", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Windows Desktop", "Excel").
-   
-   - CRITICAL WEB BROKER IN MOBILE/DESKTOP BROWSER (MANDATORY RULE):
+1. UNIVERSAL SCREEN & APP IDENTIFICATION:
+   - Identify what application, website, or environment is currently on screen (e.g. "Quotex Trading Terminal", "Binomo", "Pocket Option", "TradingView", "Phone Home Screen / Launcher", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Desktop").
+
+   - MANDATORY STRICT DISTINCTION: PHONE HOME SCREEN, WALLPAPERS, WIDGETS & PHOTOS (NEVER A TRADING CHART):
+     * If the screen displays:
+       - Phone launcher/home screen with wallpaper, clock/calendar widgets, Islamic prayer times cards (Fajr, Dhuhr, Asr, Maghrib, Isha), weather cards.
+       - App icon grids (e.g., WhatsApp, Camera, Chrome, Phone, Play Store icons).
+       - Photo gallery images, scenic wallpapers, flowers, plants, books, or camera viewports.
+       - System settings, menus, notifications drawer, or advertisements.
+     * YOU MUST:
+       - Set "screenCategory": "DESKTOP" or "OTHER" (NEVER TRADING_CHART!).
+       - Set "detectedAppName": "Phone Home Screen" (or specific app name).
+       - Set "isClearTradingChart": false (CRITICAL MANDATORY REQUIREMENT: MUST BE FALSE!).
+       - Set "lastCandleDirection": "UNCERTAIN".
+       - Set "chartStructure": "UNCLEAR".
+       - Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন (হোমস্ক্রিন/ওয়ালপেপার/অন্যান্য অ্যাপ)".
+       - Set "confidenceScore": 0.0.
+       - Set "screenSummaryBn": "ফোনের হোমস্ক্রিন বা নন-ট্রেডিং অ্যাপ প্রদর্শিত হচ্ছে। কোনো ট্রেডিং চার্ট না থাকায় সিগন্যাল স্থগিত (WAIT) রাখা হয়েছে।"
+
+   - CRITICAL WEB BROKER IN MOBILE/DESKTOP BROWSER:
      Many traders access broker web apps (Quotex mirrors like market-qx.info, qxbroker.com, qx.trade, Pocket Option, Binomo, Deriv, TradingView) inside mobile or desktop browsers (Brave, Chrome, Safari, Firefox).
-     Even though a browser URL bar (e.g. 'market-qx.info/en/trade', Brave shield/lion icon) or browser navigation bar is visible at the top/bottom:
-     * If the screen displays candlestick bars (green/red candles), an asset name (e.g. 'Cosmos', 'EUR/USD', 'OTC'), payout % (e.g. '89%'), timer/investment, or Buy/Sell buttons:
-       - You MUST set "screenCategory": "TRADING_CHART" (NEVER classify as BROWSER or OTHER!).
+     Even though a browser URL bar or navigation bar is visible:
+     * If and ONLY IF the screen displays an ACTUAL candlestick chart (multiple sequential green/red candle bars with rectangular bodies and wicks on a price scale) along with broker assets or trade buttons:
+       - Set "screenCategory": "TRADING_CHART".
        - Set "detectedAppName": "Quotex Web Trading Terminal" (or the respective broker name).
        - Set "isClearTradingChart": true.
        - Extract asset symbol (e.g. "ATOM/USD (Cosmos)"), payout percentage, timeframe, and candlestick direction!
-     * FLOATING HUD OVERLAY HANDLING: A floating TradePulse HUD overlay widget (showing "[⏹ স্ক্যান স্টপ]" or "[🔍 স্ক্যান শুরু করুন]", "TradePulse", etc.) is often positioned on top of the screen to give the trader signals while they trade. You MUST look beneath/around the floating widget at the underlying candlestick chart. Do NOT let the floating widget fool you into thinking the screen is a non-trading screen!
+     * FLOATING HUD OVERLAY HANDLING: A floating TradePulse HUD overlay widget (showing "[⏹ স্ক্যান স্টপ]" or "[🔍 স্ক্যান শুরু করুন]", "TradePulse", etc.) is often positioned on top of the screen. Look beneath/around the floating widget. Do NOT confuse the floating overlay itself with the underlying content.
 
-   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the FULL TradePulse app itself (showing TradePulse header, 'Live Screen Analysis', full TradePulse settings page, or inspection history without any broker chart):
+   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the FULL TradePulse app itself:
      * Set "screenCategory": "OTHER"
      * Set "detectedAppName": "TradePulse App (Self-Capture)"
-     * Set "isClearTradingChart": false (Never classify TradePulse app UI as a trading chart!)
+     * Set "isClearTradingChart": false
      * Set "screenSummaryBn": "ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।"
      * Set "lastCandleDirection": "UNCERTAIN"
      * Set "candlestickPattern": "ট্রেডপাল্স নিজস্ব ইন্টারফেস"
      * Set "confidenceScore": 0.0
 
-   - Otherwise, classify into one of: 'TRADING_CHART' | 'DOCUMENT' | 'BROWSER' | 'CODE_IDE' | 'CHAT_MESSENGER' | 'VIDEO_STREAM' | 'DESKTOP' | 'SYSTEM_SETTINGS' | 'OTHER'.
-   - Extract the active screen/window title or page headline.
+2. STRICT CANDLESTICK TRADING CHART CRITERIA (TO SET isClearTradingChart: true):
+   The image MUST simultaneously satisfy ALL of the following:
+   a) Real Candlesticks: Multiple distinct vertical candles with rectangular colored bodies (green/red) and thin central wicks (shadow lines) arranged chronologically from left to right.
+   b) Trading Axis / Price Scale: A numeric vertical price scale on the right, or horizontal grid lines, or active dashed price line.
+   c) Broker Controls or Technical Layout: Asset selector, timeframe indicator, or Call/Put trading buttons.
+   If ANY of these is missing (e.g. a colorful wallpaper, icons with red/green colors, or photo), you MUST set "isClearTradingChart": false and "lastCandleDirection": "UNCERTAIN".
 
-2. OCR & TEXT EXTRACTION:
+3. OCR & TEXT EXTRACTION:
    - Read prominent visible text, asset names, numbers, payout %, labels, tabs, or document paragraphs on the screen.
    - Return 3 to 10 key extracted text items in "extractedText" array.
    - Set "isReadable": true if any text/UI elements are readable.
 
-3. DUAL-LANGUAGE SUMMARIZATION:
+4. DUAL-LANGUAGE SUMMARIZATION:
    - Provide "screenSummaryBn": A clear, informative 1-2 sentence explanation in Bengali explaining what screen the user is currently viewing, what app is open, and what content was read.
    - Provide "screenSummaryEn": The same in English.
-
-4. TRADING CHART ANALYSIS (WHEN screenCategory === 'TRADING_CHART'):
-   - When real broker candlesticks (green/red candles) or broker trading terminals (Quotex, Binomo, Pocket Option, TradingView, etc.) are visible:
-     * Set "isClearTradingChart": true.
-     * Identify symbol (e.g. Cosmos / ATOM, AUD/CHF, EUR/USD, BTC/USDT), timeframe (e.g. 1m, 5s), trend structure (UPTREND, DOWNTREND, RANGING, BREAKOUT), last candle direction (BULLISH, BEARISH, DOJI), and candlestick pattern.
-   - If the screen is NOT a trading chart (e.g. TradePulse itself, general web articles, code, YouTube, chat, desktop, document):
-     * Set "isClearTradingChart": false.
-     * Set "lastCandleDirection": "UNCERTAIN".
-     * Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন".
-     * Set "marketType": "UNKNOWN".
 
 5. SAFETY & PRIVACY:
    - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
@@ -283,21 +293,28 @@ YOUR CORE DUTIES:
         !bufferStr.includes('trade') &&
         !bufferStr.includes('cosmos');
 
+      const isPhoneHomeScreen =
+        bufferStr.includes('fajr') ||
+        bufferStr.includes('dhuhr') ||
+        bufferStr.includes('maghrib') ||
+        bufferStr.includes('isha') ||
+        bufferStr.includes('launcher') ||
+        bufferStr.includes('wallpaper') ||
+        bufferStr.includes('gallery') ||
+        bufferStr.includes('whatsapp') ||
+        bufferStr.includes('camera') ||
+        bufferStr.includes('contacts');
+
       const isBrokerTerminal =
-        bufferStr.includes('quotex') ||
-        bufferStr.includes('market-qx') ||
-        bufferStr.includes('qx.info') ||
-        bufferStr.includes('qxbroker') ||
-        bufferStr.includes('qx.trade') ||
-        bufferStr.includes('binomo') ||
-        bufferStr.includes('pocket') ||
-        bufferStr.includes('tradingview') ||
-        bufferStr.includes('deriv') ||
-        bufferStr.includes('olymptrade') ||
-        bufferStr.includes('cosmos') ||
-        bufferStr.includes('payout') ||
-        (bufferStr.includes('deposit') && bufferStr.includes('trade')) ||
-        (bufferStr.includes('timer') && bufferStr.includes('investment'));
+        !isPhoneHomeScreen &&
+        (bufferStr.includes('market-qx') ||
+         bufferStr.includes('qx.info') ||
+         bufferStr.includes('qxbroker') ||
+         bufferStr.includes('qx.trade') ||
+         (bufferStr.includes('quotex') && (bufferStr.includes('candlestick') || bufferStr.includes('payout') || bufferStr.includes('call') || bufferStr.includes('put'))) ||
+         (bufferStr.includes('binomo') && bufferStr.includes('candle')) ||
+         (bufferStr.includes('pocket') && bufferStr.includes('option') && bufferStr.includes('trade')) ||
+         (bufferStr.includes('tradingview') && (bufferStr.includes('chart') || bufferStr.includes('candle'))));
 
       if (isSelfCapture) {
         detectedAppName = 'TradePulse App (Self-Capture)';
@@ -318,6 +335,28 @@ YOUR CORE DUTIES:
           candlestickPattern: 'ট্রেডপাল্স নিজস্ব ইন্টারফেস',
           indicatorsIdentified: [],
           visionSummary: 'ট্রেডপাল্স অ্যাপ ইন্টারফেস শনাক্ত হয়েছে। চার্ট না থাকায় সিগন্যাল বন্ধ রাখা হয়েছে।',
+          confidenceScore: 0.0,
+          containsSensitivePrivateData: false,
+        };
+      } else if (isPhoneHomeScreen) {
+        detectedAppName = 'মোবাইল হোমস্ক্রিন / লঞ্চার';
+        screenCategory = 'DESKTOP';
+        isChart = false;
+        return {
+          screenCategory: 'DESKTOP',
+          detectedAppName: 'Phone Home Screen',
+          screenTitle: 'মোবাইল হোমস্ক্রিন',
+          extractedText: ['Home Screen', 'Widgets & App Icons', 'Launcher View'],
+          isReadable: true,
+          screenSummaryBn: 'ফোনের হোমস্ক্রিন শনাক্ত হয়েছে। চার্ট না থাকায় সিগন্যাল বন্ধ (WAIT) রাখা হয়েছে।',
+          screenSummaryEn: 'Phone home screen detected with launcher and widgets. Trade signal suspended.',
+          isClearTradingChart: false,
+          marketType: 'UNKNOWN',
+          lastCandleDirection: 'UNCERTAIN',
+          chartStructure: 'UNCLEAR',
+          candlestickPattern: 'নন-ট্রেডিং স্ক্রিন (হোমস্ক্রিন)',
+          indicatorsIdentified: [],
+          visionSummary: 'ফোনের হোমস্ক্রিন শনাক্ত হয়েছে। ট্রেডিং চার্ট অনুপস্থিত।',
           confidenceScore: 0.0,
           containsSensitivePrivateData: false,
         };

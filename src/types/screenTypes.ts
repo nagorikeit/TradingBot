@@ -85,6 +85,9 @@ export interface ChartDetectionDiagnostic {
   horizontalSpanPercent: number;
   verticalDispersionPx: number;
   hasBrokerBackground: boolean;
+  hasCandleWicks?: boolean;
+  verifiedWicksCount?: number;
+  backgroundUniformityPercent?: number;
   failureReason?: string;
   recommendedAction?: string;
 }
