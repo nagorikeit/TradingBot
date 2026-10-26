@@ -741,6 +741,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     private void createOverlayView() {
+        if (overlayView != null && windowManager != null) {
+            try {
+                windowManager.removeView(overlayView);
+            } catch (Exception ignored) {}
+            overlayView = null;
+        }
+
         int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;

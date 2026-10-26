@@ -17,6 +17,7 @@ import {
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
+import { Capacitor } from '@capacitor/core';
 
 interface FloatingLiveScreenControllerProps {
   currentTab: string;
@@ -80,7 +81,13 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const isConnecting = streamState === 'CONNECTING';
   const isPaused = streamState === 'PAUSED';
 
-  // Do NOT show floating HUD bubble automatically on connect!
+  // 1. On Android native runtime, the Android OS WindowManager system overlay is already active
+  // and floating above all apps. Never render a duplicate HTML bubble in the WebView!
+  if (Capacitor.isNativePlatform()) {
+    return null;
+  }
+
+  // 2. Do NOT show floating HUD bubble automatically on connect!
   // ONLY show when user explicitly clicks the "Floating HUD" button (isOverlayActive)
   if (!isOverlayActive || (!isStreaming && !isConnecting && !isPaused)) {
     return null;
@@ -190,23 +197,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       onPointerUp={handlePointerUp}
       className="select-none touch-none animate-in fade-in zoom-in-95 duration-200"
     >
-      {/* Voice Assistant Speech Bubble */}
-      {voiceNotification && (
-        <div className="mb-2 px-3.5 py-1.5 rounded-full bg-cyan-950/95 border border-cyan-500/70 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs text-cyan-200 animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-sm">
-          <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
-          <div className="truncate font-medium">{voiceNotification}</div>
-        </div>
-      )}
-
-      {/* Error Bubble */}
-      {errorMessage && (
-        <div className="mb-2 px-3 py-1.5 rounded-xl bg-red-950/95 border border-red-700/80 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs text-red-200 animate-in fade-in max-w-sm">
-          <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          <div className="truncate text-[11px]">{errorMessage}</div>
-        </div>
-      )}
-
-      {/* THE UNIFIED FLOATING HUD BUBBLE */}
+      {/* THE ONLY UNIFIED FLOATING HUD BUBBLE */}
       <div
         onClick={handleBubbleClick}
         className={`group cursor-grab active:cursor-grabbing flex flex-col gap-2 p-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 min-w-[280px] max-w-[340px] ${
@@ -366,6 +357,22 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             </button>
           </div>
         </div>
+
+        {/* Inline Voice Guidance Bar (Inside the single unified bubble) */}
+        {voiceNotification && (
+          <div className="px-2.5 py-1 rounded-lg bg-cyan-950/80 border border-cyan-500/40 flex items-center gap-1.5 text-[11px] text-cyan-200 animate-in fade-in">
+            <Volume2 className="w-3 h-3 text-cyan-400 shrink-0 animate-pulse" />
+            <span className="truncate">{voiceNotification}</span>
+          </div>
+        )}
+
+        {/* Inline Error Bar (Inside the single unified bubble) */}
+        {errorMessage && (
+          <div className="px-2.5 py-1 rounded-lg bg-red-950/80 border border-red-700/50 flex items-center gap-1.5 text-[11px] text-red-200 animate-in fade-in">
+            <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />
+            <span className="truncate">{errorMessage}</span>
+          </div>
+        )}
 
         {/* BOTTOM ACTION: SINGLE [🔍 স্ক্যান শুরু করুন] / [⏹ স্ক্যান স্টপ] TOGGLE BUTTON */}
         <div className="pt-1 border-t border-slate-800/80">
