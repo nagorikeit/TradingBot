@@ -17,7 +17,6 @@ import {
 import { liveScreenService } from '../services/liveScreenService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { LiveStreamState, ScreenAnalysisFinalResult } from '../types/screenTypes';
-import { Capacitor } from '@capacitor/core';
 
 interface FloatingLiveScreenControllerProps {
   currentTab: string;
@@ -37,6 +36,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [isChartFound, setIsChartFound] = useState<boolean>(liveScreenService.isChartDetected());
   const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
+  const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
 
   // Dragging state for the floating bubble
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -51,6 +51,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     const unsub = liveScreenService.subscribe(() => {
       const state = liveScreenService.getState();
       setStreamState(state);
+      setIsOverlayActive(liveScreenService.isOverlayActive());
       setResult(liveScreenService.getLatestResult());
       setIsBusy(liveScreenService.isBusy());
       setIsScanning(liveScreenService.isScanning());
@@ -79,14 +80,9 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const isConnecting = streamState === 'CONNECTING';
   const isPaused = streamState === 'PAUSED';
 
-  // On Native Android, the native floating overlay (SYSTEM_ALERT_WINDOW) is active over all apps.
-  // Never show the in-DOM HTML bubble on Capacitor native platform to eliminate double-bubble confusion!
-  if (Capacitor.isNativePlatform()) {
-    return null;
-  }
-
-  // Do not show floating HUD bubble if screen sharing is completely stopped or idle
-  if (!isStreaming && !isConnecting && !isPaused) {
+  // Do NOT show floating HUD bubble automatically on connect!
+  // ONLY show when user explicitly clicks the "Floating HUD" button (isOverlayActive)
+  if (!isOverlayActive || (!isStreaming && !isConnecting && !isPaused)) {
     return null;
   }
 
@@ -102,7 +98,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
-    liveScreenService.disconnect('ফ্লোটিং বাবল বন্ধ করা হয়েছে');
+    liveScreenService.hideFloatingOverlayHUD();
   };
 
   const handleToggleVoice = (e: React.MouseEvent) => {

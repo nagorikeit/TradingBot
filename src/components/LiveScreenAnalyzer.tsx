@@ -74,6 +74,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [lastDetectedAppName, setLastDetectedAppName] = useState<string>(liveScreenService.getLastDetectedAppName());
   const [lastDetectedSummaryBn, setLastDetectedSummaryBn] = useState<string>(liveScreenService.getLastDetectedSummaryBn());
   const [isPiPActive, setIsPiPActive] = useState<boolean>(liveScreenService.isPictureInPictureActive());
+  const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
   const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
 
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -143,6 +144,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setLastDetectedAppName(liveScreenService.getLastDetectedAppName());
       setLastDetectedSummaryBn(liveScreenService.getLastDetectedSummaryBn());
       setIsPiPActive(liveScreenService.isPictureInPictureActive());
+      setIsOverlayActive(liveScreenService.isOverlayActive());
     });
     return unsub;
   }, []);
@@ -402,7 +404,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
             {/* Floating HUD Widget Toggle */}
             <button
               onClick={() => {
-                if (liveScreenService.isOverlayActive()) {
+                if (isOverlayActive) {
                   liveScreenService.hideFloatingOverlayHUD();
                 } else {
                   liveScreenService.showFloatingOverlayHUD({
@@ -415,11 +417,15 @@ export const LiveScreenAnalyzer: React.FC = () => {
                   });
                 }
               }}
-              className="px-3 py-2 text-xs font-semibold rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40 flex items-center gap-1.5 transition-colors shadow-sm"
+              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors shadow-sm ${
+                isOverlayActive
+                  ? 'border-cyan-500 bg-cyan-950/70 text-cyan-200 ring-1 ring-cyan-500/50'
+                  : 'border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40'
+              }`}
               title="অন্য যেকোনো ট্রেডিং অ্যাপের ওপর ভাসমান উইন্ডো দেখানো বা লুকানো"
             >
               <Layers className="w-4 h-4 text-cyan-400" />
-              <span>ফ্লোটিং HUD</span>
+              <span>{isOverlayActive ? 'ফ্লোটিং HUD অন' : 'ফ্লোটিং HUD'}</span>
             </button>
 
             {/* Backend Server Settings Button */}

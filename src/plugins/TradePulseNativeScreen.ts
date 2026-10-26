@@ -55,6 +55,7 @@ export interface TradePulseNativeScreenPlugin {
     targetWidth?: number;
     targetHeight?: number;
     quality?: number;
+    backendUrl?: string;
   }): Promise<{ success: boolean; message?: string }>;
 
   /**
@@ -120,6 +121,14 @@ export interface TradePulseNativeScreenPlugin {
   addListener(
     eventName: 'onOverlayStopClicked',
     listenerFunc: () => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
+   * Subscribes to analysis results computed natively in background
+   */
+  addListener(
+    eventName: 'onNativeAnalysisComplete',
+    listenerFunc: (result: any) => void
   ): Promise<{ remove: () => void }>;
 
   /**

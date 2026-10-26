@@ -98,12 +98,36 @@ YOUR CORE DUTIES:
      * Set "candlestickPattern": "ট্রেডপাল্স নিজস্ব ইন্টারফেস"
      * Set "confidenceScore": 0.0
 
-2. STRICT CANDLESTICK TRADING CHART CRITERIA (TO SET isClearTradingChart: true):
-   The image MUST simultaneously satisfy ALL of the following:
-   a) Real Candlesticks: Multiple distinct vertical candles with rectangular colored bodies (green/red) and thin central wicks (shadow lines) arranged chronologically from left to right.
-   b) Trading Axis / Price Scale: A numeric vertical price scale on the right, or horizontal grid lines, or active dashed price line.
-   c) Broker Controls or Technical Layout: Asset selector, timeframe indicator, or Call/Put trading buttons.
-   If ANY of these is missing (e.g. a colorful wallpaper, icons with red/green colors, or photo), you MUST set "isClearTradingChart": false and "lastCandleDirection": "UNCERTAIN".
+2. ৪টি অপরিহার্য রিকোয়ারমেন্ট (4 MANDATORY REQUIREMENTS FOR CANDLESTICK TRADING CHART):
+   NEVER classify an image as a trading chart simply because it contains red or green colors!
+   To set "isClearTradingChart": true, the image MUST SIMULTANEOUSLY SATISFY ALL 4 OF THE FOLLOWING REQUIREMENTS:
+
+   * রিকোয়ারমেন্ট ১ (চার্ট ফ্রেম ও সমসত্ত্ব সলিড ক্যানভাস - Chart Frame & Uniform Solid Canvas):
+     A distinct, uniform solid trading canvas (dark navy, black, or clean white broker canvas).
+     REJECT: Natural photos, wallpapers, flowers, plants, clothes, home screen app grids, or complex backgrounds.
+
+   * রিকোয়ারমেন্ট ২ (খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন - Authentic Bullish Green / Bearish Red Candles):
+     Standard trading candle hues (bright emerald/neon green and solid broker red).
+     REJECT: Muted natural greens, brown earth tones, skin tones, or colored icons.
+
+   * রিকোয়ারমেন্ট ৩ (লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে + উইক/ছায়া - Strict Vertical Orientation & Central Wicks):
+     Candlesticks MUST be vertically elongated from top to bottom (height strictly greater than width).
+     Central wicks/shadow lines (thin vertical projections extending above and/or below the rectangular body) MUST be visible.
+     REJECT: Square buttons, horizontal banners, wide cards, round icons, or notification pills.
+
+   * রিকোয়ারমেন্ট ৪ (অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স - Horizontal Time Series & Price Scale):
+     A chronological series of at least 4 to 8 sequential candles arranged from left to right across time.
+     Visible vertical price movement across the scale (not a flat horizontal line).
+     Presence of price scale, time indicators, or broker trading controls (Quotex, Binomo, Pocket Option, TradingView).
+
+   IF ANY OF THESE 4 REQUIREMENTS IS MISSING:
+   You MUST set:
+   * "isClearTradingChart": false
+   * "lastCandleDirection": "UNCERTAIN"
+   * "chartStructure": "UNCLEAR"
+   * "confidenceScore": 0.0
+   * "candlestickPattern": "চার্ট মেলেনি (৪টি রিকোয়ারমেন্ট পূরণ হয়নি)"
+   * "screenSummaryBn": Explanation in Bengali of what is actually on screen and which chart requirement was missing.
 
 3. OCR & TEXT EXTRACTION:
    - Read prominent visible text, asset names, numbers, payout %, labels, tabs, or document paragraphs on the screen.

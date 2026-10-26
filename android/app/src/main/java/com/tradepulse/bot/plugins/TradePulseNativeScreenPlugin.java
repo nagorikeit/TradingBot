@@ -35,8 +35,20 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
 /**
  * TradePulseNativeScreenPlugin
@@ -66,8 +78,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private volatile long latestFrameTimestamp = 0;
     private volatile boolean isScanningActive = false;
     private volatile boolean isScanRequested = false;
-    private volatile boolean isAppInForeground = true;
-    private volatile long lastAutoEmittedTimestamp = 0;
     private PluginCall pendingCaptureCall = null;
 
     // Floating overlay window state
@@ -79,17 +89,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private TextToSpeech textToSpeech;
     private boolean isTtsInitialized = false;
 
-    @Override
-    protected void handleOnResume() {
-        super.handleOnResume();
-        isAppInForeground = true;
-    }
-
-    @Override
-    protected void handleOnPause() {
-        super.handleOnPause();
-        isAppInForeground = false;
-    }
+    // Native Background Executor & API Endpoint for continuous connectivity over other apps
+    private String backendUrl = "https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app";
+    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean isAnalyzingNativeFrame = new AtomicBoolean(false);
 
     @Override
     public void load() {
@@ -219,6 +222,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         try {
             int intervalSec = call.getInt("intervalSeconds", 3);
             this.captureIntervalMs = Math.max(2, intervalSec) * 1000;
+
+            String customUrl = call.getString("backendUrl", "");
+            if (customUrl != null && !customUrl.trim().isEmpty()) {
+                this.backendUrl = customUrl.trim().replaceAll("/+$", "");
+            }
 
             if (projectionManager == null) {
                 call.reject("MediaProjectionManager not available on this device");
@@ -367,16 +375,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("sequenceId", sequenceCounter);
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
-                        res.put("isAppInForeground", isAppInForeground);
                         pendingCaptureCall.resolve(res);
                         pendingCaptureCall = null;
                     }
 
-                    // If a scan was explicitly requested or recurring scan is active
-                    long now = System.currentTimeMillis();
-                    if (isScanRequested || (isScanningActive && (now - lastAutoEmittedTimestamp) >= captureIntervalMs)) {
+                    // If a scan was requested
+                    if (isScanRequested) {
                         isScanRequested = false;
-                        lastAutoEmittedTimestamp = now;
                         emitCachedFrame();
                     }
                 } catch (Exception e) {
@@ -410,7 +415,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         event.put("sequenceId", sequenceCounter);
         event.put("width", latestFrameWidth);
         event.put("height", latestFrameHeight);
-        event.put("isAppInForeground", isAppInForeground);
 
         notifyListeners("onFrameCaptured", event);
         // Do NOT nullify latestFrameBase64 - preserve current screen state for instant resumption
@@ -419,9 +423,150 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private void captureAndEmitLatestFrame() {
         if (latestFrameBase64 != null) {
             emitCachedFrame();
+            analyzeNativeFrameInBackground(latestFrameBase64, latestFrameTimestamp);
             return;
         }
         isScanRequested = true;
+    }
+
+    private void analyzeNativeFrameInBackground(final String frameBase64, final long timestamp) {
+        if (!isScanningActive || frameBase64 == null) return;
+        if (!isAnalyzingNativeFrame.compareAndSet(false, true)) {
+            return; // Previous analysis request still in progress
+        }
+
+        networkExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection connection = null;
+                try {
+                    String targetUrl = backendUrl + "/api/agent/vision/analyze-frame";
+                    URL url = new URL(targetUrl);
+                    connection = (HttpURLConnection) url.openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setConnectTimeout(8000);
+                    connection.setReadTimeout(12000);
+                    connection.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("imageBase64", frameBase64);
+                    body.put("mimeType", "image/jpeg");
+                    body.put("frameCapturedAt", timestamp > 0 ? timestamp : System.currentTimeMillis());
+
+                    byte[] postData = body.toString().getBytes(StandardCharsets.UTF_8);
+                    try (OutputStream os = connection.getOutputStream()) {
+                        os.write(postData);
+                        os.flush();
+                    }
+
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        StringBuilder sb = new StringBuilder();
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                sb.append(line);
+                            }
+                        }
+
+                        JSONObject json = new JSONObject(sb.toString());
+                        if (json.optBoolean("ok") && json.has("result")) {
+                            final JSONObject res = json.getJSONObject("result");
+                            final String direction = res.optString("direction", "WAIT");
+                            final int confidence = res.optInt("confidence", 0);
+                            final String verdictTitle = res.optString("verdictTitle", "ANALYZING");
+
+                            JSONArray reasons = res.optJSONArray("reasoning");
+                            String firstReason = "";
+                            if (reasons != null && reasons.length() > 0) {
+                                firstReason = reasons.optString(0);
+                            }
+                            JSONObject visionData = res.optJSONObject("visionData");
+                            String candlePattern = "";
+                            String symbol = "CHART";
+                            if (visionData != null) {
+                                candlePattern = visionData.optString("candlestickPattern", "");
+                                symbol = visionData.optString("symbol", "CHART");
+                            }
+                            final String finalReason = !candlePattern.isEmpty() ? candlePattern : (!firstReason.isEmpty() ? firstReason : "মোমেন্টাম নিশ্চিত");
+                            final String finalSymbol = symbol;
+
+                            if (getActivity() != null) {
+                                getActivity().runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        updateOverlayDirect(direction, confidence, verdictTitle, finalReason, finalSymbol);
+                                    }
+                                });
+                            }
+
+                            if (isTtsInitialized && textToSpeech != null) {
+                                String ttsMsg = null;
+                                if ("UP".equalsIgnoreCase(direction)) {
+                                    ttsMsg = "কল আপ সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
+                                } else if ("DOWN".equalsIgnoreCase(direction)) {
+                                    ttsMsg = "পুট ডাউন সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
+                                }
+                                if (ttsMsg != null) {
+                                    final String msg = ttsMsg;
+                                    if (getActivity() != null) {
+                                        getActivity().runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                if (textToSpeech != null) {
+                                                    textToSpeech.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "TradePulseTTS_" + System.currentTimeMillis());
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+
+                            JSObject nativeResult = new JSObject();
+                            nativeResult.put("direction", direction);
+                            nativeResult.put("confidence", confidence);
+                            nativeResult.put("verdictTitle", verdictTitle);
+                            nativeResult.put("reasonText", finalReason);
+                            nativeResult.put("symbol", finalSymbol);
+                            notifyListeners("onNativeAnalysisComplete", nativeResult);
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w("TradePulseNativeScreen", "Native background AI analysis note: " + e.getMessage());
+                } finally {
+                    if (connection != null) {
+                        try { connection.disconnect(); } catch (Exception ignored) {}
+                    }
+                    isAnalyzingNativeFrame.set(false);
+                }
+            }
+        });
+    }
+
+    private void updateOverlayDirect(String direction, int confidence, String verdictTitle, String reason, String symbol) {
+        if (overlayView == null) return;
+        TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
+        TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+
+        if (dirView != null) {
+            if ("UP".equalsIgnoreCase(direction)) {
+                dirView.setText("▲ CALL (UP) " + confidence + "%");
+                dirView.setTextColor(0xFF34D399); // Emerald
+            } else if ("DOWN".equalsIgnoreCase(direction)) {
+                dirView.setText("▼ PUT (DOWN) " + confidence + "%");
+                dirView.setTextColor(0xFFF87171); // Rose red
+            } else {
+                dirView.setText("⏸ WAIT / প্রস্তুত");
+                dirView.setTextColor(0xFFFBBF24); // Amber
+            }
+        }
+
+        if (detView != null) {
+            String details = (symbol != null && !symbol.isEmpty() ? symbol + " · " : "") + reason;
+            detView.setText(details);
+        }
     }
 
     private void startNativeScanningLoop() {
@@ -456,10 +601,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    long now = System.currentTimeMillis();
-                    // If a very fresh frame exists from the last 300ms, use it; otherwise request a brand new frame
-                    boolean isFresh = latestFrameBase64 != null && (now - latestFrameTimestamp) < 300;
-                    if (isFresh) {
+                    if (latestFrameBase64 != null) {
                         sequenceCounter++;
                         JSObject res = new JSObject();
                         res.put("success", true);
@@ -468,13 +610,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         res.put("sequenceId", sequenceCounter);
                         res.put("width", latestFrameWidth);
                         res.put("height", latestFrameHeight);
-                        res.put("isAppInForeground", isAppInForeground);
 
                         if (call != null) {
                             call.resolve(res);
                         }
                     } else {
-                        // Request a fresh frame from the active display
                         isScanRequested = true;
                         pendingCaptureCall = call;
                         captureHandler.postDelayed(new Runnable() {
@@ -490,7 +630,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                         res.put("sequenceId", sequenceCounter);
                                         res.put("width", latestFrameWidth);
                                         res.put("height", latestFrameHeight);
-                                        res.put("isAppInForeground", isAppInForeground);
                                         pendingCaptureCall.resolve(res);
                                     } else {
                                         pendingCaptureCall.reject("No frame available from screen");
@@ -662,7 +801,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void onClick(View v) {
                 notifyListeners("onOverlayStopClicked", new JSObject());
-                stopScreenCapture(null);
                 hideFloatingOverlay(null);
             }
         });
@@ -712,11 +850,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
                     }
-                    // Reset cache so a completely fresh frame is captured from the live display
-                    latestFrameBase64 = null;
-                    latestFrameTimestamp = 0;
-                    isScanRequested = true;
                     startNativeScanningLoop();
+                    captureAndEmitLatestFrame();
                 } else {
                     if (dirView != null) {
                         dirView.setTextColor(0xFF38BDF8);
@@ -726,9 +861,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         detView.setText("স্ক্যান করতে বাটনে চাপুন");
                     }
                     stopNativeScanningLoop();
-                    latestFrameBase64 = null;
-                    latestFrameTimestamp = 0;
-                    isScanRequested = false;
                 }
 
                 JSObject data = new JSObject();

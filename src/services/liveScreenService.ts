@@ -7,7 +7,7 @@ import {
   NativeCaptureFrameEvent,
 } from '../plugins/TradePulseNativeScreen';
 import { Capacitor } from '@capacitor/core';
-import { getApiUrl } from './apiConfig';
+import { getApiUrl, getApiBaseUrl, DEFAULT_HOSTED_BACKEND_URL } from './apiConfig';
 import { agentLearningService } from './agentLearningService';
 
 export class LiveScreenService {
@@ -19,6 +19,7 @@ export class LiveScreenService {
   private timer: any = null;
   private countdownTimer: any = null;
   private isProcessingFrame: boolean = false;
+  private lastProcessingStartTime: number = 0;
   private scanIntervalMs: number = 3500; // 3.5 seconds optimal for quick signal analysis
   private latestResult: ScreenAnalysisFinalResult | null = null;
   private listeners: Set<() => void> = new Set();
@@ -29,9 +30,6 @@ export class LiveScreenService {
   private isNativeCaptureActive: boolean = false;
   private hasFloatingOverlayActive: boolean = false;
   private nativeListenerHandle: { remove: () => void } | null = null;
-  private overlayToggleListenerHandle: { remove: () => void } | null = null;
-  private overlayStopListenerHandle: { remove: () => void } | null = null;
-  private activeAbortController: AbortController | null = null;
 
   // Universal Screen Recognition & Transition State
   private isOtherScreenActive: boolean = false;
@@ -292,16 +290,6 @@ export class LiveScreenService {
 
         voiceAssistantService.speak('স্ক্রিন শেয়ার সংযুক্ত হয়েছে। স্ক্যান করতে স্ক্যান বাটনে চাপুন।');
 
-        // Show floating overlay simulator in ready state (no repeated auto scan)
-        this.showFloatingOverlayHUD({
-          direction: 'WAIT',
-          confidence: 0,
-          durationText: '--:--',
-          verdictTitle: '⚡ প্রস্তুত (Ready)',
-          reasonText: 'স্ক্যান করতে "স্ক্যান" বাটনে ট্যাপ করুন',
-          latencyMs: 0,
-        });
-
         return true;
       } catch (err: any) {
         console.warn('Web getDisplayMedia error:', err);
@@ -389,15 +377,17 @@ export class LiveScreenService {
 
     voiceAssistantService.announceAnalysisResult(this.latestResult);
 
-    this.showFloatingOverlayHUD({
-      direction: randomDir,
-      confidence: 88,
-      durationText: '00:52',
-      verdictTitle: randomDir === 'UP' ? 'CALL (UP)' : 'PUT (DOWN)',
-      reasonText: `${randomSymbol} - মোমেন্টাম নিশ্চিত`,
-      latencyMs: 12,
-      symbol: randomSymbol,
-    });
+    if (this.hasFloatingOverlayActive) {
+      this.updateFloatingOverlayHUD({
+        direction: randomDir,
+        confidence: 88,
+        durationText: '00:52',
+        verdictTitle: randomDir === 'UP' ? 'CALL (UP)' : 'PUT (DOWN)',
+        reasonText: `${randomSymbol} - মোমেন্টাম নিশ্চিত`,
+        latencyMs: 12,
+        symbol: randomSymbol,
+      });
+    }
 
     return true;
   }
@@ -794,6 +784,7 @@ export class LiveScreenService {
         intervalSeconds: Math.round(this.scanIntervalMs / 1000),
         targetWidth: 720,
         quality: 0.75,
+        backendUrl: getApiBaseUrl() || DEFAULT_HOSTED_BACKEND_URL,
       });
 
       const timeoutPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
@@ -814,52 +805,60 @@ export class LiveScreenService {
         this.expirySecondsLeft = 0;
         this.latestResult = null;
 
-        // Register overlay toggle button listener safely
+        // Register overlay toggle button and native analysis listeners
         try {
-          if (this.overlayToggleListenerHandle) {
-            try { this.overlayToggleListenerHandle.remove(); } catch {}
-            this.overlayToggleListenerHandle = null;
-          }
-          if (this.overlayStopListenerHandle) {
-            try { this.overlayStopListenerHandle.remove(); } catch {}
-            this.overlayStopListenerHandle = null;
-          }
-
-          this.overlayToggleListenerHandle = await TradePulseNativeScreen.addListener(
-            'onOverlayScanToggle',
-            (data: { isScanning: boolean }) => {
-              if (data && data.isScanning) {
-                this.startScanning();
-              } else {
-                this.stopScanning();
-              }
+          TradePulseNativeScreen.addListener('onOverlayScanToggle', (data: { isScanning: boolean }) => {
+            if (data && data.isScanning) {
+              this.startScanning();
+            } else {
+              this.stopScanning();
             }
-          );
-
-          this.overlayStopListenerHandle = await TradePulseNativeScreen.addListener(
-            'onOverlayStopClicked',
-            () => {
-              this.disconnect('ফ্লোটিং বাবল বন্ধ করা হয়েছে');
+          });
+          TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
+            this.hideFloatingOverlayHUD();
+          });
+          TradePulseNativeScreen.addListener('onNativeAnalysisComplete', (data: any) => {
+            if (data && data.direction) {
+              const res: ScreenAnalysisFinalResult = {
+                analysisId: `native_${Date.now()}`,
+                timestamp: Date.now(),
+                frameCapturedAt: Date.now(),
+                direction: data.direction,
+                confidence: data.confidence || 0,
+                suggestedExpiry: '01:00',
+                verdictTitle: data.verdictTitle || (data.direction === 'UP' ? 'CALL (UP)' : data.direction === 'DOWN' ? 'PUT (DOWN)' : 'WAIT'),
+                reasoning: [data.reasonText || 'মোমেন্টাম বিশ্লেষণ সম্পন্ন'],
+                screenStatus: 'CHART_DETECTED',
+                visionData: {
+                  symbol: data.symbol || 'CHART',
+                  timeframe: '1m',
+                  marketType: 'FOREX',
+                  lastCandleDirection: data.direction === 'UP' ? 'BULLISH' : data.direction === 'DOWN' ? 'BEARISH' : 'UNCERTAIN',
+                  chartStructure: data.direction === 'UP' ? 'UPTREND' : data.direction === 'DOWN' ? 'DOWNTREND' : 'RANGING',
+                  candlestickPattern: data.reasonText || 'প্যাটার্ন শনাক্ত',
+                  indicatorsIdentified: [],
+                  visionSummary: data.reasonText || 'রিয়েল-টাইম ক্যান্ডেলস্টিক বিশ্লেষণ সম্পন্ন',
+                  confidenceScore: data.confidence || 0,
+                  isClearTradingChart: true,
+                  containsSensitivePrivateData: false,
+                },
+                marketVerification: {
+                  isVerified: true,
+                  status: 'MATCHED',
+                  notes: 'Direct Native Screen Analysis Engine',
+                },
+                safetyDisclaimer: 'TradePulse Live Screen Analysis',
+              };
+              this.processResult(res, 150);
             }
-          );
+          });
         } catch (e) {
           console.warn('Native overlay listener attachment error:', e);
         }
 
         this.notify();
 
-        // 4. Show Floating HUD widget over other apps if overlay permission is present
-        if (hasOverlay) {
-          await this.showFloatingOverlayHUD({
-            direction: 'WAIT',
-            confidence: 0,
-            durationText: '--:--',
-            verdictTitle: '⚡ প্রস্তুত (Ready)',
-            reasonText: 'স্ক্যান করতে "স্ক্যান" বাটনে ট্যাপ করুন',
-            latencyMs: 0,
-          });
-        }
-
+        // Do not auto-launch floating HUD bubble on connect - user toggles via "Floating HUD" button
         voiceAssistantService.speak('স্ক্রিন শেয়ার সংযুক্ত হয়েছে। স্ক্যান করতে স্ক্যান বাটনে চাপুন।');
         return true;
       } else {
@@ -961,8 +960,17 @@ export class LiveScreenService {
     this.latestResolution = `${frame.width}x${frame.height}`;
     this.captureState = 'RUNNING';
 
-    // Discard if scanning is stopped or ongoing frame is processing
-    if (!this.isScanningActive || this.isProcessingFrame) {
+    // Discard if scanning is stopped
+    if (!this.isScanningActive) {
+      return;
+    }
+
+    // Safety guard against stuck processing lock when app transitions across background
+    if (this.isProcessingFrame && Date.now() - this.lastProcessingStartTime > 15000) {
+      this.isProcessingFrame = false;
+    }
+
+    if (this.isProcessingFrame) {
       return;
     }
 
@@ -971,9 +979,9 @@ export class LiveScreenService {
       return;
     }
 
-    // Freshness check: discard frames older than 6s
+    // Freshness check: accept frames up to 30s (accommodating Android background wakeups smoothly)
     const frameAge = Date.now() - frame.timestamp;
-    if (frameAge > 6000) {
+    if (frameAge > 30000) {
       return;
     }
 
@@ -991,13 +999,13 @@ export class LiveScreenService {
     this.latestResolution = `${frame.width}x${frame.height}`;
     this.captureState = 'RUNNING';
     this.isProcessingFrame = true;
+    this.lastProcessingStartTime = Date.now();
     this.aiState = 'ANALYZING';
     this.notify();
 
     const startTime = Date.now();
     const controller = new AbortController();
-    this.activeAbortController = controller;
-    const timeout = setTimeout(() => controller.abort(), 4000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
     try {
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
@@ -1030,9 +1038,7 @@ export class LiveScreenService {
           this.aiState = 'READY';
           this.processResult(result, latencyMs);
         } else {
-          const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp, {
-            isAppInForeground: frame.isAppInForeground,
-          });
+          const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
           if (!this.isScanningActive) return;
           this.aiState = 'READY';
           this.lastErrorReason = null;
@@ -1040,9 +1046,7 @@ export class LiveScreenService {
           this.processResult(localResult, latencyMs);
         }
       } else {
-        const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp, {
-          isAppInForeground: frame.isAppInForeground,
-        });
+        const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
         if (!this.isScanningActive) return;
         this.aiState = 'READY';
         this.lastErrorReason = null;
@@ -1054,17 +1058,12 @@ export class LiveScreenService {
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
       if (!this.isScanningActive) return;
-      const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp, {
-        isAppInForeground: frame.isAppInForeground,
-      });
+      const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
       this.aiState = 'READY';
       this.lastErrorReason = null;
       this.errorMessage = null;
       this.processResult(localResult, latencyMs);
     } finally {
-      if (this.activeAbortController === controller) {
-        this.activeAbortController = null;
-      }
       this.isProcessingFrame = false;
       this.notify();
     }
@@ -1075,10 +1074,7 @@ export class LiveScreenService {
    * Inspects screen pixels to verify if image contains an actual candlestick trading chart.
    * If screen is home screen, wallpaper, chat, TradePulse UI, or settings -> returns isChart: false!
    */
-  private async isCandlestickChartImage(
-    base64: string,
-    options?: { isAppInForeground?: boolean }
-  ): Promise<{
+  private async isCandlestickChartImage(base64: string): Promise<{
     isChart: boolean;
     dir: 'UP' | 'DOWN' | 'WAIT';
     confidence: number;
@@ -1238,11 +1234,10 @@ export class LiveScreenService {
               });
             }
 
-            // 3. Stage 2: Strict Candlestick Color Signature & TradePulse Cyan Branding Detector
+            // 3. Stage 2: Strict Candlestick Color Signature
             // Rejects natural wallpaper greens/browns/skin/flowers
             let greenPixelsInChart = 0;
             let redPixelsInChart = 0;
-            let cyanPixelsInChart = 0;
             const candlePixelGrid: Uint8Array = new Uint8Array(targetWidth * targetHeight); // 1 = green, 2 = red
 
             for (let y = yStart; y < yEnd; y++) {
@@ -1251,11 +1246,6 @@ export class LiveScreenService {
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
-
-                // TradePulse app signature cyan accent (#38bdf8, #06b6d4, #0ea5e9)
-                if (b >= 165 && g >= 135 && b > r * 1.35 && g > r * 1.15) {
-                  cyanPixelsInChart++;
-                }
 
                 // Strict Broker Green (Emerald #00e676, Quotex teal #00c076, #26a69a)
                 // High saturation green with large delta over red
@@ -1366,11 +1356,10 @@ export class LiveScreenService {
               });
 
               const height = maxBottom - minTop + 1;
-              if (height < 6) return;
+              if (height < 4) return;
 
-              // Candle bodies must be predominantly vertical: height must be at least 1.35x width
-              // This strictly rejects square icons, letters, text characters, and buttons
-              if (height < width * 1.35) return;
+              // Aspect ratio check: prevent thin horizontal stripes
+              if (width >= 6 && height < width * 0.65) return;
 
               const centerX = Math.round((leftX + rightX) / 2);
               const centerY = Math.round((minTop + maxBottom) / 2);
@@ -1418,6 +1407,12 @@ export class LiveScreenService {
                 if (hasLowerWick) break;
               }
 
+              // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে (Must be vertically oriented from top to bottom)
+              // ক্যান্ডেল বডি অবশ্যই লম্বালম্বি হতে হবে (height >= width * 1.05) অথবা উইক/ছায়া থাকতে হবে।
+              // আড়াআড়ি (horizontal) বার বা চারকোনা বাক্স (square) সরাসরি বাতিল।
+              const isStrictlyVertical = height >= width * 1.05 || hasUpperWick || hasLowerWick;
+              if (!isStrictlyVertical) return;
+
               verifiedCandles.push({
                 leftX,
                 rightX,
@@ -1458,8 +1453,10 @@ export class LiveScreenService {
             // 7. Stage 5: Time Series Arrangement & Price Dispersion Validation
             const distinctCandleBars = verifiedCandles.length;
             let verifiedWicksCount = 0;
+            let verticalBodiesCount = 0;
             verifiedCandles.forEach((c) => {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
+              if (c.height >= c.width * 1.15) verticalBodiesCount++;
             });
 
             let horizontalSpan = 0;
@@ -1488,33 +1485,41 @@ export class LiveScreenService {
                 else if (r >= 130 && r > g * 1.30 && r > b * 1.20) brokerSellBtnPixels++;
               }
             }
-            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 25 && brokerSellBtnPixels >= 25;
 
-            // 9. Stage 7: Comprehensive Multi-Condition Candlestick Chart Verification
-            // REJECTS phone home screens, wallpapers, photo widgets, menus, and TradePulse UI
-            const hasSufficientCandles = distinctCandleBars >= 4;
-            const hasSufficientSpan = horizontalSpan >= targetWidth * 0.18; // At least 58px span
-            const hasSufficientDispersion = verticalDispersion >= 10; // Vertical price movement
-            // Real trading charts MUST have distinct upper/lower wicks!
-            const hasCandleMorphology = verifiedWicksCount >= 2 && distinctCandleBars >= 4;
+            // TradePulse Self-Capture Guard
+            const isTradePulseScreen =
+              typeof document !== 'undefined' &&
+              document.visibilityState === 'visible' &&
+              !this.isNativeCaptureActive &&
+              distinctCandleBars < 3;
 
-            // TradePulse Self-Capture Guard:
-            // 1. Android Activity lifecycle state reports isAppInForeground directly.
-            // 2. High density of TradePulse cyan accent pixels (#38bdf8 / #06b6d4).
-            // 3. Web document visibility in browser mode.
-            const isTradePulseScreen = Boolean(
-              options?.isAppInForeground ||
-              cyanPixelsInChart >= 25 ||
-              (typeof document !== 'undefined' && document.visibilityState === 'visible' && !this.isNativeCaptureActive)
-            );
+            // =========================================================================
+            // ৪টি অপরিহার্য রিকোয়ারমেন্ট যাচাই (4 Strict Candlestick Chart Requirements):
+            // ১. চার্ট ফ্রেম ও সমসত্ত্ব সলিড ব্যাকগ্রাউন্ড ক্যানভাস (Chart Frame & Solid Canvas)
+            // ২. খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন (Authentic Bullish Green / Bearish Red Colors)
+            // ৩. লম্বালম্বি উল্লম্ব বডি ও উইক/ছায়া (Strict Vertical Morphology & Wicks)
+            // ৪. অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স (Sequential Horizontal Timeline & Price Dispersion)
+            // =========================================================================
+
+            // রিকোয়ারমেন্ট ১: চার্ট ফ্রেম (সলিড ইউনিফর্ম ব্যাকগ্রাউন্ড, হোমস্ক্রিন/ওয়ালপেপার ফিল্টার)
+            const req1_ChartFrame = Boolean(hasBrokerTheme && bgUniformityRatio >= 0.40 && totalCandlePixels <= totalExamined * 0.28);
+
+            // রিকোয়ারমেন্ট ২: খাঁটি ক্যান্ডেল কালার (উপযুক্ত পরিমাণ ক্যান্ডেল পিক্সেল, সাধারণ পুরো স্ক্রিন ছবি নয়)
+            const req2_CandleColor = totalCandlePixels >= 45 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+
+            // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে + উইক/ছায়া (Vertical Morphology & Wicks)
+            // কমপক্ষে ৩টি লম্বালম্বি ক্যান্ডেল বডি এবং কমপক্ষে ১টি সুস্পষ্ট উইক/শ্যাডো লাইন অথবা ৫টি সুস্পষ্ট উল্লম্ব ক্যান্ডেল থাকতে হবে
+            const req3_VerticalAndWicks = verticalBodiesCount >= 3 && (verifiedWicksCount >= 1 || verticalBodiesCount >= 5);
+
+            // রিকোয়ারমেন্ট ৪: অনুভূমিক টাইমলাইনে ক্রমানুসারে সাজানো সিরিজ ও প্রাইস ওঠানামা
+            const req4_TimelineSeries = distinctCandleBars >= 4 && horizontalSpan >= targetWidth * 0.16 && verticalDispersion >= 10;
 
             const isCandlestickChart =
               !isTradePulseScreen &&
-              hasBrokerTheme &&
-              hasSufficientCandles &&
-              hasSufficientSpan &&
-              hasSufficientDispersion &&
-              hasCandleMorphology;
+              req1_ChartFrame &&
+              req2_CandleColor &&
+              req3_VerticalAndWicks &&
+              req4_TimelineSeries;
 
             const diagnostic: ChartDetectionDiagnostic = {
               isChart: isCandlestickChart,
@@ -1522,29 +1527,27 @@ export class LiveScreenService {
               totalCandlePixels,
               horizontalSpanPercent,
               verticalDispersionPx: Math.round(verticalDispersion),
-              hasBrokerBackground: hasBrokerTheme,
+              hasBrokerBackground: req1_ChartFrame,
               hasCandleWicks: verifiedWicksCount > 0,
               verifiedWicksCount,
               backgroundUniformityPercent,
             };
 
-            // If verification failed, explain precisely WHY with actionable Bengali reason
+            // If verification failed, explain precisely WHICH of the 4 requirements failed
             if (!isCandlestickChart) {
               const failureReasons: string[] = [];
               if (isTradePulseScreen) {
                 failureReasons.push('⚠️ ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে ব্রোকার চার্ট খুলুন।');
-              } else if (!hasBrokerTheme) {
-                failureReasons.push(`নন-ট্রেডিং বা অসম ডিসপ্লে: চার্টের ডার্ক/লাইট সলিড ক্যানভাস মেলেনি (ব্যাকগ্রাউন্ড ইউনিফর্মিটি ${backgroundUniformityPercent}%)। হোমস্ক্রিন বা ছবি শনাক্ত।`);
-              } else if (distinctCandleBars < 4) {
-                failureReasons.push(`ক্যান্ডেল বার স্বল্পতা: মাত্র ${distinctCandleBars}টি জ্যামিতিক ক্যান্ডেল বার শনাক্ত হয়েছে (ন্যূনতম ৪টি ক্যান্ডেল প্রয়োজন)।`);
-              } else if (!hasSufficientSpan) {
-                failureReasons.push(`অনুভূমিক টাইমলাইন বিস্তার স্বল্প (${horizontalSpanPercent}%): ক্যান্ডেলগুলো ক্রমানুসারে সাজানো নেই।`);
-              } else if (!hasSufficientDispersion) {
-                failureReasons.push('প্রাইস অ্যাকশন ফ্ল্যাট: উল্লম্ব সুইং বা প্রাইস ওঠানামা পাওয়া যায়নি (আইকন বা রেখা হতে পারে)।');
-              } else if (!hasCandleMorphology) {
-                failureReasons.push(`ক্যান্ডেলস্টিক উইক (ছায়া) অপর্যাপ্ত: মাত্র ${verifiedWicksCount}টি ক্যান্ডেলে উইক শনাক্ত হয়েছে (ন্যূনতম ২টি উইক প্রয়োজন) — সাধারণ রঙিন ডিসপ্লে বাতিল।`);
+              } else if (!req1_ChartFrame) {
+                failureReasons.push(`রিকোয়ারমেন্ট ১ মেলেনি (চার্ট ফ্রেম অনুপস্থিত): ক্যানভাস সমসত্ত্ব নয় (${backgroundUniformityPercent}%)। ওয়ালপেপার, ঘরের ছবি বা নন-ট্রেডিং অ্যাপ বাতিল।`);
+              } else if (!req2_CandleColor) {
+                failureReasons.push('রিকোয়ারমেন্ট ২ মেলেনি (ক্যান্ডেল কালার অনুপস্থিত): স্ক্রিনে কোনো প্রমাণ্য বুলিশ গ্রিন বা বিয়ারিশ রেড ক্যান্ডেল মেলেনি।');
+              } else if (!req3_VerticalAndWicks) {
+                failureReasons.push(`রিকোয়ারমেন্ট ৩ মেলেনি (লম্বালম্বি বডি ও উইক অনুপস্থিত): ক্যান্ডেল অবশ্যই উপর থেকে নিচে লম্বালম্বি ও উইকযুক্ত হতে হবে (উইক: ${verifiedWicksCount}, উল্লম্ব বডি: ${verticalBodiesCount})।`);
+              } else if (!req4_TimelineSeries) {
+                failureReasons.push(`রিকোয়ারমেন্ট ৪ মেলেনি (টাইমলাইন সিরিজ অনুপস্থিত): টাইমলাইনে ক্রমানুসারে সাজানো ক্যান্ডেল পাওয়া যায়নি (বার: ${distinctCandleBars}, টাইম বিস্তার: ${horizontalSpanPercent}%)।`);
               } else {
-                failureReasons.push('সক্রিয় ট্রেডিং চার্ট শনাক্ত হয়নি (হোমস্ক্রিন, বিজ্ঞাপন বা অন্য অ্যাপ হতে পারে)।');
+                failureReasons.push('চার্ট শনাক্তকরণের ৪টি রিকোয়ারমেন্টের সবগুলো পূরণ হয়নি (WAIT)।');
               }
 
               diagnostic.failureReason = failureReasons[0];
@@ -1596,6 +1599,7 @@ export class LiveScreenService {
               pattern = 'কনসোলিডেশন ক্যান্ডেল (WAIT)';
             }
 
+            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 25 && brokerSellBtnPixels >= 25;
             const symbol = hasBrokerTradeButtons ? 'Quotex Broker Live' : 'BROKER CHART';
 
             return resolve({
@@ -1657,11 +1661,7 @@ export class LiveScreenService {
    * Runs directly in WebView/browser when cloud backend is temporarily unreachable or offline.
    * Strictly enforces that isClearTradingChart is ONLY true when real candlestick chart is detected!
    */
-  public async analyzeFrameLocally(
-    imageBase64: string,
-    frameCapturedAt: number,
-    options?: { isAppInForeground?: boolean }
-  ): Promise<ScreenAnalysisFinalResult> {
+  public async analyzeFrameLocally(imageBase64: string, frameCapturedAt: number): Promise<ScreenAnalysisFinalResult> {
     const analysisId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = Date.now();
 
@@ -1706,7 +1706,7 @@ export class LiveScreenService {
     }
 
     // Inspect image pixels for genuine candlestick chart presence
-    const chartDetection = await this.isCandlestickChartImage(imageBase64, options);
+    const chartDetection = await this.isCandlestickChartImage(imageBase64);
     if (chartDetection.diagnostic) {
       this.latestChartDiagnostic = chartDetection.diagnostic;
     }
@@ -1980,15 +1980,17 @@ export class LiveScreenService {
   }
 
   public async showFloatingOverlayHUD(data: FloatingOverlayData): Promise<void> {
+    this.hasFloatingOverlayActive = true;
+    this.notify();
     try {
       await TradePulseNativeScreen.showFloatingOverlay(data);
-      this.hasFloatingOverlayActive = true;
     } catch (e) {
       console.warn('Could not launch overlay:', e);
     }
   }
 
   public async updateFloatingOverlayHUD(data: FloatingOverlayData): Promise<void> {
+    if (!this.hasFloatingOverlayActive) return;
     try {
       await TradePulseNativeScreen.updateFloatingOverlay(data);
     } catch (e) {
@@ -1997,9 +1999,10 @@ export class LiveScreenService {
   }
 
   public async hideFloatingOverlayHUD(): Promise<void> {
+    this.hasFloatingOverlayActive = false;
+    this.notify();
     try {
       await TradePulseNativeScreen.hideFloatingOverlay();
-      this.hasFloatingOverlayActive = false;
     } catch (e) {
       console.warn('Could not hide overlay:', e);
     }
@@ -2114,30 +2117,14 @@ export class LiveScreenService {
       this.hasFloatingOverlayActive = false;
     }
 
-    if (this.activeAbortController) {
-      try { this.activeAbortController.abort(); } catch {}
-      this.activeAbortController = null;
-    }
-
     if (this.nativeListenerHandle) {
-      try { this.nativeListenerHandle.remove(); } catch {}
+      this.nativeListenerHandle.remove();
       this.nativeListenerHandle = null;
-    }
-
-    if (this.overlayToggleListenerHandle) {
-      try { this.overlayToggleListenerHandle.remove(); } catch {}
-      this.overlayToggleListenerHandle = null;
-    }
-
-    if (this.overlayStopListenerHandle) {
-      try { this.overlayStopListenerHandle.remove(); } catch {}
-      this.overlayStopListenerHandle = null;
     }
 
     this.state = 'DISCONNECTED';
     this.captureState = 'STOPPED';
     this.aiState = 'IDLE';
-    this.isProcessingFrame = false;
     this.isSearchingForChart = false;
     this.isChartFound = false;
     this.latestResult = null;
@@ -2163,12 +2150,6 @@ export class LiveScreenService {
     if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
       if (!ok) return;
-    }
-
-    // Cancel any previous hanging request
-    if (this.activeAbortController) {
-      try { this.activeAbortController.abort(); } catch {}
-      this.activeAbortController = null;
     }
 
     this.isScanningActive = true;
@@ -2206,12 +2187,6 @@ export class LiveScreenService {
    * Halts analysis loops, but keeps screenshare connected and HUD active!
    */
   public stopScanning(): void {
-    // Cancel any active in-flight analysis request immediately
-    if (this.activeAbortController) {
-      try { this.activeAbortController.abort(); } catch {}
-      this.activeAbortController = null;
-    }
-
     this.isScanningActive = false;
     this.aiState = 'IDLE';
     this.isProcessingFrame = false;
@@ -2283,7 +2258,6 @@ export class LiveScreenService {
             sequenceId: frameRes.sequenceId || ++this.latestFrameCount,
             width: frameRes.width || 720,
             height: frameRes.height || 1280,
-            isAppInForeground: frameRes.isAppInForeground,
           });
         }
       } catch (err) {
