@@ -1198,9 +1198,10 @@ export class LiveScreenService {
             const domRGB_R = domR << 3;
             const domRGB_G = domG << 3;
             const domRGB_B = domB << 3;
-            const isBrokerDarkTheme = domRGB_R <= 68 && domRGB_G <= 72 && domRGB_B <= 88;
-            const isBrokerLightTheme = domRGB_R >= 220 && domRGB_G >= 220 && domRGB_B >= 220;
-            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.38;
+            // Broker theme recognition: dark canvas (Quotex dark grey/navy, TradingView, Pocket Option) or clean light canvas
+            const isBrokerDarkTheme = (domRGB_R <= 75 && domRGB_G <= 80 && domRGB_B <= 95) || (domRGB_R <= 40 && domRGB_G <= 40 && domRGB_B <= 50);
+            const isBrokerLightTheme = domRGB_R >= 210 && domRGB_G >= 210 && domRGB_B >= 210;
+            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.22;
 
             // Blank screen rejection
             const blackRatio = pureBlackPixels / Math.max(1, totalSampled);
@@ -1231,7 +1232,7 @@ export class LiveScreenService {
             }
 
             // 3. TradePulse App Self-Capture Guard:
-            // Check for TradePulse distinctive cyan brand color (#06b6d4 / #00e5ff) in top 35% of display
+            // Check for TradePulse cyan branding only if NO broker canvas is present
             let tradePulseCyanPixels = 0;
             const yTopScan = Math.floor(targetHeight * 0.35);
             for (let y = 0; y < yTopScan; y += 2) {
@@ -1245,29 +1246,48 @@ export class LiveScreenService {
                 }
               }
             }
-            const isTradePulseScreen =
-              tradePulseCyanPixels >= 25 ||
-              (typeof document !== 'undefined' &&
-                document.visibilityState === 'visible' &&
-                !this.isPictureInPictureActive() &&
-                !this.isNativeCaptureActive);
+            // Real TradePulse self-capture only occurs if there is NO broker canvas and large TradePulse branding
+            const isTradePulseScreen = !hasBrokerTheme && tradePulseCyanPixels >= 250;
 
-            // 4. Stage 2: Fast Pixel Grid Classification
+            // 4. Stage 2: Fast Pixel Grid Classification with Horizontal Banner / Button Filter
             let greenPixelsInChart = 0;
             let redPixelsInChart = 0;
             const candlePixelGrid: Uint8Array = new Uint8Array(targetWidth * targetHeight); // 1 = green, 2 = red
 
             for (let y = yStart; y < yEnd; y++) {
+              // Pre-scan row: if row contains a wide continuous colored banner or button (> 45px e.g. promo banners or sell buttons),
+              // exclude this row so horizontal buttons never merge candle columns together
+              let rowColoredRun = 0;
+              let maxRunInRow = 0;
+              for (let x = xStart; x < xEnd; x++) {
+                const idx = (y * targetWidth + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                const isGreen = (g >= 70 && g > r * 1.15 && (g > b * 1.02 || (g > 110 && b > 75 && r < 75)));
+                const isRed = (r >= 90 && r > g * 1.15 && r > b * 1.10);
+                if (isGreen || isRed) {
+                  rowColoredRun++;
+                  if (rowColoredRun > maxRunInRow) maxRunInRow = rowColoredRun;
+                } else {
+                  rowColoredRun = 0;
+                }
+              }
+
+              // Skip wide horizontal banners/buttons from candlestick accumulation
+              if (maxRunInRow > 45) {
+                continue;
+              }
+
               for (let x = xStart; x < xEnd; x++) {
                 const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Quotex & broker green (#00b074, #10a152, #26a69a, #00e676)
-                const isGreen = (g >= 80 && g > r * 1.25 && g > b * 1.05);
-                // Quotex & broker red (#e95b4f, #ef5350, #ea3943, #f23645)
-                const isRed = (r >= 100 && r > g * 1.25 && r > b * 1.20);
+                // Quotex, Binomo, Pocket Option & TradingView candles
+                const isGreen = (g >= 70 && g > r * 1.15 && (g > b * 1.02 || (g > 110 && b > 75 && r < 75)));
+                const isRed = (r >= 90 && r > g * 1.15 && r > b * 1.10);
 
                 if (isGreen) {
                   greenPixelsInChart++;
@@ -1282,7 +1302,6 @@ export class LiveScreenService {
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
             // 5. Stage 3: Candlestick Band Segmentation via Column Projection
-            // Groups columns with candle pixels into distinct candlestick bars
             const colCounts = new Int32Array(targetWidth);
             for (let x = xStart; x < xEnd; x++) {
               let count = 0;
@@ -1311,7 +1330,7 @@ export class LiveScreenService {
             let bandColorVote = { 1: 0, 2: 0 };
 
             for (let x = xStart; x < xEnd; x++) {
-              if (colCounts[x] >= 5) {
+              if (colCounts[x] >= 3) {
                 if (!inBand) {
                   inBand = true;
                   bandStart = x;
@@ -1324,8 +1343,8 @@ export class LiveScreenService {
               } else {
                 if (inBand) {
                   const width = x - bandStart;
-                  // Allow genuine mobile candlestick widths (2px to 50px on 360px normalized canvas)
-                  if (width >= 2 && width <= 50) {
+                  // Allow genuine mobile candlestick widths (2px to 48px on 360px normalized canvas)
+                  if (width >= 2 && width <= 48) {
                     let minY = 999;
                     let maxY = 0;
                     for (let bx = bandStart; bx < x; bx++) {
@@ -1379,9 +1398,8 @@ export class LiveScreenService {
             }
 
             // Stage 4: Filter genuine vertical candlestick morphology
-            // Candlestick must have vertical aspect ratio (height >= width * 1.15) or wicks, with height >= 8px
             const verifiedCandles = candleBands.filter(
-              (b) => (b.height >= b.width * 1.15 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.95)) && b.height >= 8
+              (b) => (b.height >= b.width * 1.05 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.90)) && b.height >= 8
             );
 
             const distinctCandleBars = verifiedCandles.length;
@@ -1390,7 +1408,7 @@ export class LiveScreenService {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
             });
 
-            // Stage 5: Time Series & Price Variance Validation (Anti-Text / Anti-Card filter)
+            // Stage 5: Time Series & Price Variance Validation
             let horizontalSpan = 0;
             let verticalDispersion = 0;
             let topSpread = 0;
@@ -1406,8 +1424,7 @@ export class LiveScreenService {
             }
 
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
-            // Rejects flat text words or straight horizontal cards where all elements share the exact same baseline
-            const isTextRow = distinctCandleBars >= 3 && topSpread < 6 && bottomSpread < 6;
+            const isTextRow = distinctCandleBars >= 3 && topSpread < 5 && bottomSpread < 5;
 
             // =========================================================================
             // ৪টি অপরিহার্য রিকোয়ারমেন্টের ভারসাম্যপূর্ণ মূল্যায়ন (Balanced Candlestick Requirements):
@@ -1420,19 +1437,18 @@ export class LiveScreenService {
             const req1_ChartFrame = Boolean(
               !isTradePulseScreen &&
               hasBrokerTheme &&
-              bgUniformityRatio >= 0.38 &&
-              totalCandlePixels <= totalExamined * 0.35
+              bgUniformityRatio >= 0.22 &&
+              totalCandlePixels <= totalExamined * 0.40
             );
 
-            const req2_CandleColor = totalCandlePixels >= 50 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+            const req2_CandleColor = totalCandlePixels >= 40 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
 
-            const req3_VerticalAndWicks = distinctCandleBars >= 3;
+            const req3_VerticalAndWicks = distinctCandleBars >= 2;
 
             const req4_TimelineSeries =
-              distinctCandleBars >= 3 &&
+              distinctCandleBars >= 2 &&
               !isTextRow &&
-              horizontalSpan >= targetWidth * 0.14 &&
-              (topSpread >= 6 || bottomSpread >= 6 || verticalDispersion >= 8);
+              (horizontalSpan >= targetWidth * 0.08 || distinctCandleBars >= 2);
 
             const isCandlestickChart =
               !isTradePulseScreen &&
