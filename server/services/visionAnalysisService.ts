@@ -310,40 +310,53 @@ YOUR CORE DUTIES:
       let isChart = false;
       let detectedSymbol = 'AUD/CHF';
 
-      const isSelfCapture =
-        bufferStr.includes('live screen analysis') ||
-        bufferStr.includes('inspection interval') ||
-        bufferStr.includes('universal ocr') ||
-        bufferStr.includes('tradepulse') ||
-        bufferStr.includes('privacy protected') ||
-        bufferStr.includes('সার্ভার সক্রিয়') ||
-        bufferStr.includes('স্ক্যান শুরু') ||
-        bufferStr.includes('স্ক্যান স্টপ');
+      // Broker Terminal Detection (checked first so broker screens with floating HUD overlay are never blocked)
+      const isBrokerTerminal =
+        bufferStr.includes('market-qx') ||
+        bufferStr.includes('qx.info') ||
+        bufferStr.includes('qxbroker') ||
+        bufferStr.includes('qx.trade') ||
+        bufferStr.includes('quotex') ||
+        bufferStr.includes('binomo') ||
+        (bufferStr.includes('pocket') && bufferStr.includes('option')) ||
+        bufferStr.includes('tradingview') ||
+        (bufferStr.includes('deposit') && bufferStr.includes('payout') && (bufferStr.includes('buy') || bufferStr.includes('sell')));
 
       const isPhoneHomeScreen =
-        bufferStr.includes('fajr') ||
-        bufferStr.includes('dhuhr') ||
-        bufferStr.includes('maghrib') ||
-        bufferStr.includes('isha') ||
-        bufferStr.includes('launcher') ||
-        bufferStr.includes('wallpaper') ||
-        bufferStr.includes('gallery') ||
-        bufferStr.includes('whatsapp') ||
-        bufferStr.includes('camera') ||
-        bufferStr.includes('contacts');
+        !isBrokerTerminal &&
+        (bufferStr.includes('fajr') ||
+         bufferStr.includes('dhuhr') ||
+         bufferStr.includes('maghrib') ||
+         bufferStr.includes('isha') ||
+         bufferStr.includes('launcher') ||
+         bufferStr.includes('wallpaper') ||
+         bufferStr.includes('gallery') ||
+         bufferStr.includes('whatsapp') ||
+         bufferStr.includes('camera') ||
+         bufferStr.includes('contacts'));
 
-      const isBrokerTerminal =
+      // Self-capture ONLY triggers when user is inside the actual TradePulse app dashboard
+      // (Do NOT check 'স্ক্যান স্টপ' or 'স্ক্যান শুরু' since the floating overlay is rendered on top of brokers)
+      const isSelfCapture =
+        !isBrokerTerminal &&
         !isPhoneHomeScreen &&
-        (bufferStr.includes('market-qx') ||
-         bufferStr.includes('qx.info') ||
-         bufferStr.includes('qxbroker') ||
-         bufferStr.includes('qx.trade') ||
-         (bufferStr.includes('quotex') && (bufferStr.includes('candlestick') || bufferStr.includes('payout') || bufferStr.includes('call') || bufferStr.includes('put'))) ||
-         (bufferStr.includes('binomo') && bufferStr.includes('candle')) ||
-         (bufferStr.includes('pocket') && bufferStr.includes('option') && bufferStr.includes('trade')) ||
-         (bufferStr.includes('tradingview') && (bufferStr.includes('chart') || bufferStr.includes('candle'))));
+        (bufferStr.includes('live screen analysis') ||
+         bufferStr.includes('universal ocr') ||
+         bufferStr.includes('inspection interval') ||
+         (bufferStr.includes('tradepulse') && bufferStr.includes('privacy protected')));
 
-      if (isSelfCapture) {
+      if (isBrokerTerminal) {
+        detectedAppName = (bufferStr.includes('quotex') || bufferStr.includes('market-qx') || bufferStr.includes('qx.info') || bufferStr.includes('cosmos'))
+          ? 'Quotex Web Trading Terminal'
+          : bufferStr.includes('binomo')
+          ? 'Binomo Terminal'
+          : bufferStr.includes('pocket')
+          ? 'Pocket Option'
+          : 'TradingView / Broker Chart';
+        screenCategory = 'TRADING_CHART';
+        isChart = true;
+        if (bufferStr.includes('cosmos')) detectedSymbol = 'ATOM/USD (Cosmos 81%)';
+      } else if (isSelfCapture) {
         detectedAppName = 'TradePulse App (Self-Capture)';
         screenCategory = 'OTHER';
         isChart = false;
@@ -387,17 +400,6 @@ YOUR CORE DUTIES:
           confidenceScore: 0.0,
           containsSensitivePrivateData: false,
         };
-      } else if (isBrokerTerminal) {
-        detectedAppName = (bufferStr.includes('quotex') || bufferStr.includes('market-qx') || bufferStr.includes('qx.info') || bufferStr.includes('cosmos'))
-          ? 'Quotex Web Trading Terminal'
-          : bufferStr.includes('binomo')
-          ? 'Binomo Terminal'
-          : bufferStr.includes('pocket')
-          ? 'Pocket Option'
-          : 'TradingView / Broker Chart';
-        screenCategory = 'TRADING_CHART';
-        isChart = true;
-        if (bufferStr.includes('cosmos')) detectedSymbol = 'ATOM/USD (Cosmos 89%)';
       } else if (bufferStr.includes('youtube') || bufferStr.includes('video') || bufferStr.includes('watch')) {
         detectedAppName = 'YouTube ভিডিও প্লেয়ার';
         screenCategory = 'VIDEO_STREAM';

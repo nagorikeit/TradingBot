@@ -1103,9 +1103,9 @@ export class LiveScreenService {
             const naturalH = img.naturalHeight || img.height || 1280;
             const isPortrait = naturalH > naturalW;
 
-            // Normalize to 320px target width for crisp morphology analysis
-            const targetWidth = 320;
-            const targetHeight = Math.max(160, Math.min(640, Math.round((naturalH / naturalW) * targetWidth)));
+            // Normalize to 360px target width for high-fidelity mobile trading analysis
+            const targetWidth = 360;
+            const targetHeight = Math.max(200, Math.min(800, Math.round((naturalH / naturalW) * targetWidth)));
 
             const testCanvas = document.createElement('canvas');
             testCanvas.width = targetWidth;
@@ -1126,14 +1126,15 @@ export class LiveScreenService {
             const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
             const data = imgData.data;
 
-            // 1. Delineate Active Chart Viewport:
-            // Mobile Portrait: ~16% to ~72% of screen height
-            // Landscape/Desktop: ~8% to ~92%
-            // Left/Right: 3% to 88% (avoids broker right-hand vertical price scale)
-            const yStart = isPortrait ? Math.floor(targetHeight * 0.16) : Math.floor(targetHeight * 0.08);
-            const yEnd = isPortrait ? Math.floor(targetHeight * 0.72) : Math.floor(targetHeight * 0.92);
-            const xStart = Math.floor(targetWidth * 0.03);
-            const xEnd = Math.floor(targetWidth * 0.88);
+            // 1. Delineate Active Central Chart ROI (Region of Interest):
+            // In mobile portrait (Quotex, Pocket Option, Binomo in Brave/Chrome browser):
+            // Top ~20% is browser address bar & promo/deposit banners
+            // Bottom ~28% is trade time, payout, Buy/Sell buttons, and floating overlay
+            // Central ~20% to ~70% is the true candlestick chart canvas!
+            const yStart = isPortrait ? Math.floor(targetHeight * 0.20) : Math.floor(targetHeight * 0.08);
+            const yEnd = isPortrait ? Math.floor(targetHeight * 0.70) : Math.floor(targetHeight * 0.90);
+            const xStart = Math.floor(targetWidth * 0.04);
+            const xEnd = Math.floor(targetWidth * 0.88); // Excludes right-side vertical price scale
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
 
             if (totalExamined <= 0) {
@@ -1147,9 +1148,7 @@ export class LiveScreenService {
               });
             }
 
-            // 2. Stage 1: Uniform Canvas Background Histogram & Dark/Light Theme Check
-            // A genuine broker chart has a uniform solid background (Quotex dark navy, Binomo dark, or clean white).
-            // Natural photos, wallpapers (flowers, trees, widgets) have dispersed high entropy.
+            // 2. Stage 1: Uniform Canvas Background Histogram & Broker Theme Check
             const colorHistogram = new Map<number, number>();
             let pureBlackPixels = 0;
             let pureWhitePixels = 0;
@@ -1164,7 +1163,6 @@ export class LiveScreenService {
                 if (r <= 12 && g <= 12 && b <= 12) pureBlackPixels++;
                 if (r >= 245 && g >= 245 && b >= 245) pureWhitePixels++;
 
-                // Quantize to 5-bit RGB bins (32x32x32)
                 const bin = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
                 colorHistogram.set(bin, (colorHistogram.get(bin) || 0) + 1);
               }
@@ -1180,7 +1178,6 @@ export class LiveScreenService {
               }
             });
 
-            // Sum closely adjacent shade bins to account for minor compression artifacts
             const domR = (dominantBin >> 10) & 0x1f;
             const domG = (dominantBin >> 5) & 0x1f;
             const domB = dominantBin & 0x1f;
@@ -1198,15 +1195,14 @@ export class LiveScreenService {
             const bgUniformityRatio = adjacentBgCount / Math.max(1, totalSampled);
             const backgroundUniformityPercent = Math.round(bgUniformityRatio * 100);
 
-            // Is the dominant background compatible with known broker dark/light themes?
             const domRGB_R = domR << 3;
             const domRGB_G = domG << 3;
             const domRGB_B = domB << 3;
-            const isBrokerDarkTheme = domRGB_R <= 60 && domRGB_G <= 65 && domRGB_B <= 85;
-            const isBrokerLightTheme = domRGB_R >= 225 && domRGB_G >= 225 && domRGB_B >= 225;
-            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.35;
+            const isBrokerDarkTheme = domRGB_R <= 68 && domRGB_G <= 72 && domRGB_B <= 88;
+            const isBrokerLightTheme = domRGB_R >= 220 && domRGB_G >= 220 && domRGB_B >= 220;
+            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.38;
 
-            // Scenario 1 & 2: Pure Black or Pure White display check
+            // Blank screen rejection
             const blackRatio = pureBlackPixels / Math.max(1, totalSampled);
             const whiteRatio = pureWhitePixels / Math.max(1, totalSampled);
             if (blackRatio > 0.88 || whiteRatio > 0.88) {
@@ -1234,8 +1230,29 @@ export class LiveScreenService {
               });
             }
 
-            // 3. Stage 2: Strict Candlestick Color Signature
-            // Rejects natural wallpaper greens/browns/skin/flowers
+            // 3. TradePulse App Self-Capture Guard:
+            // Check for TradePulse distinctive cyan brand color (#06b6d4 / #00e5ff) in top 35% of display
+            let tradePulseCyanPixels = 0;
+            const yTopScan = Math.floor(targetHeight * 0.35);
+            for (let y = 0; y < yTopScan; y += 2) {
+              for (let x = 0; x < targetWidth; x += 2) {
+                const idx = (y * targetWidth + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                if (r < 80 && g >= 140 && b >= 170 && Math.abs(g - b) <= 60) {
+                  tradePulseCyanPixels++;
+                }
+              }
+            }
+            const isTradePulseScreen =
+              tradePulseCyanPixels >= 25 ||
+              (typeof document !== 'undefined' &&
+                document.visibilityState === 'visible' &&
+                !this.isPictureInPictureActive() &&
+                !this.isNativeCaptureActive);
+
+            // 4. Stage 2: Fast Pixel Grid Classification
             let greenPixelsInChart = 0;
             let redPixelsInChart = 0;
             const candlePixelGrid: Uint8Array = new Uint8Array(targetWidth * targetHeight); // 1 = green, 2 = red
@@ -1247,16 +1264,10 @@ export class LiveScreenService {
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Strict Broker Green (Emerald #00e676, Quotex teal #00c076, #26a69a)
-                // High saturation green with large delta over red
-                const isGreen =
-                  (g >= 90 && g > r * 1.30 && g > b * 1.10 && (g - r) >= 28) ||
-                  (g >= 120 && b >= 95 && g > r * 1.38 && (g - r) >= 36);
-
-                // Strict Broker Red (Quotex red #ef5350, #e53935, #ff3344, #f23645)
-                // High saturation red with large delta over green and blue
-                const isRed =
-                  (r >= 110 && r > g * 1.35 && r > b * 1.25 && (r - g) >= 30 && (r - b) >= 24);
+                // Quotex & broker green (#00b074, #10a152, #26a69a, #00e676)
+                const isGreen = (g >= 80 && g > r * 1.25 && g > b * 1.05);
+                // Quotex & broker red (#e95b4f, #ef5350, #ea3943, #f23645)
+                const isRed = (r >= 100 && r > g * 1.25 && r > b * 1.20);
 
                 if (isGreen) {
                   greenPixelsInChart++;
@@ -1270,317 +1281,158 @@ export class LiveScreenService {
 
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
-            // 4. Stage 3: Scan Vertical Columns for Candlestick Morphology & Filter Noise/Wide Blobs
-            interface CandleColumnRun {
-              x: number;
-              topY: number;
-              bottomY: number;
-              height: number;
-              color: 1 | 2;
-            }
-
-            const columnRuns: CandleColumnRun[] = [];
-
+            // 5. Stage 3: Candlestick Band Segmentation via Column Projection
+            // Groups columns with candle pixels into distinct candlestick bars
+            const colCounts = new Int32Array(targetWidth);
             for (let x = xStart; x < xEnd; x++) {
-              let runStart = -1;
-              let runColor: 1 | 2 = 1;
-
+              let count = 0;
               for (let y = yStart; y < yEnd; y++) {
-                const color = candlePixelGrid[y * targetWidth + x];
-                if (color === 1 || color === 2) {
-                  if (runStart === -1) {
-                    runStart = y;
-                    runColor = color;
-                  } else if (runColor !== color) {
-                    // Color switched
-                    const runHeight = y - runStart;
-                    if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
-                      columnRuns.push({ x, topY: runStart, bottomY: y - 1, height: runHeight, color: runColor });
-                    }
-                    runStart = y;
-                    runColor = color;
-                  }
-                } else {
-                  if (runStart !== -1) {
-                    const runHeight = y - runStart;
-                    if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
-                      columnRuns.push({ x, topY: runStart, bottomY: y - 1, height: runHeight, color: runColor });
-                    }
-                    runStart = -1;
-                  }
-                }
+                if (candlePixelGrid[y * targetWidth + x] > 0) count++;
               }
-
-              if (runStart !== -1) {
-                const runHeight = yEnd - runStart;
-                if (runHeight >= 3 && runHeight <= (yEnd - yStart) * 0.70) {
-                  columnRuns.push({ x, topY: runStart, bottomY: yEnd - 1, height: runHeight, color: runColor });
-                }
-              }
+              colCounts[x] = count;
             }
 
-            // 5. Stage 4: Cluster Adjacent Runs into Geometric Candle Bodies
-            // A candle body is between 2px and 20px wide!
-            // Anything > 22px wide is an app icon, prayer widget, banner, or photo object — NEVER A CANDLE!
-            interface VerifiedCandle {
-              leftX: number;
-              rightX: number;
-              centerX: number;
-              topY: number;
-              bottomY: number;
-              centerY: number;
+            interface CandleBand {
+              start: number;
+              end: number;
               width: number;
               height: number;
+              minY: number;
+              maxY: number;
+              centerX: number;
               color: 'GREEN' | 'RED';
               hasUpperWick: boolean;
               hasLowerWick: boolean;
             }
 
-            const verifiedCandles: VerifiedCandle[] = [];
-            let currentCluster: CandleColumnRun[] = [];
+            const candleBands: CandleBand[] = [];
+            let inBand = false;
+            let bandStart = 0;
+            let bandColorVote = { 1: 0, 2: 0 };
 
-            const evaluateCluster = (cluster: CandleColumnRun[]) => {
-              if (cluster.length === 0) return;
-              const leftX = cluster[0].x;
-              const rightX = cluster[cluster.length - 1].x;
-              const width = rightX - leftX + 1;
-
-              // 1. REJECT WIDE OBJECTS (app icons, cards, widgets) & EXTREMELY THIN NOISE
-              // On a 320px normalized canvas, genuine candlestick body width is between 3px and 16px!
-              if (width < 3 || width > 16) return;
-
-              let minTop = 999;
-              let maxBottom = -1;
-              cluster.forEach((run) => {
-                if (run.topY < minTop) minTop = run.topY;
-                if (run.bottomY > maxBottom) maxBottom = run.bottomY;
-              });
-
-              const height = maxBottom - minTop + 1;
-              // Candle body minimum height is 4px
-              if (height < 4) return;
-
-              const targetColorId = cluster[0].color;
-              const color: 'GREEN' | 'RED' = targetColorId === 1 ? 'GREEN' : 'RED';
-
-              // 2. CANDLE SOLID BODY FILL DENSITY REQUIREMENT (Anti-Font Outline & Anti-Card Borders):
-              // A real candlestick body is a SOLID filled rectangle of pixels!
-              // Font characters ('C', 'O', 'A', 'P', 'R', etc.) and hollow card borders
-              // have empty background in their centers (fillDensity < 0.45) — REJECT THEM!
-              let boxColoredPixels = 0;
-              for (let by = minTop; by <= maxBottom; by++) {
-                for (let bx = leftX; bx <= rightX; bx++) {
-                  if (candlePixelGrid[by * targetWidth + bx] === targetColorId) {
-                    boxColoredPixels++;
-                  }
+            for (let x = xStart; x < xEnd; x++) {
+              if (colCounts[x] >= 5) {
+                if (!inBand) {
+                  inBand = true;
+                  bandStart = x;
+                  bandColorVote = { 1: 0, 2: 0 };
                 }
-              }
-              const boxArea = width * height;
-              const fillDensity = boxColoredPixels / Math.max(1, boxArea);
-              if (fillDensity < 0.70) return; // Must be at least 70% solid fill!
-
-              // 3. CANDLE BODIES DO NOT HAVE HORIZONTAL PROJECTIONS / CROSSBARS:
-              // Font characters ('H', 'E', 'F', 'T', 'B', 'A') have horizontal strokes sticking out horizontally.
-              let horizontalCrossbarLeaks = 0;
-              for (let by = minTop; by <= maxBottom; by++) {
-                const hasLeftLeak = leftX > 1 && candlePixelGrid[by * targetWidth + (leftX - 1)] === targetColorId;
-                const hasRightLeak = rightX < targetWidth - 2 && candlePixelGrid[by * targetWidth + (rightX + 1)] === targetColorId;
-                if (hasLeftLeak || hasRightLeak) {
-                  horizontalCrossbarLeaks++;
+                for (let y = yStart; y < yEnd; y++) {
+                  const val = candlePixelGrid[y * targetWidth + x];
+                  if (val === 1 || val === 2) bandColorVote[val]++;
                 }
-              }
-              if (horizontalCrossbarLeaks > 2) return;
-
-              const centerX = Math.round((leftX + rightX) / 2);
-              const centerY = Math.round((minTop + maxBottom) / 2);
-
-              // 4. CENTRAL WICK (Shadow) DETECTION:
-              // Real wicks emerge strictly along the horizontal centerline (centerX +-1px) into empty space.
-              // Space on the left (centerX - 2) and right (centerX + 2) must be background canvas!
-              let hasUpperWick = false;
-              let hasLowerWick = false;
-
-              // Check upper wick: 1-2px wide vertical projection above body
-              for (let dy = 1; dy <= 16; dy++) {
-                const checkY = minTop - dy;
-                if (checkY < yStart) break;
-                for (const dx of [0, -1, 1]) {
-                  const xCoord = centerX + dx;
-                  if (xCoord > xStart && xCoord < xEnd) {
-                    const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
-                    const leftClear = xCoord >= 2 && candlePixelGrid[checkY * targetWidth + (xCoord - 2)] === 0;
-                    const rightClear = xCoord < targetWidth - 2 && candlePixelGrid[checkY * targetWidth + (xCoord + 2)] === 0;
-                    if (pixColor > 0 && leftClear && rightClear) {
-                      hasUpperWick = true;
-                      break;
-                    }
-                  }
-                }
-                if (hasUpperWick) break;
-              }
-
-              // Check lower wick: 1-2px wide vertical projection below body
-              for (let dy = 1; dy <= 16; dy++) {
-                const checkY = maxBottom + dy;
-                if (checkY >= yEnd) break;
-                for (const dx of [0, -1, 1]) {
-                  const xCoord = centerX + dx;
-                  if (xCoord > xStart && xCoord < xEnd) {
-                    const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
-                    const leftClear = xCoord >= 2 && candlePixelGrid[checkY * targetWidth + (xCoord - 2)] === 0;
-                    const rightClear = xCoord < targetWidth - 2 && candlePixelGrid[checkY * targetWidth + (xCoord + 2)] === 0;
-                    if (pixColor > 0 && leftClear && rightClear) {
-                      hasLowerWick = true;
-                      break;
-                    }
-                  }
-                }
-                if (hasLowerWick) break;
-              }
-
-              // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে (Must be vertically oriented from top to bottom)
-              // ক্যান্ডেল বডি অবশ্যই লম্বালম্বি হতে হবে (height >= width * 1.25) অথবা উইক/ছায়া থাকতে হবে।
-              const isStrictlyVertical = height >= width * 1.25 || (height >= width * 1.05 && (hasUpperWick || hasLowerWick));
-              if (!isStrictlyVertical) return;
-
-              verifiedCandles.push({
-                leftX,
-                rightX,
-                centerX,
-                topY: minTop,
-                bottomY: maxBottom,
-                centerY,
-                width,
-                height,
-                color,
-                hasUpperWick,
-                hasLowerWick,
-              });
-            };
-
-            for (let i = 0; i < columnRuns.length; i++) {
-              const run = columnRuns[i];
-              if (currentCluster.length === 0) {
-                currentCluster.push(run);
               } else {
-                const prevRun = currentCluster[currentCluster.length - 1];
-                const isAdjacent = run.x === prevRun.x + 1;
-                const isSameColor = run.color === prevRun.color;
-                const hasVerticalOverlap = Math.max(run.topY, prevRun.topY) <= Math.min(run.bottomY, prevRun.bottomY) + 3;
+                if (inBand) {
+                  const width = x - bandStart;
+                  // Allow genuine mobile candlestick widths (2px to 50px on 360px normalized canvas)
+                  if (width >= 2 && width <= 50) {
+                    let minY = 999;
+                    let maxY = 0;
+                    for (let bx = bandStart; bx < x; bx++) {
+                      for (let y = yStart; y < yEnd; y++) {
+                        if (candlePixelGrid[y * targetWidth + bx] > 0) {
+                          if (y < minY) minY = y;
+                          if (y > maxY) maxY = y;
+                        }
+                      }
+                    }
+                    const height = maxY - minY + 1;
+                    const dominantColor: 'GREEN' | 'RED' = bandColorVote[1] > bandColorVote[2] ? 'GREEN' : 'RED';
+                    const centerX = Math.round((bandStart + x - 1) / 2);
 
-                if (isAdjacent && isSameColor && hasVerticalOverlap) {
-                  currentCluster.push(run);
-                } else {
-                  evaluateCluster(currentCluster);
-                  currentCluster = [run];
+                    // Central wick detection
+                    let hasUpperWick = false;
+                    let hasLowerWick = false;
+                    for (let dy = 1; dy <= 20; dy++) {
+                      const checkY = minY - dy;
+                      if (checkY < yStart) break;
+                      if (candlePixelGrid[checkY * targetWidth + centerX] > 0) {
+                        hasUpperWick = true;
+                        break;
+                      }
+                    }
+                    for (let dy = 1; dy <= 20; dy++) {
+                      const checkY = maxY + dy;
+                      if (checkY >= yEnd) break;
+                      if (candlePixelGrid[checkY * targetWidth + centerX] > 0) {
+                        hasLowerWick = true;
+                        break;
+                      }
+                    }
+
+                    candleBands.push({
+                      start: bandStart,
+                      end: x - 1,
+                      width,
+                      height,
+                      minY,
+                      maxY,
+                      centerX,
+                      color: dominantColor,
+                      hasUpperWick,
+                      hasLowerWick,
+                    });
+                  }
+                  inBand = false;
                 }
               }
             }
-            if (currentCluster.length > 0) {
-              evaluateCluster(currentCluster);
-            }
 
-            // 7. Stage 5: Time Series Arrangement & Price Dispersion Validation
+            // Stage 4: Filter genuine vertical candlestick morphology
+            // Candlestick must have vertical aspect ratio (height >= width * 1.15) or wicks, with height >= 8px
+            const verifiedCandles = candleBands.filter(
+              (b) => (b.height >= b.width * 1.15 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.95)) && b.height >= 8
+            );
+
             const distinctCandleBars = verifiedCandles.length;
             let verifiedWicksCount = 0;
-            let verticalBodiesCount = 0;
             verifiedCandles.forEach((c) => {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
-              if (c.height >= c.width * 1.20) verticalBodiesCount++;
             });
 
+            // Stage 5: Time Series & Price Variance Validation (Anti-Text / Anti-Card filter)
             let horizontalSpan = 0;
             let verticalDispersion = 0;
-            let topVariance = 0;
-            let bottomVariance = 0;
+            let topSpread = 0;
+            let bottomSpread = 0;
 
             if (distinctCandleBars >= 2) {
               horizontalSpan = verifiedCandles[distinctCandleBars - 1].centerX - verifiedCandles[0].centerX;
-              const centerYs = verifiedCandles.map((c) => c.centerY);
-              verticalDispersion = Math.max(...centerYs) - Math.min(...centerYs);
-
-              const topYs = verifiedCandles.map((c) => c.topY);
-              const bottomYs = verifiedCandles.map((c) => c.bottomY);
-              topVariance = Math.max(...topYs) - Math.min(...topYs);
-              bottomVariance = Math.max(...bottomYs) - Math.min(...bottomYs);
+              const topYs = verifiedCandles.map((c) => c.minY);
+              const bottomYs = verifiedCandles.map((c) => c.maxY);
+              topSpread = Math.max(...topYs) - Math.min(...topYs);
+              bottomSpread = Math.max(...bottomYs) - Math.min(...bottomYs);
+              verticalDispersion = Math.max(topSpread, bottomSpread);
             }
 
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
-
-            // ANTI-TEXT BASELINE CHECK:
-            // Text letters in words (e.g. "CALL (UP)", "LIVE STREAMING") all share the exact same top or bottom baseline (variance < 4px).
-            // In financial charts, price moves up and down constantly across time!
-            const isTextRow = distinctCandleBars >= 3 && topVariance < 4 && bottomVariance < 4;
-
-            // 8. Stage 6: Scan for Broker Controls / Dashed Price Line
-            let brokerBuyBtnPixels = 0;
-            let brokerSellBtnPixels = 0;
-            const yBtnStart = Math.floor(targetHeight * 0.68);
-            const yBtnEnd = Math.floor(targetHeight * 0.96);
-
-            for (let y = yBtnStart; y < yBtnEnd; y++) {
-              for (let x = xStart; x < xEnd; x++) {
-                const idx = (y * targetWidth + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-                if (g >= 115 && g > r * 1.30 && g > b * 1.20) brokerBuyBtnPixels++;
-                else if (r >= 130 && r > g * 1.30 && r > b * 1.20) brokerSellBtnPixels++;
-              }
-            }
-
-            // TradePulse Self-Capture Guard:
-            // 1. If document is visible in foreground (user hasn't switched to broker app)
-            // 2. Or if prominent TradePulse cyan UI brand colors (#06b6d4 / #00e5ff) are detected in top region
-            let tradePulseCyanPixels = 0;
-            const yTopScan = Math.floor(targetHeight * 0.40);
-            for (let y = 0; y < yTopScan; y += 2) {
-              for (let x = 0; x < targetWidth; x += 2) {
-                const idx = (y * targetWidth + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-                // Cyan signature: low red, high green and blue
-                if (r < 75 && g >= 135 && b >= 165 && Math.abs(g - b) <= 65) {
-                  tradePulseCyanPixels++;
-                }
-              }
-            }
-            const hasTradePulseCyan = tradePulseCyanPixels >= 15;
-
-            const isTradePulseScreen =
-              (typeof document !== 'undefined' && document.visibilityState === 'visible' && !this.isPictureInPictureActive()) ||
-              hasTradePulseCyan;
+            // Rejects flat text words or straight horizontal cards where all elements share the exact same baseline
+            const isTextRow = distinctCandleBars >= 3 && topSpread < 6 && bottomSpread < 6;
 
             // =========================================================================
-            // ৪টি অপরিহার্য রিকোয়ারমেন্ট যাচাই (4 Strict Candlestick Chart Requirements):
-            // ১. চার্ট ফ্রেম ও সমসত্ত্ব সলিড ব্যাকগ্রাউন্ড ক্যানভাস (Chart Frame & Solid Canvas)
-            // ২. খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন ও সলিড ফিল বডি (Authentic Colors & Solid Bodies)
-            // ৩. লম্বালম্বি উল্লম্ব বডি ও উইক/ছায়া (Strict Vertical Morphology & Wicks)
-            // ৪. অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স (Sequential Horizontal Timeline & Price Dispersion)
+            // ৪টি অপরিহার্য রিকোয়ারমেন্টের ভারসাম্যপূর্ণ মূল্যায়ন (Balanced Candlestick Requirements):
+            // ১. চার্ট ফ্রেম ও সমসত্ত্ব ব্যাকগ্রাউন্ড ক্যানভাস
+            // ২. খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন
+            // ৩. লম্বালম্বি উল্লম্ব বডি ও উইক/ছায়া
+            // ৪. অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স
             // =========================================================================
 
-            // রিকোয়ারমেন্ট ১: চার্ট ফ্রেম (সলিড ইউনিফর্ম ব্যাকগ্রাউন্ড, হোমস্ক্রিন/ওয়ালপেপার ফিল্টার)
             const req1_ChartFrame = Boolean(
               !isTradePulseScreen &&
               hasBrokerTheme &&
-              bgUniformityRatio >= 0.40 &&
-              totalCandlePixels <= totalExamined * 0.28
+              bgUniformityRatio >= 0.38 &&
+              totalCandlePixels <= totalExamined * 0.35
             );
 
-            // রিকোয়ারমেন্ট ২: খাঁটি ক্যান্ডেল কালার (উপযুক্ত পরিমাণ ক্যান্ডেল পিক্সেল, সাধারণ পুরো স্ক্রিন ছবি নয়)
-            const req2_CandleColor = totalCandlePixels >= 40 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+            const req2_CandleColor = totalCandlePixels >= 50 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
 
-            // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে + উইক/ছায়া (Vertical Morphology & Wicks)
-            // কমপক্ষে ৩টি লম্বালম্বি ক্যান্ডেল বডি এবং কমপক্ষে ১টি সুস্পষ্ট সেন্ট্রাল উইক লাইন অথবা ৫টি সুস্পষ্ট উল্লম্ব ক্যান্ডেল
-            const req3_VerticalAndWicks = verticalBodiesCount >= 3 && (verifiedWicksCount >= 1 || verticalBodiesCount >= 5);
+            const req3_VerticalAndWicks = distinctCandleBars >= 3;
 
-            // রিকোয়ারমেন্ট ৪: অনুভূমিক টাইমলাইনে ক্রমানুসারে সাজানো সিরিজ ও প্রাইস ওঠানামা (Anti-Text Filter)
             const req4_TimelineSeries =
-              distinctCandleBars >= 4 &&
+              distinctCandleBars >= 3 &&
               !isTextRow &&
-              horizontalSpan >= targetWidth * 0.16 &&
-              (topVariance >= 6 || bottomVariance >= 6 || verticalDispersion >= 8);
+              horizontalSpan >= targetWidth * 0.14 &&
+              (topSpread >= 6 || bottomSpread >= 6 || verticalDispersion >= 8);
 
             const isCandlestickChart =
               !isTradePulseScreen &&
@@ -1611,7 +1463,7 @@ export class LiveScreenService {
               } else if (!req2_CandleColor) {
                 failureReasons.push('রিকোয়ারমেন্ট ২ মেলেনি (ক্যান্ডেল কালার অনুপস্থিত): স্ক্রিনে কোনো প্রমাণ্য বুলিশ গ্রিন বা বিয়ারিশ রেড ক্যান্ডেল মেলেনি।');
               } else if (!req3_VerticalAndWicks) {
-                failureReasons.push(`রিকোয়ারমেন্ট ৩ মেলেনি (লম্বালম্বি বডি ও উইক অনুপস্থিত): ক্যান্ডেল অবশ্যই উপর থেকে নিচে লম্বালম্বি ও উইকযুক্ত হতে হবে (উইক: ${verifiedWicksCount}, উল্লম্ব বডি: ${verticalBodiesCount})।`);
+                failureReasons.push(`রিকোয়ারমেন্ট ৩ মেলেনি (লম্বালম্বি ক্যান্ডেল অনুপস্থিত): কমপক্ষে ৩টি স্পষ্ট উল্লম্ব ক্যান্ডেল প্রয়োজন (পাওয়া গেছে: ${distinctCandleBars}টি)।`);
               } else if (!req4_TimelineSeries) {
                 failureReasons.push(isTextRow
                   ? 'রিকোয়ারমেন্ট ৪ মেলেনি: স্ক্রিনে টেক্সট বা বাটন রো সনাক্ত হয়েছে (ক্যান্ডেলস্টিক চার্টের প্রাকৃতিক প্রাইস ওঠানামা অনুপস্থিত)।'
@@ -1638,10 +1490,10 @@ export class LiveScreenService {
               });
             }
 
-            // 10. Genuine Candlestick Chart Confirmed! Analyze Rightmost Candles for True Momentum
+            // 6. Genuine Candlestick Chart Confirmed! Analyze Rightmost Candles for Live Direction
             diagnostic.recommendedAction = 'সক্রিয় ক্যান্ডেলস্টিক চার্ট নিশ্চিত। লাইভ মোমেন্টাম বিশ্লেষণ কার্যকর।';
 
-            // Take the 3-4 rightmost verified candles
+            // Take the 3 to 4 rightmost verified candles
             const recentCandles = verifiedCandles.slice(-4);
             let greenCount = 0;
             let redCount = 0;
@@ -1655,22 +1507,29 @@ export class LiveScreenService {
             let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
             let confidence = 0;
 
-            if (lastCandle.color === 'GREEN' && greenCount >= redCount) {
-              dir = 'UP';
-              confidence = Math.min(94, 82 + greenCount * 3);
-              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Marubozu';
-            } else if (lastCandle.color === 'RED' && redCount >= greenCount) {
+            if (redCount >= 2 && redCount > greenCount) {
               dir = 'DOWN';
               confidence = Math.min(94, 82 + redCount * 3);
-              pattern = lastCandle.hasLowerWick ? 'Bearish Candlestick Rejection' : 'Strong Bearish Marubozu';
+              pattern = lastCandle.hasLowerWick ? 'Bearish Continuation & Wick Rejection' : 'Strong Bearish Marubozu (Downtrend)';
+            } else if (greenCount >= 2 && greenCount > redCount) {
+              dir = 'UP';
+              confidence = Math.min(94, 82 + greenCount * 3);
+              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Marubozu (Uptrend)';
+            } else if (lastCandle.color === 'RED') {
+              dir = 'DOWN';
+              confidence = 82;
+              pattern = 'Bearish Candlestick Momentum';
+            } else if (lastCandle.color === 'GREEN') {
+              dir = 'UP';
+              confidence = 82;
+              pattern = 'Bullish Candlestick Momentum';
             } else {
               dir = 'WAIT';
               confidence = 0;
               pattern = 'কনসোলিডেশন ক্যান্ডেল (WAIT)';
             }
 
-            const hasBrokerTradeButtons = brokerBuyBtnPixels >= 25 && brokerSellBtnPixels >= 25;
-            const symbol = hasBrokerTradeButtons ? 'Quotex Broker Live' : 'BROKER CHART';
+            const symbol = 'BROKER CHART';
 
             return resolve({
               isChart: true,
@@ -1679,7 +1538,7 @@ export class LiveScreenService {
               symbol,
               pattern,
               reason: [
-                `স্ক্রিনে ${distinctCandleBars}টি ক্রমানুসারে সজ্জিত ক্যান্ডেলস্টিক বার ও উইক সফলভাবে নিশ্চিত হয়েছে।`,
+                `স্ক্রিনে ${distinctCandleBars}টি ক্রমানুসারে সজ্জিত ক্যান্ডেলস্টিক বার সফলভাবে নিশ্চিত হয়েছে।`,
                 dir === 'UP'
                   ? 'সাম্প্রতিক ক্যান্ডেলগুলোতে বায়ার্স প্রেসার ও বুলিশ মোমেন্টাম নিশ্চিত।'
                   : dir === 'DOWN'

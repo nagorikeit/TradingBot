@@ -326,10 +326,12 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 <div>
                   <div className="text-xs font-bold text-amber-300 flex items-center gap-1 truncate">
                     <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span className="truncate">⏸ চার্ট মেলেনি (WAIT)</span>
+                    <span className="truncate">
+                      {result?.verdictTitle || '⏸ চার্ট মেলেনি (WAIT)'}
+                    </span>
                   </div>
                   <div className="text-[10px] text-slate-300 font-mono truncate">
-                    ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান
+                    {result?.reasoning?.[0] || 'ক্যান্ডেল স্পষ্ট রাখুন বা ব্রোকার চার্টে যান'}
                   </div>
                 </div>
               ) : (
