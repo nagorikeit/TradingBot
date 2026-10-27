@@ -93,6 +93,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private String backendUrl = "https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app";
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean isAnalyzingNativeFrame = new AtomicBoolean(false);
+    private volatile boolean isTradePulseActivityInForeground = true;
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        isTradePulseActivityInForeground = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        isTradePulseActivityInForeground = false;
+    }
 
     @Override
     public void load() {
@@ -431,6 +444,31 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void analyzeNativeFrameInBackground(final String frameBase64, final long timestamp) {
         if (!isScanningActive || frameBase64 == null) return;
+
+        // If user is currently looking at TradePulse itself, do not generate false broker chart signals!
+        boolean isForeground = isTradePulseActivityInForeground;
+        if (getActivity() != null && getActivity().hasWindowFocus()) {
+            isForeground = true;
+        }
+        if (isForeground) {
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateOverlayDirect("WAIT", 0, "ট্রেডপাল্স অ্যাপ সক্রিয়", "অ্যাপটি মিনিমাইজ করে Quotex চার্ট খুলুন", "TRADEPULSE");
+                    }
+                });
+            }
+            JSObject nativeResult = new JSObject();
+            nativeResult.put("direction", "WAIT");
+            nativeResult.put("confidence", 0);
+            nativeResult.put("verdictTitle", "ট্রেডপাল্স অ্যাপ সক্রিয়");
+            nativeResult.put("reasonText", "ট্রেডপাল্স মিনিমাইজ করে Quotex চার্ট খুলুন");
+            nativeResult.put("symbol", "TRADEPULSE");
+            notifyListeners("onNativeAnalysisComplete", nativeResult);
+            return;
+        }
+
         if (!isAnalyzingNativeFrame.compareAndSet(false, true)) {
             return; // Previous analysis request still in progress
         }

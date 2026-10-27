@@ -1345,8 +1345,9 @@ export class LiveScreenService {
               const rightX = cluster[cluster.length - 1].x;
               const width = rightX - leftX + 1;
 
-              // REJECT WIDE OBJECTS (app icons, cards, widgets)
-              if (width < 2 || width > 22) return;
+              // 1. REJECT WIDE OBJECTS (app icons, cards, widgets) & EXTREMELY THIN NOISE
+              // On a 320px normalized canvas, genuine candlestick body width is between 3px and 16px!
+              if (width < 3 || width > 16) return;
 
               let minTop = 999;
               let maxBottom = -1;
@@ -1356,16 +1357,46 @@ export class LiveScreenService {
               });
 
               const height = maxBottom - minTop + 1;
+              // Candle body minimum height is 4px
               if (height < 4) return;
 
-              // Aspect ratio check: prevent thin horizontal stripes
-              if (width >= 6 && height < width * 0.65) return;
+              const targetColorId = cluster[0].color;
+              const color: 'GREEN' | 'RED' = targetColorId === 1 ? 'GREEN' : 'RED';
+
+              // 2. CANDLE SOLID BODY FILL DENSITY REQUIREMENT (Anti-Font Outline & Anti-Card Borders):
+              // A real candlestick body is a SOLID filled rectangle of pixels!
+              // Font characters ('C', 'O', 'A', 'P', 'R', etc.) and hollow card borders
+              // have empty background in their centers (fillDensity < 0.45) — REJECT THEM!
+              let boxColoredPixels = 0;
+              for (let by = minTop; by <= maxBottom; by++) {
+                for (let bx = leftX; bx <= rightX; bx++) {
+                  if (candlePixelGrid[by * targetWidth + bx] === targetColorId) {
+                    boxColoredPixels++;
+                  }
+                }
+              }
+              const boxArea = width * height;
+              const fillDensity = boxColoredPixels / Math.max(1, boxArea);
+              if (fillDensity < 0.70) return; // Must be at least 70% solid fill!
+
+              // 3. CANDLE BODIES DO NOT HAVE HORIZONTAL PROJECTIONS / CROSSBARS:
+              // Font characters ('H', 'E', 'F', 'T', 'B', 'A') have horizontal strokes sticking out horizontally.
+              let horizontalCrossbarLeaks = 0;
+              for (let by = minTop; by <= maxBottom; by++) {
+                const hasLeftLeak = leftX > 1 && candlePixelGrid[by * targetWidth + (leftX - 1)] === targetColorId;
+                const hasRightLeak = rightX < targetWidth - 2 && candlePixelGrid[by * targetWidth + (rightX + 1)] === targetColorId;
+                if (hasLeftLeak || hasRightLeak) {
+                  horizontalCrossbarLeaks++;
+                }
+              }
+              if (horizontalCrossbarLeaks > 2) return;
 
               const centerX = Math.round((leftX + rightX) / 2);
               const centerY = Math.round((minTop + maxBottom) / 2);
-              const color: 'GREEN' | 'RED' = cluster[0].color === 1 ? 'GREEN' : 'RED';
 
-              // 6. Wick (Shadow) Detection: Look above and below the body along centerX (+-1px)
+              // 4. CENTRAL WICK (Shadow) DETECTION:
+              // Real wicks emerge strictly along the horizontal centerline (centerX +-1px) into empty space.
+              // Space on the left (centerX - 2) and right (centerX + 2) must be background canvas!
               let hasUpperWick = false;
               let hasLowerWick = false;
 
@@ -1377,9 +1408,9 @@ export class LiveScreenService {
                   const xCoord = centerX + dx;
                   if (xCoord > xStart && xCoord < xEnd) {
                     const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
-                    const leftNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord - 1)];
-                    const rightNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord + 1)];
-                    if (pixColor > 0 && leftNeighbor === 0 && rightNeighbor === 0) {
+                    const leftClear = xCoord >= 2 && candlePixelGrid[checkY * targetWidth + (xCoord - 2)] === 0;
+                    const rightClear = xCoord < targetWidth - 2 && candlePixelGrid[checkY * targetWidth + (xCoord + 2)] === 0;
+                    if (pixColor > 0 && leftClear && rightClear) {
                       hasUpperWick = true;
                       break;
                     }
@@ -1396,9 +1427,9 @@ export class LiveScreenService {
                   const xCoord = centerX + dx;
                   if (xCoord > xStart && xCoord < xEnd) {
                     const pixColor = candlePixelGrid[checkY * targetWidth + xCoord];
-                    const leftNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord - 1)];
-                    const rightNeighbor = candlePixelGrid[checkY * targetWidth + (xCoord + 1)];
-                    if (pixColor > 0 && leftNeighbor === 0 && rightNeighbor === 0) {
+                    const leftClear = xCoord >= 2 && candlePixelGrid[checkY * targetWidth + (xCoord - 2)] === 0;
+                    const rightClear = xCoord < targetWidth - 2 && candlePixelGrid[checkY * targetWidth + (xCoord + 2)] === 0;
+                    if (pixColor > 0 && leftClear && rightClear) {
                       hasLowerWick = true;
                       break;
                     }
@@ -1408,9 +1439,8 @@ export class LiveScreenService {
               }
 
               // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে (Must be vertically oriented from top to bottom)
-              // ক্যান্ডেল বডি অবশ্যই লম্বালম্বি হতে হবে (height >= width * 1.05) অথবা উইক/ছায়া থাকতে হবে।
-              // আড়াআড়ি (horizontal) বার বা চারকোনা বাক্স (square) সরাসরি বাতিল।
-              const isStrictlyVertical = height >= width * 1.05 || hasUpperWick || hasLowerWick;
+              // ক্যান্ডেল বডি অবশ্যই লম্বালম্বি হতে হবে (height >= width * 1.25) অথবা উইক/ছায়া থাকতে হবে।
+              const isStrictlyVertical = height >= width * 1.25 || (height >= width * 1.05 && (hasUpperWick || hasLowerWick));
               if (!isStrictlyVertical) return;
 
               verifiedCandles.push({
@@ -1456,18 +1486,31 @@ export class LiveScreenService {
             let verticalBodiesCount = 0;
             verifiedCandles.forEach((c) => {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
-              if (c.height >= c.width * 1.15) verticalBodiesCount++;
+              if (c.height >= c.width * 1.20) verticalBodiesCount++;
             });
 
             let horizontalSpan = 0;
             let verticalDispersion = 0;
+            let topVariance = 0;
+            let bottomVariance = 0;
+
             if (distinctCandleBars >= 2) {
               horizontalSpan = verifiedCandles[distinctCandleBars - 1].centerX - verifiedCandles[0].centerX;
               const centerYs = verifiedCandles.map((c) => c.centerY);
               verticalDispersion = Math.max(...centerYs) - Math.min(...centerYs);
+
+              const topYs = verifiedCandles.map((c) => c.topY);
+              const bottomYs = verifiedCandles.map((c) => c.bottomY);
+              topVariance = Math.max(...topYs) - Math.min(...topYs);
+              bottomVariance = Math.max(...bottomYs) - Math.min(...bottomYs);
             }
 
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
+
+            // ANTI-TEXT BASELINE CHECK:
+            // Text letters in words (e.g. "CALL (UP)", "LIVE STREAMING") all share the exact same top or bottom baseline (variance < 4px).
+            // In financial charts, price moves up and down constantly across time!
+            const isTextRow = distinctCandleBars >= 3 && topVariance < 4 && bottomVariance < 4;
 
             // 8. Stage 6: Scan for Broker Controls / Dashed Price Line
             let brokerBuyBtnPixels = 0;
@@ -1486,33 +1529,58 @@ export class LiveScreenService {
               }
             }
 
-            // TradePulse Self-Capture Guard
+            // TradePulse Self-Capture Guard:
+            // 1. If document is visible in foreground (user hasn't switched to broker app)
+            // 2. Or if prominent TradePulse cyan UI brand colors (#06b6d4 / #00e5ff) are detected in top region
+            let tradePulseCyanPixels = 0;
+            const yTopScan = Math.floor(targetHeight * 0.40);
+            for (let y = 0; y < yTopScan; y += 2) {
+              for (let x = 0; x < targetWidth; x += 2) {
+                const idx = (y * targetWidth + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                // Cyan signature: low red, high green and blue
+                if (r < 75 && g >= 135 && b >= 165 && Math.abs(g - b) <= 65) {
+                  tradePulseCyanPixels++;
+                }
+              }
+            }
+            const hasTradePulseCyan = tradePulseCyanPixels >= 15;
+
             const isTradePulseScreen =
-              typeof document !== 'undefined' &&
-              document.visibilityState === 'visible' &&
-              !this.isNativeCaptureActive &&
-              distinctCandleBars < 3;
+              (typeof document !== 'undefined' && document.visibilityState === 'visible' && !this.isPictureInPictureActive()) ||
+              hasTradePulseCyan;
 
             // =========================================================================
             // ৪টি অপরিহার্য রিকোয়ারমেন্ট যাচাই (4 Strict Candlestick Chart Requirements):
             // ১. চার্ট ফ্রেম ও সমসত্ত্ব সলিড ব্যাকগ্রাউন্ড ক্যানভাস (Chart Frame & Solid Canvas)
-            // ২. খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন (Authentic Bullish Green / Bearish Red Colors)
+            // ২. খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন ও সলিড ফিল বডি (Authentic Colors & Solid Bodies)
             // ৩. লম্বালম্বি উল্লম্ব বডি ও উইক/ছায়া (Strict Vertical Morphology & Wicks)
             // ৪. অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স (Sequential Horizontal Timeline & Price Dispersion)
             // =========================================================================
 
             // রিকোয়ারমেন্ট ১: চার্ট ফ্রেম (সলিড ইউনিফর্ম ব্যাকগ্রাউন্ড, হোমস্ক্রিন/ওয়ালপেপার ফিল্টার)
-            const req1_ChartFrame = Boolean(hasBrokerTheme && bgUniformityRatio >= 0.40 && totalCandlePixels <= totalExamined * 0.28);
+            const req1_ChartFrame = Boolean(
+              !isTradePulseScreen &&
+              hasBrokerTheme &&
+              bgUniformityRatio >= 0.40 &&
+              totalCandlePixels <= totalExamined * 0.28
+            );
 
             // রিকোয়ারমেন্ট ২: খাঁটি ক্যান্ডেল কালার (উপযুক্ত পরিমাণ ক্যান্ডেল পিক্সেল, সাধারণ পুরো স্ক্রিন ছবি নয়)
-            const req2_CandleColor = totalCandlePixels >= 45 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+            const req2_CandleColor = totalCandlePixels >= 40 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
 
             // রিকোয়ারমেন্ট ৩: লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে + উইক/ছায়া (Vertical Morphology & Wicks)
-            // কমপক্ষে ৩টি লম্বালম্বি ক্যান্ডেল বডি এবং কমপক্ষে ১টি সুস্পষ্ট উইক/শ্যাডো লাইন অথবা ৫টি সুস্পষ্ট উল্লম্ব ক্যান্ডেল থাকতে হবে
+            // কমপক্ষে ৩টি লম্বালম্বি ক্যান্ডেল বডি এবং কমপক্ষে ১টি সুস্পষ্ট সেন্ট্রাল উইক লাইন অথবা ৫টি সুস্পষ্ট উল্লম্ব ক্যান্ডেল
             const req3_VerticalAndWicks = verticalBodiesCount >= 3 && (verifiedWicksCount >= 1 || verticalBodiesCount >= 5);
 
-            // রিকোয়ারমেন্ট ৪: অনুভূমিক টাইমলাইনে ক্রমানুসারে সাজানো সিরিজ ও প্রাইস ওঠানামা
-            const req4_TimelineSeries = distinctCandleBars >= 4 && horizontalSpan >= targetWidth * 0.16 && verticalDispersion >= 10;
+            // রিকোয়ারমেন্ট ৪: অনুভূমিক টাইমলাইনে ক্রমানুসারে সাজানো সিরিজ ও প্রাইস ওঠানামা (Anti-Text Filter)
+            const req4_TimelineSeries =
+              distinctCandleBars >= 4 &&
+              !isTextRow &&
+              horizontalSpan >= targetWidth * 0.16 &&
+              (topVariance >= 6 || bottomVariance >= 6 || verticalDispersion >= 8);
 
             const isCandlestickChart =
               !isTradePulseScreen &&
@@ -1537,7 +1605,7 @@ export class LiveScreenService {
             if (!isCandlestickChart) {
               const failureReasons: string[] = [];
               if (isTradePulseScreen) {
-                failureReasons.push('⚠️ ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে ব্রোকার চার্ট খুলুন।');
+                failureReasons.push('⚠️ ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে Quotex, Binomo বা Pocket Option ব্রোকার চার্ট খুলুন।');
               } else if (!req1_ChartFrame) {
                 failureReasons.push(`রিকোয়ারমেন্ট ১ মেলেনি (চার্ট ফ্রেম অনুপস্থিত): ক্যানভাস সমসত্ত্ব নয় (${backgroundUniformityPercent}%)। ওয়ালপেপার, ঘরের ছবি বা নন-ট্রেডিং অ্যাপ বাতিল।`);
               } else if (!req2_CandleColor) {
@@ -1545,7 +1613,9 @@ export class LiveScreenService {
               } else if (!req3_VerticalAndWicks) {
                 failureReasons.push(`রিকোয়ারমেন্ট ৩ মেলেনি (লম্বালম্বি বডি ও উইক অনুপস্থিত): ক্যান্ডেল অবশ্যই উপর থেকে নিচে লম্বালম্বি ও উইকযুক্ত হতে হবে (উইক: ${verifiedWicksCount}, উল্লম্ব বডি: ${verticalBodiesCount})।`);
               } else if (!req4_TimelineSeries) {
-                failureReasons.push(`রিকোয়ারমেন্ট ৪ মেলেনি (টাইমলাইন সিরিজ অনুপস্থিত): টাইমলাইনে ক্রমানুসারে সাজানো ক্যান্ডেল পাওয়া যায়নি (বার: ${distinctCandleBars}, টাইম বিস্তার: ${horizontalSpanPercent}%)।`);
+                failureReasons.push(isTextRow
+                  ? 'রিকোয়ারমেন্ট ৪ মেলেনি: স্ক্রিনে টেক্সট বা বাটন রো সনাক্ত হয়েছে (ক্যান্ডেলস্টিক চার্টের প্রাকৃতিক প্রাইস ওঠানামা অনুপস্থিত)।'
+                  : `রিকোয়ারমেন্ট ৪ মেলেনি (টাইমলাইন সিরিজ অনুপস্থিত): টাইমলাইনে ক্রমানুসারে সাজানো ক্যান্ডেল পাওয়া যায়নি (বার: ${distinctCandleBars}, টাইম বিস্তার: ${horizontalSpanPercent}%)।`);
               } else {
                 failureReasons.push('চার্ট শনাক্তকরণের ৪টি রিকোয়ারমেন্টের সবগুলো পূরণ হয়নি (WAIT)।');
               }

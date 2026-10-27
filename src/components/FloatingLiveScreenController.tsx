@@ -181,6 +181,13 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       };
 
   const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
+  const isTradePulseAppScreen = Boolean(
+    result &&
+    (result.verdictTitle?.includes('ট্রেডপাল্স') ||
+     result.visionData?.detectedAppName?.includes('TradePulse') ||
+     result.visionData?.symbol === 'TRADEPULSE_APP' ||
+     result.reasoning?.[0]?.includes('ট্রেডপাল্স'))
+  );
   const isReadingOtherScreen = Boolean(
     isStreaming &&
     !hasChartSignal &&
@@ -209,6 +216,8 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               : result.direction === 'DOWN'
               ? 'bg-slate-900/95 border-rose-500/80 text-slate-100 ring-2 ring-rose-500/40 shadow-rose-950/40'
               : 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
+            : isTradePulseAppScreen
+            ? 'bg-slate-900/95 border-amber-500/70 text-slate-100 ring-2 ring-amber-500/30'
             : isReadingOtherScreen
             ? 'bg-slate-900/95 border-sky-500/70 text-slate-100 ring-2 ring-sky-500/30'
             : isStreaming
@@ -243,6 +252,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                   {result.direction === 'UP' && <TrendingUp className="w-4 h-4" />}
                   {result.direction === 'DOWN' && <TrendingDown className="w-4 h-4" />}
                   {result.direction === 'WAIT' && <Clock className="w-4 h-4" />}
+                </div>
+              ) : isTradePulseAppScreen ? (
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400">
+                  <Clock className="w-4 h-4" />
                 </div>
               ) : isReadingOtherScreen ? (
                 <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/60 flex items-center justify-center text-sky-300">
@@ -297,6 +310,16 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                   </div>
                   <div className="text-[10px] text-slate-300 font-mono truncate">
                     {result.visionData?.symbol || 'LIVE CHART'} • {result.visionData?.candlestickPattern || 'মোমেন্টাম নিশ্চিত'}
+                  </div>
+                </div>
+              ) : isTradePulseAppScreen ? (
+                <div>
+                  <div className="text-xs font-bold text-amber-300 flex items-center gap-1 truncate">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="truncate">⏸ ট্রেডপাল্স অ্যাপে আছেন (WAIT)</span>
+                  </div>
+                  <div className="text-[10px] text-cyan-300 font-mono truncate">
+                    Quotex বা ব্রোকার অ্যাপ ওপেন করুন
                   </div>
                 </div>
               ) : isReadingOtherScreen ? (

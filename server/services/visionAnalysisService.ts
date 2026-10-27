@@ -311,11 +311,14 @@ YOUR CORE DUTIES:
       let detectedSymbol = 'AUD/CHF';
 
       const isSelfCapture =
-        (bufferStr.includes('live screen analysis') || bufferStr.includes('inspection interval')) &&
-        !bufferStr.includes('market-qx') &&
-        !bufferStr.includes('qx.info') &&
-        !bufferStr.includes('trade') &&
-        !bufferStr.includes('cosmos');
+        bufferStr.includes('live screen analysis') ||
+        bufferStr.includes('inspection interval') ||
+        bufferStr.includes('universal ocr') ||
+        bufferStr.includes('tradepulse') ||
+        bufferStr.includes('privacy protected') ||
+        bufferStr.includes('সার্ভার সক্রিয়') ||
+        bufferStr.includes('স্ক্যান শুরু') ||
+        bufferStr.includes('স্ক্যান স্টপ');
 
       const isPhoneHomeScreen =
         bufferStr.includes('fajr') ||
