@@ -2071,49 +2071,79 @@ export class LiveScreenService {
   }
 
   /**
-   * Starts active scanning on the connected screen.
-   * Performs immediate frame analysis and runs recurring analysis every 3.5s.
-   * Does NOT disconnect.
+   * One-Click Scan & Lock Engine:
+   * 1. Clears any previous locked signal or timer to start fresh analysis.
+   * 2. Captures live screen frame and analyzes chart/candlestick patterns.
+   * 3. Locks and freezes the verdict on screen with candle expiry countdown.
+   * 4. Automatically STOPS active scanning loops so direction NEVER fluctuates in the background!
+   * 5. When clicked again, clears previous result and executes a fresh scan.
    */
-  public async startScanning(): Promise<void> {
+  public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
     if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
-      if (!ok) return;
+      if (!ok) return null;
     }
 
+    if (this.isProcessingFrame) {
+      return this.latestResult;
+    }
+
+    // 1. Reset prior locked result and timer for fresh evaluation
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = null;
+    }
+
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+
+    this.latestResult = null;
+    this.expirySecondsLeft = 0;
+    this.isChartFound = false;
+    this.isSearchingForChart = true;
     this.isScanningActive = true;
     this.aiState = 'ANALYZING';
-    this.isProcessingFrame = false;
-    this.latestProcessedSequenceId = 0;
+    this.errorMessage = null;
     this.notify();
 
-    // Immediately update HUD to scanning feedback
+    // 2. Immediate feedback in HUD
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,
       durationText: '...',
-      verdictTitle: '🔍 স্ক্যান করা হচ্ছে...',
-      reasonText: 'স্ক্রিন ফ্রেম রিয়েল-টাইম বিশ্লেষণ চলছে',
+      verdictTitle: '🔍 স্ক্যান ও বিশ্লেষণ হচ্ছে...',
+      reasonText: 'ক্যান্ডেলস্টিক ও টেকনিক্যাল প্যাটার্ন যাচাই চলছে',
       latencyMs: 0,
       aiState: 'ANALYZING',
       isScanning: true,
     });
 
-    // Run first immediate scan
-    await this.captureAndAnalyzeCurrentFrame();
+    try {
+      // 3. Capture frame and analyze
+      await this.captureAndAnalyzeCurrentFrame();
+    } finally {
+      // 4. AUTOMATICALLY STOP further background scanning!
+      // Direction remains frozen and locked until user taps Scan again!
+      this.isScanningActive = false;
+      this.aiState = 'IDLE';
+      this.isSearchingForChart = false;
+      this.notify();
+    }
 
-    // Recurring scan while isScanningActive is true
-    if (this.scanTimer) clearInterval(this.scanTimer);
-    this.scanTimer = setInterval(() => {
-      if (this.isScanningActive && this.state === 'STREAMING') {
-        this.captureAndAnalyzeCurrentFrame();
-      }
-    }, this.scanIntervalMs);
+    return this.latestResult;
   }
 
   /**
-   * Stops active scanning.
-   * Halts analysis loops, but keeps screenshare connected and HUD active!
+   * Starts scan and locks result (One-click operation)
+   */
+  public async startScanning(): Promise<void> {
+    await this.triggerScanAndLock();
+  }
+
+  /**
+   * Stops active scanning and clears timers if needed.
    */
   public stopScanning(): void {
     this.isScanningActive = false;
@@ -2125,7 +2155,7 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
-    // Completely wipe previous result, active countdown, and chart flags
+    // Reset previous result, active countdown, and chart flags
     this.latestResult = null;
     this.expirySecondsLeft = 0;
     if (this.countdownTimer) {
@@ -2135,7 +2165,6 @@ export class LiveScreenService {
     this.isChartFound = false;
     this.isSearchingForChart = false;
 
-    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open in Ready state!
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,
@@ -2151,16 +2180,11 @@ export class LiveScreenService {
   }
 
   public toggleScanning(): void {
-    if (this.isScanningActive) {
-      this.stopScanning();
-    } else {
-      this.startScanning();
-    }
+    this.triggerScanAndLock();
   }
 
   public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.captureAndAnalyzeCurrentFrame();
-    return this.latestResult;
+    return await this.triggerScanAndLock();
   }
 
   private resetIntervalTimer(): void {

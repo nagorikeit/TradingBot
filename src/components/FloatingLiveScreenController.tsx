@@ -93,14 +93,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
     return null;
   }
 
-  // Single button: toggles scanning without disconnecting screenshare!
+  // Single button: triggers scan and locks result without continuous background loops
   const handleToggleScan = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isScanning) {
-      liveScreenService.stopScanning();
-    } else {
-      liveScreenService.startScanning();
-    }
+    liveScreenService.triggerScanAndLock();
   };
 
   const handleClose = (e: React.MouseEvent) => {
@@ -303,10 +299,13 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                       {result.confidence}%
                     </span>
                     {(result.direction === 'UP' || result.direction === 'DOWN') && expirySec > 0 && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-bold animate-pulse">
                         ⏱ {formattedCountdown}
                       </span>
                     )}
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-600/40 font-bold">
+                      🔒 লকড
+                    </span>
                   </div>
                   <div className="text-[10px] text-slate-300 font-mono truncate">
                     {result.visionData?.symbol || 'LIVE CHART'} • {result.visionData?.candlestickPattern || 'মোমেন্টাম নিশ্চিত'}
@@ -399,33 +398,35 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
           </div>
         )}
 
-        {/* BOTTOM ACTION: SINGLE [🔍 স্ক্যান শুরু করুন] / [⏹ স্ক্যান স্টপ] TOGGLE BUTTON */}
+        {/* BOTTOM ACTION: SINGLE [🔍 স্ক্যান] BUTTON ONLY (NO STOP SYSTEM, AUTO-STOP & LOCK) */}
         <div className="pt-1 border-t border-slate-800/80">
           <button
             type="button"
             onClick={handleToggleScan}
-            disabled={isConnecting}
+            disabled={isConnecting || isBusy}
             className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-bold text-xs tracking-wide shadow-md transition-all active:scale-95 ${
-              isScanning
-                ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border border-rose-400/50 shadow-rose-950/50'
+              isBusy
+                ? 'bg-slate-800 text-cyan-300 border border-cyan-500/40 cursor-wait'
+                : result
+                ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400/50 shadow-cyan-950/50'
                 : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/50 shadow-emerald-950/50'
             }`}
-            title={isScanning ? 'স্ক্যান থামান (স্ক্রিন শেয়ার চালু থাকবে)' : 'লাইভ স্ক্যান শুরু করুন'}
+            title="এক ক্লিকে স্ক্রিন স্ক্যান ও দিক নির্দেশনা লক করুন"
           >
             {isBusy ? (
               <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>স্ক্যান হচ্ছে...</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                <span>বিশ্লেষণ হচ্ছে...</span>
               </>
-            ) : isScanning ? (
+            ) : result ? (
               <>
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>⏹ স্ক্যান স্টপ</span>
+                <RefreshCw className="w-3.5 h-3.5 text-cyan-200" />
+                <span>🔍 স্ক্যান (নতুন বিশ্লেষণ)</span>
               </>
             ) : (
               <>
                 <Camera className="w-3.5 h-3.5 text-emerald-100" />
-                <span>🔍 স্ক্যান শুরু করুন</span>
+                <span>🔍 স্ক্যান</span>
               </>
             )}
           </button>
