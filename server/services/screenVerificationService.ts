@@ -378,44 +378,57 @@ export class ScreenVerificationService {
         `প্রাইস অমিল গার্ড: স্ক্রিন প্রাইস ($${marketVerification.screenPrice}) ও লাইভ মার্কেট ($${marketVerification.livePrice}) এর মধ্যে ${marketVerification.priceDeltaPercent}% অমিল। চার্ট বা স্প্রেড অসঙ্গতিপূর্ণ।`
       );
     } else {
-      // 3. Technical Consensus Calculation
+      // 3. Technical Consensus Calculation (Strict Next-Candle Forecast Discipline)
+      // Eliminates single-candle color flickering by requiring trend/indicator confluence
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
 
       let score = 0;
+      // Candle direction adds 1 point of evidence, but NEVER enough on its own to trigger a trade
       if (visionData.lastCandleDirection === 'BULLISH') score += 1;
       if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
+
+      // Higher timeframe / chart structure carries primary weight (2 points)
       if (visionData.chartStructure === 'UPTREND') score += 2;
       if (visionData.chartStructure === 'DOWNTREND') score -= 2;
+
+      // Breakouts require directional indicator confirmation to score
       if (visionData.chartStructure === 'BREAKOUT') {
-        if (visionData.lastCandleDirection === 'BULLISH') score += 2;
-        if (visionData.lastCandleDirection === 'BEARISH') score -= 2;
+        if (visionData.lastCandleDirection === 'BULLISH' && bullishIndicators > 0) {
+          score += 1;
+        } else if (visionData.lastCandleDirection === 'BEARISH' && bearishIndicators > 0) {
+          score -= 1;
+        }
       }
+
       score += bullishIndicators;
       score -= bearishIndicators;
 
+      // Strict Threshold: Score >= 3 for UP (requires both trend + candle confirmation or multiple indicators)
+      // Score <= -3 for DOWN
+      // Scores between -2 and +2 are strictly held in WAIT (prevents mid-candle repainting)
       if (visionData.lastCandleDirection === 'UNCERTAIN' || visionData.confidenceScore === 0) {
         direction = 'WAIT';
         confidence = 0;
         verdictTitle = `WAIT (${assetName})`;
         suggestedExpiry = 'N/A';
         reasoning.push(visionData.visionSummary || 'ক্যান্ডেলস্টিক দিকনির্দেশনা অনিশ্চিত—অনুমানভিত্তিক ট্রেড স্থগিত, WAIT রাখা হয়েছে।');
-      } else if (score >= 2) {
+      } else if (score >= 3) {
         direction = 'UP';
-        confidence = Math.min(92, 60 + score * 7);
-        verdictTitle = `UP / CALL (${assetName})`;
-        reasoning.push(`টেকনিক্যাল বায়াস বুলিশ (স্কোর: +${score})। আপট্রেন্ড কাঠামো ও ইতিবাচক ক্যান্ডেল কনফার্মেশন।`);
-      } else if (score <= -2) {
+        confidence = Math.min(94, 65 + score * 6);
+        verdictTitle = `UP / CALL (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বুলিশ (কনফার্মেশন স্কোর: +${score}/5)। আপট্রেন্ড কাঠামো ও সম্পূর্ণ ক্যান্ডেল কনফার্মেশন।`);
+      } else if (score <= -3) {
         direction = 'DOWN';
-        confidence = Math.min(92, 60 + Math.abs(score) * 7);
-        verdictTitle = `DOWN / PUT (${assetName})`;
-        reasoning.push(`টেকনিক্যাল বায়াস বেয়ারিশ (স্কোর: ${score})। ডাউনট্রেন্ড কাঠামো ও শক্তিশালী বিক্রয় চাপ।`);
+        confidence = Math.min(94, 65 + Math.abs(score) * 6);
+        verdictTitle = `DOWN / PUT (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বেয়ারিশ (কনফার্মেশন স্কোর: ${score}/5)। ডাউনট্রেন্ড কাঠামো ও শক্তিশালী বিক্রয় কনফার্মেশন।`);
       } else {
         direction = 'WAIT';
         confidence = 0;
         verdictTitle = `WAIT / কনসোলিডেশন (${assetName})`;
         suggestedExpiry = 'N/A';
-        reasoning.push(`মার্কেট পার্শ্ববর্তী বা নিরপেক্ষ ক্যান্ডেল প্যাটার্নে রয়েছে। নিশ্চিত ব্রেকআউটের জন্য অপেক্ষা করুন।`);
+        reasoning.push(`মার্কেট নিরপেক্ষ বা চলমান ক্যান্ডেলে ওঠানামা করছে (স্কোর: ${score})। শুধু ক্যান্ডেল রঙে ট্রেড নিষেধ—স্থির ট্রেন্ড কনফার্মেশনের জন্য WAIT।`);
       }
 
       if (visionData.candlestickPattern) {

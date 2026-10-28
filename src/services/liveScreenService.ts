@@ -1198,10 +1198,9 @@ export class LiveScreenService {
             const domRGB_R = domR << 3;
             const domRGB_G = domG << 3;
             const domRGB_B = domB << 3;
-            // Broker theme recognition: dark canvas (Quotex dark grey/navy, TradingView, Pocket Option) or clean light canvas
-            const isBrokerDarkTheme = (domRGB_R <= 75 && domRGB_G <= 80 && domRGB_B <= 95) || (domRGB_R <= 40 && domRGB_G <= 40 && domRGB_B <= 50);
-            const isBrokerLightTheme = domRGB_R >= 210 && domRGB_G >= 210 && domRGB_B >= 210;
-            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.22;
+            const isBrokerDarkTheme = domRGB_R <= 68 && domRGB_G <= 72 && domRGB_B <= 88;
+            const isBrokerLightTheme = domRGB_R >= 220 && domRGB_G >= 220 && domRGB_B >= 220;
+            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.38;
 
             // Blank screen rejection
             const blackRatio = pureBlackPixels / Math.max(1, totalSampled);
@@ -1232,7 +1231,7 @@ export class LiveScreenService {
             }
 
             // 3. TradePulse App Self-Capture Guard:
-            // Check for TradePulse cyan branding only if NO broker canvas is present
+            // Check for TradePulse distinctive cyan brand color (#06b6d4 / #00e5ff) in top 35% of display
             let tradePulseCyanPixels = 0;
             const yTopScan = Math.floor(targetHeight * 0.35);
             for (let y = 0; y < yTopScan; y += 2) {
@@ -1246,48 +1245,29 @@ export class LiveScreenService {
                 }
               }
             }
-            // Real TradePulse self-capture only occurs if there is NO broker canvas and large TradePulse branding
-            const isTradePulseScreen = !hasBrokerTheme && tradePulseCyanPixels >= 250;
+            const isTradePulseScreen =
+              tradePulseCyanPixels >= 25 ||
+              (typeof document !== 'undefined' &&
+                document.visibilityState === 'visible' &&
+                !this.isPictureInPictureActive() &&
+                !this.isNativeCaptureActive);
 
-            // 4. Stage 2: Fast Pixel Grid Classification with Horizontal Banner / Button Filter
+            // 4. Stage 2: Fast Pixel Grid Classification
             let greenPixelsInChart = 0;
             let redPixelsInChart = 0;
             const candlePixelGrid: Uint8Array = new Uint8Array(targetWidth * targetHeight); // 1 = green, 2 = red
 
             for (let y = yStart; y < yEnd; y++) {
-              // Pre-scan row: if row contains a wide continuous colored banner or button (> 45px e.g. promo banners or sell buttons),
-              // exclude this row so horizontal buttons never merge candle columns together
-              let rowColoredRun = 0;
-              let maxRunInRow = 0;
-              for (let x = xStart; x < xEnd; x++) {
-                const idx = (y * targetWidth + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-                const isGreen = (g >= 70 && g > r * 1.15 && (g > b * 1.02 || (g > 110 && b > 75 && r < 75)));
-                const isRed = (r >= 90 && r > g * 1.15 && r > b * 1.10);
-                if (isGreen || isRed) {
-                  rowColoredRun++;
-                  if (rowColoredRun > maxRunInRow) maxRunInRow = rowColoredRun;
-                } else {
-                  rowColoredRun = 0;
-                }
-              }
-
-              // Skip wide horizontal banners/buttons from candlestick accumulation
-              if (maxRunInRow > 45) {
-                continue;
-              }
-
               for (let x = xStart; x < xEnd; x++) {
                 const idx = (y * targetWidth + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Quotex, Binomo, Pocket Option & TradingView candles
-                const isGreen = (g >= 70 && g > r * 1.15 && (g > b * 1.02 || (g > 110 && b > 75 && r < 75)));
-                const isRed = (r >= 90 && r > g * 1.15 && r > b * 1.10);
+                // Quotex & broker green (#00b074, #10a152, #26a69a, #00e676)
+                const isGreen = (g >= 80 && g > r * 1.25 && g > b * 1.05);
+                // Quotex & broker red (#e95b4f, #ef5350, #ea3943, #f23645)
+                const isRed = (r >= 100 && r > g * 1.25 && r > b * 1.20);
 
                 if (isGreen) {
                   greenPixelsInChart++;
@@ -1302,6 +1282,7 @@ export class LiveScreenService {
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
             // 5. Stage 3: Candlestick Band Segmentation via Column Projection
+            // Groups columns with candle pixels into distinct candlestick bars
             const colCounts = new Int32Array(targetWidth);
             for (let x = xStart; x < xEnd; x++) {
               let count = 0;
@@ -1330,7 +1311,7 @@ export class LiveScreenService {
             let bandColorVote = { 1: 0, 2: 0 };
 
             for (let x = xStart; x < xEnd; x++) {
-              if (colCounts[x] >= 3) {
+              if (colCounts[x] >= 5) {
                 if (!inBand) {
                   inBand = true;
                   bandStart = x;
@@ -1343,8 +1324,8 @@ export class LiveScreenService {
               } else {
                 if (inBand) {
                   const width = x - bandStart;
-                  // Allow genuine mobile candlestick widths (2px to 48px on 360px normalized canvas)
-                  if (width >= 2 && width <= 48) {
+                  // Allow genuine mobile candlestick widths (2px to 50px on 360px normalized canvas)
+                  if (width >= 2 && width <= 50) {
                     let minY = 999;
                     let maxY = 0;
                     for (let bx = bandStart; bx < x; bx++) {
@@ -1398,8 +1379,9 @@ export class LiveScreenService {
             }
 
             // Stage 4: Filter genuine vertical candlestick morphology
+            // Candlestick must have vertical aspect ratio (height >= width * 1.15) or wicks, with height >= 8px
             const verifiedCandles = candleBands.filter(
-              (b) => (b.height >= b.width * 1.05 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.90)) && b.height >= 8
+              (b) => (b.height >= b.width * 1.15 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.95)) && b.height >= 8
             );
 
             const distinctCandleBars = verifiedCandles.length;
@@ -1408,7 +1390,7 @@ export class LiveScreenService {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
             });
 
-            // Stage 5: Time Series & Price Variance Validation
+            // Stage 5: Time Series & Price Variance Validation (Anti-Text / Anti-Card filter)
             let horizontalSpan = 0;
             let verticalDispersion = 0;
             let topSpread = 0;
@@ -1424,7 +1406,8 @@ export class LiveScreenService {
             }
 
             const horizontalSpanPercent = Math.round((horizontalSpan / targetWidth) * 100);
-            const isTextRow = distinctCandleBars >= 3 && topSpread < 5 && bottomSpread < 5;
+            // Rejects flat text words or straight horizontal cards where all elements share the exact same baseline
+            const isTextRow = distinctCandleBars >= 3 && topSpread < 6 && bottomSpread < 6;
 
             // =========================================================================
             // ৪টি অপরিহার্য রিকোয়ারমেন্টের ভারসাম্যপূর্ণ মূল্যায়ন (Balanced Candlestick Requirements):
@@ -1437,18 +1420,19 @@ export class LiveScreenService {
             const req1_ChartFrame = Boolean(
               !isTradePulseScreen &&
               hasBrokerTheme &&
-              bgUniformityRatio >= 0.22 &&
-              totalCandlePixels <= totalExamined * 0.40
+              bgUniformityRatio >= 0.38 &&
+              totalCandlePixels <= totalExamined * 0.35
             );
 
-            const req2_CandleColor = totalCandlePixels >= 40 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+            const req2_CandleColor = totalCandlePixels >= 50 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
 
-            const req3_VerticalAndWicks = distinctCandleBars >= 2;
+            const req3_VerticalAndWicks = distinctCandleBars >= 3;
 
             const req4_TimelineSeries =
-              distinctCandleBars >= 2 &&
+              distinctCandleBars >= 3 &&
               !isTextRow &&
-              (horizontalSpan >= targetWidth * 0.08 || distinctCandleBars >= 2);
+              horizontalSpan >= targetWidth * 0.14 &&
+              (topSpread >= 6 || bottomSpread >= 6 || verticalDispersion >= 8);
 
             const isCandlestickChart =
               !isTradePulseScreen &&
@@ -1523,26 +1507,21 @@ export class LiveScreenService {
             let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
             let confidence = 0;
 
-            if (redCount >= 2 && redCount > greenCount) {
+            // Decisive trend consensus: Requires strong candle series alignment (>= 3 out of 4), NOT single-candle color
+            if (redCount >= 3 && redCount > greenCount) {
               dir = 'DOWN';
               confidence = Math.min(94, 82 + redCount * 3);
-              pattern = lastCandle.hasLowerWick ? 'Bearish Continuation & Wick Rejection' : 'Strong Bearish Marubozu (Downtrend)';
-            } else if (greenCount >= 2 && greenCount > redCount) {
+              pattern = lastCandle.hasLowerWick ? 'Bearish Continuation & Wick Rejection' : 'Strong Bearish Series (Downtrend)';
+            } else if (greenCount >= 3 && greenCount > redCount) {
               dir = 'UP';
               confidence = Math.min(94, 82 + greenCount * 3);
-              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Marubozu (Uptrend)';
-            } else if (lastCandle.color === 'RED') {
-              dir = 'DOWN';
-              confidence = 82;
-              pattern = 'Bearish Candlestick Momentum';
-            } else if (lastCandle.color === 'GREEN') {
-              dir = 'UP';
-              confidence = 82;
-              pattern = 'Bullish Candlestick Momentum';
+              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Series (Uptrend)';
             } else {
+              // Strictly WAIT when market is mixed (e.g. 2 green, 2 red or 1-1).
+              // Never guess UP or DOWN purely on the rightmost in-progress candle color!
               dir = 'WAIT';
               confidence = 0;
-              pattern = 'কনসোলিডেশন ক্যান্ডেল (WAIT)';
+              pattern = 'অনিশ্চিত ক্যান্ডেল রেঞ্জ (WAIT) — একক ক্যান্ডেলে ট্রেড স্থগিত';
             }
 
             const symbol = 'BROKER CHART';
@@ -1858,7 +1837,31 @@ export class LiveScreenService {
       this.isChartFound = true;
       this.isSearchingForChart = false;
       this.isOtherScreenActive = false;
-      this.latestResult = result;
+
+      // Next-Candle Signal Stability Guard:
+      // While a trade countdown is actively running for the current candle period (> 8 seconds remaining),
+      // prevent intra-candle micro-flickers from violently flipping direction between UP and DOWN.
+      const isCountdownActive = Boolean(this.countdownTimer && this.expirySecondsLeft > 8);
+      const isReversalAttempt =
+        this.latestResult &&
+        ((this.latestResult.direction === 'UP' && result.direction === 'DOWN') ||
+         (this.latestResult.direction === 'DOWN' && result.direction === 'UP'));
+
+      let finalResult = result;
+      if (isCountdownActive && isReversalAttempt) {
+        finalResult = {
+          ...result,
+          direction: this.latestResult!.direction,
+          confidence: Math.max(70, this.latestResult!.confidence - 4),
+          verdictTitle: `${this.latestResult!.verdictTitle} (লকড)`,
+          reasoning: [
+            ...result.reasoning,
+            'ক্যান্ডেল কাউন্টডাউন চলমান থাকায় ট্রেড ডিরেকশন রি-পেইন্ট ফিল্টার সক্রিয় রাখা হয়েছে।',
+          ],
+        };
+      }
+
+      this.latestResult = finalResult;
       this.errorMessage = null;
 
       // Update diagnostic to indicate successful detection
@@ -2087,79 +2090,49 @@ export class LiveScreenService {
   }
 
   /**
-   * One-Click Scan & Lock Engine:
-   * 1. Clears any previous locked signal or timer to start fresh analysis.
-   * 2. Captures live screen frame and analyzes chart/candlestick patterns.
-   * 3. Locks and freezes the verdict on screen with candle expiry countdown.
-   * 4. Automatically STOPS active scanning loops so direction NEVER fluctuates in the background!
-   * 5. When clicked again, clears previous result and executes a fresh scan.
+   * Starts active scanning on the connected screen.
+   * Performs immediate frame analysis and runs recurring analysis every 3.5s.
+   * Does NOT disconnect.
    */
-  public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
+  public async startScanning(): Promise<void> {
     if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
-      if (!ok) return null;
+      if (!ok) return;
     }
 
-    if (this.isProcessingFrame) {
-      return this.latestResult;
-    }
-
-    // 1. Reset prior locked result and timer for fresh evaluation
-    if (this.scanTimer) {
-      clearInterval(this.scanTimer);
-      this.scanTimer = null;
-    }
-
-    if (this.countdownTimer) {
-      clearInterval(this.countdownTimer);
-      this.countdownTimer = null;
-    }
-
-    this.latestResult = null;
-    this.expirySecondsLeft = 0;
-    this.isChartFound = false;
-    this.isSearchingForChart = true;
     this.isScanningActive = true;
     this.aiState = 'ANALYZING';
-    this.errorMessage = null;
+    this.isProcessingFrame = false;
+    this.latestProcessedSequenceId = 0;
     this.notify();
 
-    // 2. Immediate feedback in HUD
+    // Immediately update HUD to scanning feedback
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,
       durationText: '...',
-      verdictTitle: '🔍 স্ক্যান ও বিশ্লেষণ হচ্ছে...',
-      reasonText: 'ক্যান্ডেলস্টিক ও টেকনিক্যাল প্যাটার্ন যাচাই চলছে',
+      verdictTitle: '🔍 স্ক্যান করা হচ্ছে...',
+      reasonText: 'স্ক্রিন ফ্রেম রিয়েল-টাইম বিশ্লেষণ চলছে',
       latencyMs: 0,
       aiState: 'ANALYZING',
       isScanning: true,
     });
 
-    try {
-      // 3. Capture frame and analyze
-      await this.captureAndAnalyzeCurrentFrame();
-    } finally {
-      // 4. AUTOMATICALLY STOP further background scanning!
-      // Direction remains frozen and locked until user taps Scan again!
-      this.isScanningActive = false;
-      this.aiState = 'IDLE';
-      this.isSearchingForChart = false;
-      this.notify();
-    }
+    // Run first immediate scan
+    await this.captureAndAnalyzeCurrentFrame();
 
-    return this.latestResult;
+    // Recurring scan while isScanningActive is true
+    if (this.scanTimer) clearInterval(this.scanTimer);
+    this.scanTimer = setInterval(() => {
+      if (this.isScanningActive && this.state === 'STREAMING') {
+        this.captureAndAnalyzeCurrentFrame();
+      }
+    }, this.scanIntervalMs);
   }
 
   /**
-   * Starts scan and locks result (One-click operation)
-   */
-  public async startScanning(): Promise<void> {
-    await this.triggerScanAndLock();
-  }
-
-  /**
-   * Stops active scanning and clears timers if needed.
+   * Stops active scanning.
+   * Halts analysis loops, but keeps screenshare connected and HUD active!
    */
   public stopScanning(): void {
     this.isScanningActive = false;
@@ -2171,7 +2144,7 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
-    // Reset previous result, active countdown, and chart flags
+    // Completely wipe previous result, active countdown, and chart flags
     this.latestResult = null;
     this.expirySecondsLeft = 0;
     if (this.countdownTimer) {
@@ -2181,6 +2154,7 @@ export class LiveScreenService {
     this.isChartFound = false;
     this.isSearchingForChart = false;
 
+    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open in Ready state!
     this.updateFloatingOverlayHUD({
       direction: 'WAIT',
       confidence: 0,
@@ -2196,11 +2170,16 @@ export class LiveScreenService {
   }
 
   public toggleScanning(): void {
-    this.triggerScanAndLock();
+    if (this.isScanningActive) {
+      this.stopScanning();
+    } else {
+      this.startScanning();
+    }
   }
 
   public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
-    return await this.triggerScanAndLock();
+    await this.captureAndAnalyzeCurrentFrame();
+    return this.latestResult;
   }
 
   private resetIntervalTimer(): void {
