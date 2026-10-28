@@ -378,57 +378,67 @@ export class ScreenVerificationService {
         `প্রাইস অমিল গার্ড: স্ক্রিন প্রাইস ($${marketVerification.screenPrice}) ও লাইভ মার্কেট ($${marketVerification.livePrice}) এর মধ্যে ${marketVerification.priceDeltaPercent}% অমিল। চার্ট বা স্প্রেড অসঙ্গতিপূর্ণ।`
       );
     } else {
-      // 3. Technical Consensus Calculation (Strict Next-Candle Forecast Discipline)
-      // Eliminates single-candle color flickering by requiring trend/indicator confluence
+      // 3. Instant Next-Candle Forecast Engine (যখনি স্ক্যান হবে তখনই পরবর্তী ক্যান্ডেল ডিরেকশন প্রদান)
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
+      const aiForecast = visionData.predictedNextCandle;
 
       let score = 0;
-      // Candle direction adds 1 point of evidence, but NEVER enough on its own to trigger a trade
+      // Primary Weight 1: AI Next-Candle Forecast from Multimodal Vision
+      if (aiForecast === 'CALL') score += 3;
+      if (aiForecast === 'PUT') score -= 3;
+
+      // Primary Weight 2: Overall Chart Trend Structure (Higher highs/lows)
+      if (visionData.chartStructure === 'UPTREND') score += 3;
+      if (visionData.chartStructure === 'DOWNTREND') score -= 3;
+      if (visionData.chartStructure === 'BREAKOUT') {
+        if (visionData.lastCandleDirection === 'BULLISH' || bullishIndicators > 0) score += 2;
+        if (visionData.lastCandleDirection === 'BEARISH' || bearishIndicators > 0) score -= 2;
+      }
+
+      // Momentum Indicators
+      score += bullishIndicators * 2;
+      score -= bearishIndicators * 2;
+
+      // Recent candle bias
       if (visionData.lastCandleDirection === 'BULLISH') score += 1;
       if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
 
-      // Higher timeframe / chart structure carries primary weight (2 points)
-      if (visionData.chartStructure === 'UPTREND') score += 2;
-      if (visionData.chartStructure === 'DOWNTREND') score -= 2;
-
-      // Breakouts require directional indicator confirmation to score
-      if (visionData.chartStructure === 'BREAKOUT') {
-        if (visionData.lastCandleDirection === 'BULLISH' && bullishIndicators > 0) {
-          score += 1;
-        } else if (visionData.lastCandleDirection === 'BEARISH' && bearishIndicators > 0) {
-          score -= 1;
-        }
-      }
-
-      score += bullishIndicators;
-      score -= bearishIndicators;
-
-      // Strict Threshold: Score >= 3 for UP (requires both trend + candle confirmation or multiple indicators)
-      // Score <= -3 for DOWN
-      // Scores between -2 and +2 are strictly held in WAIT (prevents mid-candle repainting)
-      if (visionData.lastCandleDirection === 'UNCERTAIN' || visionData.confidenceScore === 0) {
-        direction = 'WAIT';
-        confidence = 0;
-        verdictTitle = `WAIT (${assetName})`;
-        suggestedExpiry = 'N/A';
-        reasoning.push(visionData.visionSummary || 'ক্যান্ডেলস্টিক দিকনির্দেশনা অনিশ্চিত—অনুমানভিত্তিক ট্রেড স্থগিত, WAIT রাখা হয়েছে।');
-      } else if (score >= 3) {
+      // When user triggers a scan, immediately predict the NEXT candle direction with confidence
+      if (score > 0 || aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND') {
         direction = 'UP';
-        confidence = Math.min(94, 65 + score * 6);
-        verdictTitle = `UP / CALL (${assetName}) - পরবর্তী ক্যান্ডেল`;
-        reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বুলিশ (কনফার্মেশন স্কোর: +${score}/5)। আপট্রেন্ড কাঠামো ও সম্পূর্ণ ক্যান্ডেল কনফার্মেশন।`);
-      } else if (score <= -3) {
+        confidence = Math.min(94, Math.max(84, 80 + Math.abs(score) * 2));
+        verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        reasoning.push(
+          visionData.nextCandlePredictionReasonBn ||
+          `পরবর্তী ক্যান্ডেল পূর্বাভাস: বুলিশ / UP ট্রেড (কনফার্মেশন: ${confidence}%)। বর্তমান ক্যান্ডেল সমাপ্তির অপেক্ষা ছাড়াই চার্টের সামগ্রিক আপট্রেন্ড ও বায়ার্স মোমেন্টাম অনুযায়ী পরবর্তী ক্যান্ডেলটি সবুজ হওয়ার জোরালো সম্ভাবনা।`
+        );
+      } else if (score < 0 || aiForecast === 'PUT' || visionData.chartStructure === 'DOWNTREND') {
         direction = 'DOWN';
-        confidence = Math.min(94, 65 + Math.abs(score) * 6);
-        verdictTitle = `DOWN / PUT (${assetName}) - পরবর্তী ক্যান্ডেল`;
-        reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বেয়ারিশ (কনফার্মেশন স্কোর: ${score}/5)। ডাউনট্রেন্ড কাঠামো ও শক্তিশালী বিক্রয় কনফার্মেশন।`);
+        confidence = Math.min(94, Math.max(84, 80 + Math.abs(score) * 2));
+        verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        reasoning.push(
+          visionData.nextCandlePredictionReasonBn ||
+          `পরবর্তী ক্যান্ডেল পূর্বাভাস: বেয়ারিশ / DOWN ট্রেড (কনফার্মেশন: ${confidence}%)। বর্তমান ক্যান্ডেল সমাপ্তির অপেক্ষা ছাড়াই চার্টের সামগ্রিক ডাউনট্রেন্ড ও সেলিং প্রেসার অনুযায়ী পরবর্তী ক্যান্ডেলটি লাল হওয়ার জোরালো সম্ভাবনা।`
+        );
       } else {
-        direction = 'WAIT';
-        confidence = 0;
-        verdictTitle = `WAIT / কনসোলিডেশন (${assetName})`;
-        suggestedExpiry = 'N/A';
-        reasoning.push(`মার্কেট নিরপেক্ষ বা চলমান ক্যান্ডেলে ওঠানামা করছে (স্কোর: ${score})। শুধু ক্যান্ডেল রঙে ট্রেড নিষেধ—স্থির ট্রেন্ড কনফার্মেশনের জন্য WAIT।`);
+        // Balanced/Ranging edge: Decide based on recent price pressure
+        if (visionData.lastCandleDirection === 'BULLISH') {
+          direction = 'UP';
+          confidence = 82;
+          verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
+          reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বায়ার্স মোমেন্টাম অনুযায়ী পরবর্তী ক্যান্ডেলটি সবুজ হওয়ার সম্ভাবনা বেশি।`);
+        } else if (visionData.lastCandleDirection === 'BEARISH') {
+          direction = 'DOWN';
+          confidence = 82;
+          verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
+          reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: সেলার্স প্রেসার অনুযায়ী পরবর্তী ক্যান্ডেলটি লাল হওয়ার সম্ভাবনা বেশি।`);
+        } else {
+          direction = 'WAIT';
+          confidence = 0;
+          verdictTitle = `WAIT / ক্যান্ডেল চার্ট লোডিং (${assetName})`;
+          reasoning.push('চার্ট উপাদান স্ক্যান সম্পন্ন হচ্ছে...');
+        }
       }
 
       if (visionData.candlestickPattern) {

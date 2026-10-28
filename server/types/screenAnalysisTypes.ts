@@ -26,6 +26,8 @@ export interface ScreenVisionParsedData {
     support?: number;
     resistance?: number;
   };
+  predictedNextCandle?: 'CALL' | 'PUT' | 'WAIT';
+  nextCandlePredictionReasonBn?: string;
   visionSummary: string;
   confidenceScore: number; // 0.0 - 1.0
   isClearTradingChart: boolean;

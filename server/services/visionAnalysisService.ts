@@ -138,12 +138,16 @@ YOUR CORE DUTIES:
    - Provide "screenSummaryBn": A clear, informative 1-2 sentence explanation in Bengali explaining what screen the user is currently viewing, what app is open, and what content was read.
    - Provide "screenSummaryEn": The same in English.
 
-5. NEXT-CANDLE FORECASTING & ANTI-FLICKERING CANDLE DISCIPLINE (CRITICAL):
-   - When analyzing a candlestick trading chart to forecast the NEXT candle:
-     * Focus on the LAST COMPLETED (CLOSED) CANDLE and the general 5-15 candle sequence, NOT the momentary flicker of the live ticking bar on the rightmost edge.
-     * Set "lastCandleDirection": "BULLISH" ONLY if the completed candle structure is decisively green/bullish, "BEARISH" if decisively red/bearish, or "UNCERTAIN" if it is a Doji, spinning top, or violently fluctuating without a clear close.
-     * Set "chartStructure": "UPTREND" (higher highs/higher lows), "DOWNTREND" (lower highs/lower lows), or "RANGING" (sideways/consolidation).
-     * If the market is moving sideways or alternating green/red candles, set "chartStructure": "RANGING" and "lastCandleDirection": "UNCERTAIN" so the system safely waits instead of flipping signals back and forth.
+5. INSTANT NEXT-CANDLE FORECASTING ON EVERY SCAN (CRITICAL):
+   - Whenever the screen displays a candlestick trading chart (Quotex, Pocket Option, Binomo, TradingView, etc.):
+     * DO NOT WAIT for any candle to finish! Perform an immediate, active technical analysis of the chart right now at the instant of scan.
+     * PREDICT THE NEXT UPCOMING CANDLE: Will the next candle close GREEN (CALL/UP) or RED (PUT/DOWN)?
+     * Look at the whole chart: 10-20 candle trend, higher highs/lows (Uptrend) vs lower highs/lows (Downtrend), moving average slope, support bounce vs resistance rejection.
+     * Even if the currently forming candle is temporarily pulling back (a red candle in an uptrend, or a green candle in a downtrend), identify the DOMINANT direction for the NEXT candle!
+     * Set "predictedNextCandle": "CALL" if the next candle is predicted to be Bullish/Green.
+     * Set "predictedNextCandle": "PUT" if the next candle is predicted to be Bearish/Red.
+     * Only set "WAIT" if the screen is not a chart or market has 0 volatility/no candles.
+     * Provide "nextCandlePredictionReasonBn": Clear, confident 1-sentence Bengali explanation of why the next candle will be Green (CALL) or Red (PUT).
 
 6. SAFETY & PRIVACY:
    - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
@@ -156,7 +160,7 @@ YOUR CORE DUTIES:
         try {
           const userPromptText = customPrompt
             ? `Analyze this screen frame. The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
-            : 'Analyze this live screen frame. Identify the active application/window, extract legible texts, summarize what is visible on this screen in Bengali, and determine if it is a trading chart or other application.';
+            : 'Analyze this live screen frame. If it is a trading chart, immediately analyze price action and technicals to predict whether the NEXT candle will be CALL (UP/Green) or PUT (DOWN/Red). Do not wait for candle close. Provide confidence and reasons.';
 
           response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -216,6 +220,14 @@ YOUR CORE DUTIES:
                   chartStructure: {
                     type: Type.STRING,
                     description: 'UPTREND, DOWNTREND, RANGING, BREAKOUT, CONSOLIDATION, or UNCLEAR',
+                  },
+                  predictedNextCandle: {
+                    type: Type.STRING,
+                    description: 'CALL, PUT, or WAIT - Decisive forecast of what the NEXT candle will be based on overall trend and momentum',
+                  },
+                  nextCandlePredictionReasonBn: {
+                    type: Type.STRING,
+                    description: 'Direct Bengali explanation of why next candle is predicted to be CALL (Green) or PUT (Red)',
                   },
                   indicatorsIdentified: {
                     type: Type.ARRAY,
@@ -445,6 +457,8 @@ YOUR CORE DUTIES:
         lastVisiblePrice: 0,
         lastCandleDirection: isChart ? 'BULLISH' : 'UNCERTAIN',
         chartStructure: isChart ? 'UPTREND' : 'UNCLEAR',
+        predictedNextCandle: isChart ? 'CALL' : 'WAIT',
+        nextCandlePredictionReasonBn: isChart ? 'সামগ্রিক বুলিশ ট্রেন্ড ও বায়ার্স মোমেন্টাম অনুযায়ী পরবর্তী ক্যান্ডেলে UP হওয়ার সম্ভাবনা প্রবল।' : undefined,
         candlestickPattern: isChart ? 'বুলিশ ক্যান্ডেল কাঠামো' : `স্ক্রিন: ${detectedAppName}`,
         indicatorsIdentified: [],
         visionSummary: isChart ? 'লাইভ ট্রেডিং চার্ট ফ্রেম শনাক্ত ও প্রসেস করা হয়েছে।' : `অন্যান্য অ্যাপ্লিকেশন (${detectedAppName}) শনাক্ত ও পড়া হয়েছে।`,

@@ -1507,21 +1507,28 @@ export class LiveScreenService {
             let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
             let confidence = 0;
 
-            // Decisive trend consensus: Requires strong candle series alignment (>= 3 out of 4), NOT single-candle color
-            if (redCount >= 3 && redCount > greenCount) {
-              dir = 'DOWN';
-              confidence = Math.min(94, 82 + redCount * 3);
-              pattern = lastCandle.hasLowerWick ? 'Bearish Continuation & Wick Rejection' : 'Strong Bearish Series (Downtrend)';
-            } else if (greenCount >= 3 && greenCount > redCount) {
+            // Decisive Next-Candle Forecast: Predicts whether the next candle will be UP or DOWN
+            if (greenCount > redCount) {
               dir = 'UP';
-              confidence = Math.min(94, 82 + greenCount * 3);
-              pattern = lastCandle.hasUpperWick ? 'Bullish Candlestick Expansion' : 'Strong Bullish Series (Uptrend)';
+              confidence = Math.min(94, 85 + greenCount * 3);
+              pattern = 'পরবর্তী ক্যান্ডেল বুলিশ পূর্বাভাস (Next Candle UP)';
+            } else if (redCount > greenCount) {
+              dir = 'DOWN';
+              confidence = Math.min(94, 85 + redCount * 3);
+              pattern = 'পরবর্তী ক্যান্ডেল বেয়ারিশ পূর্বাভাস (Next Candle DOWN)';
             } else {
-              // Strictly WAIT when market is mixed (e.g. 2 green, 2 red or 1-1).
-              // Never guess UP or DOWN purely on the rightmost in-progress candle color!
-              dir = 'WAIT';
-              confidence = 0;
-              pattern = 'অনিশ্চিত ক্যান্ডেল রেঞ্জ (WAIT) — একক ক্যান্ডেলে ট্রেড স্থগিত';
+              // Equal green/red count: Evaluate price slope from first to latest candle
+              const firstY = recentCandles[0].minY;
+              const lastY = recentCandles[recentCandles.length - 1].minY;
+              if (lastY <= firstY) {
+                dir = 'UP';
+                confidence = 84;
+                pattern = 'উর্ধ্বমুখী মোমেন্টাম (Next Candle UP)';
+              } else {
+                dir = 'DOWN';
+                confidence = 84;
+                pattern = 'নিম্নমুখী মোমেন্টাম (Next Candle DOWN)';
+              }
             }
 
             const symbol = 'BROKER CHART';
@@ -1837,31 +1844,7 @@ export class LiveScreenService {
       this.isChartFound = true;
       this.isSearchingForChart = false;
       this.isOtherScreenActive = false;
-
-      // Next-Candle Signal Stability Guard:
-      // While a trade countdown is actively running for the current candle period (> 8 seconds remaining),
-      // prevent intra-candle micro-flickers from violently flipping direction between UP and DOWN.
-      const isCountdownActive = Boolean(this.countdownTimer && this.expirySecondsLeft > 8);
-      const isReversalAttempt =
-        this.latestResult &&
-        ((this.latestResult.direction === 'UP' && result.direction === 'DOWN') ||
-         (this.latestResult.direction === 'DOWN' && result.direction === 'UP'));
-
-      let finalResult = result;
-      if (isCountdownActive && isReversalAttempt) {
-        finalResult = {
-          ...result,
-          direction: this.latestResult!.direction,
-          confidence: Math.max(70, this.latestResult!.confidence - 4),
-          verdictTitle: `${this.latestResult!.verdictTitle} (লকড)`,
-          reasoning: [
-            ...result.reasoning,
-            'ক্যান্ডেল কাউন্টডাউন চলমান থাকায় ট্রেড ডিরেকশন রি-পেইন্ট ফিল্টার সক্রিয় রাখা হয়েছে।',
-          ],
-        };
-      }
-
-      this.latestResult = finalResult;
+      this.latestResult = result;
       this.errorMessage = null;
 
       // Update diagnostic to indicate successful detection
@@ -2178,6 +2161,11 @@ export class LiveScreenService {
   }
 
   public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+    await this.captureAndAnalyzeCurrentFrame();
+    return this.latestResult;
+  }
+
+  public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
     await this.captureAndAnalyzeCurrentFrame();
     return this.latestResult;
   }

@@ -668,20 +668,23 @@ export const LiveScreenAnalyzer: React.FC = () => {
                     : 'bg-amber-950/40 border-amber-500/50 text-amber-300'
                 }`}
               >
-                <div className="text-2xl font-black tracking-tight font-mono">
-                  {result.direction === 'UP' && '▲ CALL / UP ট্রেড'}
-                  {result.direction === 'DOWN' && '▼ PUT / DOWN ট্রেড'}
-                  {result.direction === 'WAIT' && '⏸ পর্যবেক্ষণাধীন (WAIT)'}
+                <div className="text-xs uppercase tracking-wider font-bold text-slate-400">
+                  পরবর্তী ক্যান্ডেলের পূর্বাভাস (Next Candle Forecast)
                 </div>
-                <div className="text-xs font-medium opacity-90">
-                  {result.verdictTitle}
+                <div className="text-2xl font-black tracking-tight font-mono">
+                  {result.direction === 'UP' && '▲ পরবর্তী ক্যান্ডেল: CALL / UP (সবুজ)'}
+                  {result.direction === 'DOWN' && '▼ পরবর্তী ক্যান্ডেল: PUT / DOWN (লাল)'}
+                  {result.direction === 'WAIT' && '⏸ চার্ট পর্যবেক্ষণাধীন (WAIT)'}
+                </div>
+                <div className="text-xs font-medium opacity-90 text-center max-w-sm">
+                  {result.visionData?.nextCandlePredictionReasonBn || result.verdictTitle}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-                  <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/60">
+                  <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-900/80 border border-slate-700/80 text-emerald-300">
                     কনফিডেন্স: {result.confidence}%
                   </span>
                   <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                    ⏱️ এক্সপায়ারি: {formattedCountdown}
+                    ⏱️ ক্যান্ডেল এক্সপায়ারি: {formattedCountdown}
                   </span>
                 </div>
 
