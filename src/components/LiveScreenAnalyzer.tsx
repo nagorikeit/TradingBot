@@ -457,21 +457,11 @@ export const LiveScreenAnalyzer: React.FC = () => {
           </div>
         </div>
 
-        {/* Refresh Interval Slider & Privacy Note */}
+        {/* Single-Shot On-Demand Scan & Lock Mode Indicator */}
         <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-3.5 h-3.5 text-slate-500" />
-            <span>Inspection Interval:</span>
-            <input
-              type="range"
-              min="3"
-              max="20"
-              step="1"
-              value={intervalSec}
-              onChange={(e) => liveScreenService.setScanIntervalSeconds(Number(e.target.value))}
-              className="w-24 accent-cyan-500 cursor-pointer"
-            />
-            <span className="font-mono font-semibold text-slate-200">{intervalSec}s</span>
+          <div className="flex items-center gap-2 text-cyan-300 font-medium">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>🔒 ১-ক্লিক অন-ডিমান্ড স্ক্যান মোড: বাটনে চাপ দিলে একবার স্ক্যান হয়ে ফলাফল তাৎক্ষণিক লক থাকবে।</span>
           </div>
 
           <div className="flex items-center gap-2 text-emerald-400/90">

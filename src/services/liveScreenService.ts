@@ -1825,6 +1825,15 @@ export class LiveScreenService {
         ? 'ব্রোকার অ্যাপ (Quotex/Binomo) ওপেন করুন'
         : 'ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান';
 
+      // Single-scan completion: Stop and lock scanning immediately after result is obtained!
+      this.isScanningActive = false;
+      this.isProcessingFrame = false;
+      this.aiState = 'READY';
+      if (this.scanTimer) {
+        clearInterval(this.scanTimer);
+        this.scanTimer = null;
+      }
+
       this.updateFloatingOverlayHUD({
         direction: 'WAIT',
         confidence: 0,
@@ -1836,7 +1845,8 @@ export class LiveScreenService {
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
         resolution: this.latestResolution,
         captureState: this.captureState,
-        aiState: this.aiState,
+        aiState: 'READY',
+        isScanning: false,
       });
 
       voiceAssistantService.announceAnalysisResult(result);
@@ -1846,6 +1856,15 @@ export class LiveScreenService {
       this.isOtherScreenActive = false;
       this.latestResult = result;
       this.errorMessage = null;
+
+      // Single-scan completion: Stop and lock scanning immediately after result is obtained!
+      this.isScanningActive = false;
+      this.isProcessingFrame = false;
+      this.aiState = 'READY';
+      if (this.scanTimer) {
+        clearInterval(this.scanTimer);
+        this.scanTimer = null;
+      }
 
       // Update diagnostic to indicate successful detection
       if (!this.latestChartDiagnostic || !this.latestChartDiagnostic.isChart) {
@@ -1879,7 +1898,7 @@ export class LiveScreenService {
           ).padStart(2, '0')}`
         : '--:--';
 
-      // Update Native Floating HUD with full diagnostic context
+      // Update Native Floating HUD with full diagnostic context - locked result
       this.updateFloatingOverlayHUD({
         direction: result.direction,
         confidence: result.confidence,
@@ -1900,7 +1919,8 @@ export class LiveScreenService {
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
         resolution: this.latestResolution,
         captureState: this.captureState,
-        aiState: this.aiState,
+        aiState: 'READY',
+        isScanning: false,
       });
 
       voiceAssistantService.announceAnalysisResult(result);
@@ -2073,9 +2093,10 @@ export class LiveScreenService {
   }
 
   /**
-   * Starts active scanning on the connected screen.
-   * Performs immediate frame analysis and runs recurring analysis every 3.5s.
-   * Does NOT disconnect.
+   * Starts on-demand single scan on the connected screen.
+   * Performs an immediate frame analysis. As soon as the result is ready,
+   * scanning immediately stops and locks until the user clicks again.
+   * Does NOT run any recurring background loop.
    */
   public async startScanning(): Promise<void> {
     if (this.state !== 'STREAMING') {
@@ -2083,10 +2104,15 @@ export class LiveScreenService {
       if (!ok) return;
     }
 
+    if (this.isProcessingFrame) return;
+
     this.isScanningActive = true;
     this.aiState = 'ANALYZING';
-    this.isProcessingFrame = false;
     this.latestProcessedSequenceId = 0;
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = null;
+    }
     this.notify();
 
     // Immediately update HUD to scanning feedback
@@ -2101,21 +2127,13 @@ export class LiveScreenService {
       isScanning: true,
     });
 
-    // Run first immediate scan
+    // Run on-demand single scan — result will be received and locked in processResult()
     await this.captureAndAnalyzeCurrentFrame();
-
-    // Recurring scan while isScanningActive is true
-    if (this.scanTimer) clearInterval(this.scanTimer);
-    this.scanTimer = setInterval(() => {
-      if (this.isScanningActive && this.state === 'STREAMING') {
-        this.captureAndAnalyzeCurrentFrame();
-      }
-    }, this.scanIntervalMs);
   }
 
   /**
    * Stops active scanning.
-   * Halts analysis loops, but keeps screenshare connected and HUD active!
+   * Halts analysis, keeps screenshare connected and HUD active in Ready state.
    */
   public stopScanning(): void {
     this.isScanningActive = false;
@@ -2127,25 +2145,14 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
-    // Completely wipe previous result, active countdown, and chart flags
-    this.latestResult = null;
-    this.expirySecondsLeft = 0;
-    if (this.countdownTimer) {
-      clearInterval(this.countdownTimer);
-      this.countdownTimer = null;
-    }
-    this.isChartFound = false;
-    this.isSearchingForChart = false;
-
-    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open in Ready state!
     this.updateFloatingOverlayHUD({
-      direction: 'WAIT',
-      confidence: 0,
+      direction: this.latestResult?.direction || 'WAIT',
+      confidence: this.latestResult?.confidence || 0,
       durationText: '--:--',
-      verdictTitle: '⚡ প্রস্তুত (Ready)',
+      verdictTitle: this.latestResult?.verdictTitle || '⚡ প্রস্তুত (Ready)',
       reasonText: 'স্ক্যান করতে বাটনে চাপুন',
       latencyMs: 0,
-      aiState: 'IDLE',
+      aiState: 'READY',
       isScanning: false,
     });
 
@@ -2153,20 +2160,16 @@ export class LiveScreenService {
   }
 
   public toggleScanning(): void {
-    if (this.isScanningActive) {
-      this.stopScanning();
-    } else {
-      this.startScanning();
-    }
+    this.startScanning();
   }
 
   public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.captureAndAnalyzeCurrentFrame();
+    await this.startScanning();
     return this.latestResult;
   }
 
   public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.captureAndAnalyzeCurrentFrame();
+    await this.startScanning();
     return this.latestResult;
   }
 
