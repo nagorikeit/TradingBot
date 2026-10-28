@@ -176,7 +176,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         zIndex: 9999,
       };
 
-  const hasChartSignal = isStreaming && isChartFound && result && result.visionData?.isClearTradingChart;
+  const hasChartSignal = Boolean(
+    result &&
+    (result.direction === 'UP' || result.direction === 'DOWN' || result.visionData?.isClearTradingChart || isChartFound)
+  );
   const isTradePulseAppScreen = Boolean(
     result &&
     (result.verdictTitle?.includes('ট্রেডপাল্স') ||
@@ -206,7 +209,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
         className={`group cursor-grab active:cursor-grabbing flex flex-col gap-2 p-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 min-w-[280px] max-w-[340px] ${
           isConnecting
             ? 'bg-slate-900/95 border-cyan-500/70 text-slate-100 ring-2 ring-cyan-500/30'
-            : hasChartSignal
+            : hasChartSignal && result
             ? result.direction === 'UP'
               ? 'bg-slate-900/95 border-emerald-500/80 text-slate-100 ring-2 ring-emerald-500/40 shadow-emerald-950/40'
               : result.direction === 'DOWN'
@@ -235,7 +238,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                 <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 </div>
-              ) : hasChartSignal ? (
+              ) : hasChartSignal && result ? (
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center border ${
                     result.direction === 'UP'
@@ -279,7 +282,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
                   <div className="text-xs font-bold text-cyan-300 font-mono">স্ক্রিন কানেক্ট হচ্ছে...</div>
                   <div className="text-[10px] text-slate-400">প্রস্তুত হচ্ছে...</div>
                 </div>
-              ) : hasChartSignal ? (
+              ) : hasChartSignal && result ? (
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span

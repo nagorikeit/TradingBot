@@ -622,7 +622,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
       )}
 
       {/* 3. MAIN DISPLAY: Switches dynamically between Trading Chart Analysis and Other Screen Reading */}
-      {isChartFound && result && result.visionData?.isClearTradingChart ? (
+      {(result && (result.direction === 'UP' || result.direction === 'DOWN')) || (isChartFound && result && result.visionData?.isClearTradingChart) ? (
         /* MODE A: Active Trading Chart Analysis View */
         <div className="space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-xs text-emerald-300">
@@ -631,7 +631,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <span>ট্রেডিং চার্ট সক্রিয়: এআই ক্যান্ডেলস্টিক ও টেকনিক্যাল মোমেন্টাম বিশ্লেষণ করছে</span>
             </div>
             <span className="font-mono text-[11px] bg-slate-900 px-2.5 py-0.5 rounded border border-emerald-500/40">
-              {result.visionData.symbol || 'ASSET'}
+              {result.visionData?.symbol || 'ASSET'}
             </span>
           </div>
 
