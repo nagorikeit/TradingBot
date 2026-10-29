@@ -457,11 +457,21 @@ export const LiveScreenAnalyzer: React.FC = () => {
           </div>
         </div>
 
-        {/* Single-Shot On-Demand Scan & Lock Mode Indicator */}
+        {/* Refresh Interval Slider & Privacy Note */}
         <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
-          <div className="flex items-center gap-2 text-cyan-300 font-medium">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>🔒 ১-ক্লিক অন-ডিমান্ড স্ক্যান মোড: বাটনে চাপ দিলে একবার স্ক্যান হয়ে ফলাফল তাৎক্ষণিক লক থাকবে।</span>
+          <div className="flex items-center gap-2">
+            <Sliders className="w-3.5 h-3.5 text-slate-500" />
+            <span>Inspection Interval:</span>
+            <input
+              type="range"
+              min="3"
+              max="20"
+              step="1"
+              value={intervalSec}
+              onChange={(e) => liveScreenService.setScanIntervalSeconds(Number(e.target.value))}
+              className="w-24 accent-cyan-500 cursor-pointer"
+            />
+            <span className="font-mono font-semibold text-slate-200">{intervalSec}s</span>
           </div>
 
           <div className="flex items-center gap-2 text-emerald-400/90">
@@ -622,7 +632,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
       )}
 
       {/* 3. MAIN DISPLAY: Switches dynamically between Trading Chart Analysis and Other Screen Reading */}
-      {(result && (result.direction === 'UP' || result.direction === 'DOWN')) || (isChartFound && result && result.visionData?.isClearTradingChart) ? (
+      {isChartFound && result && result.visionData?.isClearTradingChart ? (
         /* MODE A: Active Trading Chart Analysis View */
         <div className="space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-xs text-emerald-300">
@@ -631,7 +641,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <span>ট্রেডিং চার্ট সক্রিয়: এআই ক্যান্ডেলস্টিক ও টেকনিক্যাল মোমেন্টাম বিশ্লেষণ করছে</span>
             </div>
             <span className="font-mono text-[11px] bg-slate-900 px-2.5 py-0.5 rounded border border-emerald-500/40">
-              {result.visionData?.symbol || 'ASSET'}
+              {result.visionData.symbol || 'ASSET'}
             </span>
           </div>
 
@@ -674,8 +684,18 @@ export const LiveScreenAnalyzer: React.FC = () => {
                     কনফিডেন্স: {result.confidence}%
                   </span>
                   <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-600/50 text-cyan-300">
-                    ⏱️ ক্যান্ডেল এক্সপায়ারি: {formattedCountdown}
+                    ⏱️ এক্সপায়ারি: {formattedCountdown}
                   </span>
+                  {result.visionData?.priceActionSetup && (
+                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-indigo-950/70 border border-indigo-500/40 text-indigo-300">
+                      🎯 {result.visionData.priceActionSetup}
+                    </span>
+                  )}
+                  {result.visionData?.tradeQualityTier === 'HIGH_RISK_DOJI' && (
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/60 text-amber-300">
+                      ⚠️ দোজি ফেকআউট
+                    </span>
+                  )}
                 </div>
 
                 {/* 1-Click AI Self-Learning Outcome Feedback */}

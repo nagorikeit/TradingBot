@@ -378,66 +378,80 @@ export class ScreenVerificationService {
         `প্রাইস অমিল গার্ড: স্ক্রিন প্রাইস ($${marketVerification.screenPrice}) ও লাইভ মার্কেট ($${marketVerification.livePrice}) এর মধ্যে ${marketVerification.priceDeltaPercent}% অমিল। চার্ট বা স্প্রেড অসঙ্গতিপূর্ণ।`
       );
     } else {
-      // 3. Instant Next-Candle Forecast Engine (যখনি স্ক্যান হবে তখনই পরবর্তী ক্যান্ডেল ডিরেকশন প্রদান)
+      // 3. Professional Binary Options Price Action Consensus Engine
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
       const aiForecast = visionData.predictedNextCandle;
+      const setup = (visionData.priceActionSetup || '').toLowerCase();
+      const pattern = (visionData.candlestickPattern || '').toLowerCase();
 
-      let score = 0;
-      // Primary Weight 1: AI Next-Candle Forecast from Multimodal Vision
-      if (aiForecast === 'CALL') score += 3;
-      if (aiForecast === 'PUT') score -= 3;
+      // Check for High-Risk Doji / Noise condition
+      const isDojiNoise = visionData.tradeQualityTier === 'HIGH_RISK_DOJI' ||
+                          pattern.includes('doji') ||
+                          visionData.lastCandleDirection === 'DOJI';
 
-      // Primary Weight 2: Overall Chart Trend Structure (Higher highs/lows)
-      if (visionData.chartStructure === 'UPTREND') score += 3;
-      if (visionData.chartStructure === 'DOWNTREND') score -= 3;
-      if (visionData.chartStructure === 'BREAKOUT') {
-        if (visionData.lastCandleDirection === 'BULLISH' || bullishIndicators > 0) score += 2;
-        if (visionData.lastCandleDirection === 'BEARISH' || bearishIndicators > 0) score -= 2;
-      }
-
-      // Momentum Indicators
-      score += bullishIndicators * 2;
-      score -= bearishIndicators * 2;
-
-      // Recent candle bias
-      if (visionData.lastCandleDirection === 'BULLISH') score += 1;
-      if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
-
-      // When user triggers a scan, immediately predict the NEXT candle direction with confidence
-      if (score > 0 || aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND') {
-        direction = 'UP';
-        confidence = Math.min(94, Math.max(84, 80 + Math.abs(score) * 2));
-        verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
+      if (isDojiNoise || aiForecast === 'WAIT') {
+        direction = 'WAIT';
+        confidence = 0;
+        verdictTitle = `⚠️ WAIT / দোজি ও ফেকআউট ঝুঁকি (${assetName})`;
+        suggestedExpiry = 'N/A';
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `পরবর্তী ক্যান্ডেল পূর্বাভাস: বুলিশ / UP ট্রেড (কনফার্মেশন: ${confidence}%)। বর্তমান ক্যান্ডেল সমাপ্তির অপেক্ষা ছাড়াই চার্টের সামগ্রিক আপট্রেন্ড ও বায়ার্স মোমেন্টাম অনুযায়ী পরবর্তী ক্যান্ডেলটি সবুজ হওয়ার জোরালো সম্ভাবনা।`
-        );
-      } else if (score < 0 || aiForecast === 'PUT' || visionData.chartStructure === 'DOWNTREND') {
-        direction = 'DOWN';
-        confidence = Math.min(94, Math.max(84, 80 + Math.abs(score) * 2));
-        verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
-        reasoning.push(
-          visionData.nextCandlePredictionReasonBn ||
-          `পরবর্তী ক্যান্ডেল পূর্বাভাস: বেয়ারিশ / DOWN ট্রেড (কনফার্মেশন: ${confidence}%)। বর্তমান ক্যান্ডেল সমাপ্তির অপেক্ষা ছাড়াই চার্টের সামগ্রিক ডাউনট্রেন্ড ও সেলিং প্রেসার অনুযায়ী পরবর্তী ক্যান্ডেলটি লাল হওয়ার জোরালো সম্ভাবনা।`
+          'সতর্কবার্তা: বর্তমান ক্যান্ডেলে দোজি (Doji) বা অনির্ধারিত মার্কেট স্কুইজ শনাক্ত হয়েছে। এই পরিস্থিতিতে পরবর্তী ক্যান্ডেল ৫০/৫০ জুয়া—ট্রেড এড়িয়ে চলুন।'
         );
       } else {
-        // Balanced/Ranging edge: Decide based on recent price pressure
-        if (visionData.lastCandleDirection === 'BULLISH') {
+        let score = 0;
+
+        // Weight 1: AI Price-Action Forecast (Evaluates wicks, exhaustion, S&R)
+        if (aiForecast === 'CALL') score += 4;
+        if (aiForecast === 'PUT') score -= 4;
+
+        // Weight 2: Specific Candlestick Rejections (Pin Bar / Shooting Star / Hammer)
+        const isBearishRejection = setup.includes('shooting star') || setup.includes('exhaustion') || pattern.includes('shooting star') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BULLISH');
+        const isBullishRejection = setup.includes('hammer') || setup.includes('exhaustion') || pattern.includes('hammer') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BEARISH');
+
+        if (isBearishRejection) score -= 3;
+        if (isBullishRejection) score += 3;
+
+        // Weight 3: Indicator Confluence
+        score += bullishIndicators * 2;
+        score -= bearishIndicators * 2;
+
+        // Weight 4: Trend Direction (Only adds if NOT conflicting with an active reversal pattern!)
+        if (!isBearishRejection && visionData.chartStructure === 'UPTREND') score += 2;
+        if (!isBullishRejection && visionData.chartStructure === 'DOWNTREND') score -= 2;
+
+        // Weight 5: Engulfing patterns
+        if (pattern.includes('bullish engulfing')) score += 3;
+        if (pattern.includes('bearish engulfing')) score -= 3;
+
+        // Decision based on net score consensus (Requires decisive consensus >= 2 or <= -2)
+        if (score >= 2) {
           direction = 'UP';
-          confidence = 82;
+          confidence = Math.min(94, Math.max(85, 82 + score * 2));
           verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
-          reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: বায়ার্স মোমেন্টাম অনুযায়ী পরবর্তী ক্যান্ডেলটি সবুজ হওয়ার সম্ভাবনা বেশি।`);
-        } else if (visionData.lastCandleDirection === 'BEARISH') {
+          reasoning.push(
+            visionData.nextCandlePredictionReasonBn ||
+            `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি সবুজ (CALL / UP) হওয়ার উচ্চ সম্ভাবনা (কনফার্মেশন: ${confidence}%)।`
+          );
+        } else if (score <= -2) {
           direction = 'DOWN';
-          confidence = 82;
+          confidence = Math.min(94, Math.max(85, 82 + Math.abs(score) * 2));
           verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
-          reasoning.push(`পরবর্তী ক্যান্ডেল পূর্বাভাস: সেলার্স প্রেসার অনুযায়ী পরবর্তী ক্যান্ডেলটি লাল হওয়ার সম্ভাবনা বেশি।`);
+          reasoning.push(
+            visionData.nextCandlePredictionReasonBn ||
+            `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি লাল (PUT / DOWN) হওয়ার উচ্চ সম্ভাবনা (কনফার্মেশন: ${confidence}%)।`
+          );
         } else {
+          // Conflicting signals (e.g. green candle hitting heavy resistance, or score near zero):
+          // NEVER force a blind guess! Tell the trader to wait for the clear setup.
           direction = 'WAIT';
           confidence = 0;
-          verdictTitle = `WAIT / ক্যান্ডেল চার্ট লোডিং (${assetName})`;
-          reasoning.push('চার্ট উপাদান স্ক্যান সম্পন্ন হচ্ছে...');
+          verdictTitle = `⏸ WAIT / কনফ্লিক্টিং সিগন্যাল (${assetName})`;
+          suggestedExpiry = 'N/A';
+          reasoning.push(
+            'কনফ্লিক্টিং মার্কেট সিগন্যাল: ট্রেন্ড এবং ক্যান্ডেল রিজেকশনে মতবিরোধ থাকায় লসের ঝুঁকি বেশি। পরবর্তী পরিষ্কার সেটআপের জন্য WAIT রাখা হয়েছে।'
+          );
         }
       }
 

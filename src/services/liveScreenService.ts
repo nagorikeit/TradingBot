@@ -1245,8 +1245,12 @@ export class LiveScreenService {
                 }
               }
             }
-            // Only trigger if a large concentration (>800 pixels) of TradePulse header cyan is detected
-            const isTradePulseScreen = tradePulseCyanPixels >= 800;
+            const isTradePulseScreen =
+              tradePulseCyanPixels >= 25 ||
+              (typeof document !== 'undefined' &&
+                document.visibilityState === 'visible' &&
+                !this.isPictureInPictureActive() &&
+                !this.isNativeCaptureActive);
 
             // 4. Stage 2: Fast Pixel Grid Classification
             let greenPixelsInChart = 0;
@@ -1503,28 +1507,42 @@ export class LiveScreenService {
             let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
             let confidence = 0;
 
-            // Decisive Next-Candle Forecast: Predicts whether the next candle will be UP or DOWN
-            if (greenCount > redCount) {
+            // Price Action Rules: Wick Rejections & Exhaustion Analysis
+            const isDoji = lastCandle.height <= 7;
+            const isUpperWickRejection = lastCandle.hasUpperWick && !lastCandle.hasLowerWick;
+            const isLowerWickRejection = lastCandle.hasLowerWick && !lastCandle.hasUpperWick;
+
+            if (isDoji) {
+              dir = 'WAIT';
+              confidence = 0;
+              pattern = 'দোজি ও ফেকআউট ঝুঁকি (WAIT)';
+            } else if (greenCount >= 3 || (lastCandle.color === 'GREEN' && isUpperWickRejection)) {
+              // 3 green candles = Exhaustion, OR Green with upper wick = Shooting Star rejection!
+              dir = 'DOWN';
+              confidence = 88;
+              pattern = isUpperWickRejection
+                ? 'শুটিং স্টার আপার উইক রিজেকশন (Next Candle RED / PUT)'
+                : 'বুলিশ ক্যান্ডেল ক্লান্তি ও পুলব্যাক (Next Candle RED / PUT)';
+            } else if (redCount >= 3 || (lastCandle.color === 'RED' && isLowerWickRejection)) {
+              // 3 red candles = Exhaustion, OR Red with lower wick = Hammer rejection at support!
               dir = 'UP';
-              confidence = Math.min(94, 85 + greenCount * 3);
-              pattern = 'পরবর্তী ক্যান্ডেল বুলিশ পূর্বাভাস (Next Candle UP)';
+              confidence = 88;
+              pattern = isLowerWickRejection
+                ? 'হ্যামার লোয়ার উইক বাউন্স (Next Candle GREEN / CALL)'
+                : 'বিয়ারিশ ক্যান্ডেল ক্লান্তি ও বাউন্স (Next Candle GREEN / CALL)';
+            } else if (greenCount > redCount) {
+              dir = 'UP';
+              confidence = 86;
+              pattern = 'বুলিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle GREEN / CALL)';
             } else if (redCount > greenCount) {
               dir = 'DOWN';
-              confidence = Math.min(94, 85 + redCount * 3);
-              pattern = 'পরবর্তী ক্যান্ডেল বেয়ারিশ পূর্বাভাস (Next Candle DOWN)';
+              confidence = 86;
+              pattern = 'বিয়ারিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle RED / PUT)';
             } else {
-              // Equal green/red count: Evaluate price slope from first to latest candle
-              const firstY = recentCandles[0].minY;
-              const lastY = recentCandles[recentCandles.length - 1].minY;
-              if (lastY <= firstY) {
-                dir = 'UP';
-                confidence = 84;
-                pattern = 'উর্ধ্বমুখী মোমেন্টাম (Next Candle UP)';
-              } else {
-                dir = 'DOWN';
-                confidence = 84;
-                pattern = 'নিম্নমুখী মোমেন্টাম (Next Candle DOWN)';
-              }
+              // 2 green, 2 red consolidation
+              dir = 'WAIT';
+              confidence = 0;
+              pattern = 'কনসোলিডেশন রেঞ্জ (WAIT) — ফেকআউট এড়িয়ে চলুন';
             }
 
             const symbol = 'BROKER CHART';
@@ -1753,12 +1771,7 @@ export class LiveScreenService {
    * Common result processor
    */
   private processResult(result: ScreenAnalysisFinalResult, latencyMs: number): void {
-    const isChart = Boolean(
-      result.visionData?.isClearTradingChart ||
-      result.screenStatus === 'CHART_DETECTED' ||
-      result.direction === 'UP' ||
-      result.direction === 'DOWN'
-    );
+    const isChart = Boolean(result.visionData?.isClearTradingChart);
     const appName = result.visionData?.detectedAppName || (isChart ? 'Trading Chart' : 'Active Window');
 
     // Record screen transition in audit trail
@@ -1791,8 +1804,8 @@ export class LiveScreenService {
       }
       this.expirySecondsLeft = 0;
 
-      // Retain analysis result so the user sees exactly what the AI scanned and identified
-      this.latestResult = result;
+      // Reset trade result so searching radar is displayed and previous signals are cleared
+      this.latestResult = null;
       this.lastDetectedAppName = appName;
       this.lastDetectedSummaryBn = result.visionData?.screenSummaryBn || 'স্ক্রিন ফ্রেম পর্যবেক্ষণ করা হয়েছে। চার্ট অনুসন্ধান চলছে।';
       this.errorMessage = null;
@@ -1826,15 +1839,6 @@ export class LiveScreenService {
         ? 'ব্রোকার অ্যাপ (Quotex/Binomo) ওপেন করুন'
         : 'ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান';
 
-      // Single-scan completion: Stop and lock scanning immediately after result is obtained!
-      this.isScanningActive = false;
-      this.isProcessingFrame = false;
-      this.aiState = 'READY';
-      if (this.scanTimer) {
-        clearInterval(this.scanTimer);
-        this.scanTimer = null;
-      }
-
       this.updateFloatingOverlayHUD({
         direction: 'WAIT',
         confidence: 0,
@@ -1846,8 +1850,7 @@ export class LiveScreenService {
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
         resolution: this.latestResolution,
         captureState: this.captureState,
-        aiState: 'READY',
-        isScanning: false,
+        aiState: this.aiState,
       });
 
       voiceAssistantService.announceAnalysisResult(result);
@@ -1857,15 +1860,6 @@ export class LiveScreenService {
       this.isOtherScreenActive = false;
       this.latestResult = result;
       this.errorMessage = null;
-
-      // Single-scan completion: Stop and lock scanning immediately after result is obtained!
-      this.isScanningActive = false;
-      this.isProcessingFrame = false;
-      this.aiState = 'READY';
-      if (this.scanTimer) {
-        clearInterval(this.scanTimer);
-        this.scanTimer = null;
-      }
 
       // Update diagnostic to indicate successful detection
       if (!this.latestChartDiagnostic || !this.latestChartDiagnostic.isChart) {
@@ -1899,7 +1893,7 @@ export class LiveScreenService {
           ).padStart(2, '0')}`
         : '--:--';
 
-      // Update Native Floating HUD with full diagnostic context - locked result
+      // Update Native Floating HUD with full diagnostic context
       this.updateFloatingOverlayHUD({
         direction: result.direction,
         confidence: result.confidence,
@@ -1920,8 +1914,7 @@ export class LiveScreenService {
         lastFrameTime: this.latestFrameTimestamp ? new Date(this.latestFrameTimestamp).toLocaleTimeString() : undefined,
         resolution: this.latestResolution,
         captureState: this.captureState,
-        aiState: 'READY',
-        isScanning: false,
+        aiState: this.aiState,
       });
 
       voiceAssistantService.announceAnalysisResult(result);
@@ -2094,41 +2087,20 @@ export class LiveScreenService {
   }
 
   /**
-   * Starts on-demand single scan on the connected screen.
-   * Performs an immediate frame analysis. As soon as the result is ready,
-   * scanning immediately stops and locks until the user clicks again.
-   * Does NOT run any recurring background loop.
+   * Starts active scanning on the connected screen.
+   * Performs immediate frame analysis and runs recurring analysis every 3.5s.
+   * Does NOT disconnect.
    */
   public async startScanning(): Promise<void> {
-    if (this.state !== 'STREAMING' && !this.isNativeCaptureActive) {
+    if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
-      if (!ok) {
-        this.isScanningActive = false;
-        this.aiState = 'IDLE';
-        this.errorMessage = 'স্ক্রিন শেয়ার সংযুক্ত করা হয়নি। অনুগ্রহ করে প্রথমে "Connect Live Screen" বাটনে চাপুন।';
-        this.notify();
-        return;
-      }
-    }
-
-    if (this.isProcessingFrame) {
-      // If previous processing has been running for more than 15s, clear it
-      if (Date.now() - this.lastProcessingStartTime > 15000) {
-        this.isProcessingFrame = false;
-      } else {
-        return;
-      }
+      if (!ok) return;
     }
 
     this.isScanningActive = true;
     this.aiState = 'ANALYZING';
+    this.isProcessingFrame = false;
     this.latestProcessedSequenceId = 0;
-    this.lastProcessingStartTime = Date.now();
-    this.errorMessage = null;
-    if (this.scanTimer) {
-      clearInterval(this.scanTimer);
-      this.scanTimer = null;
-    }
     this.notify();
 
     // Immediately update HUD to scanning feedback
@@ -2143,17 +2115,25 @@ export class LiveScreenService {
       isScanning: true,
     });
 
-    // Run on-demand single scan — result will be received and locked in processResult()
+    // Run first immediate scan
     await this.captureAndAnalyzeCurrentFrame();
+
+    // Recurring scan while isScanningActive is true
+    if (this.scanTimer) clearInterval(this.scanTimer);
+    this.scanTimer = setInterval(() => {
+      if (this.isScanningActive && this.state === 'STREAMING') {
+        this.captureAndAnalyzeCurrentFrame();
+      }
+    }, this.scanIntervalMs);
   }
 
   /**
    * Stops active scanning.
-   * Halts analysis, keeps screenshare connected and HUD active in Ready state.
+   * Halts analysis loops, but keeps screenshare connected and HUD active!
    */
   public stopScanning(): void {
     this.isScanningActive = false;
-    this.aiState = 'READY';
+    this.aiState = 'IDLE';
     this.isProcessingFrame = false;
     this.latestProcessedSequenceId = 0;
     if (this.scanTimer) {
@@ -2161,21 +2141,25 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
 
-    const defaultTitle = this.latestResult?.verdictTitle || '⚡ প্রস্তুত (Ready)';
-    const defaultReason =
-      this.latestResult?.visionData?.nextCandlePredictionReasonBn ||
-      this.latestResult?.visionData?.candlestickPattern ||
-      this.latestResult?.reasoning?.[0] ||
-      'স্ক্যান করতে বাটনে চাপুন';
+    // Completely wipe previous result, active countdown, and chart flags
+    this.latestResult = null;
+    this.expirySecondsLeft = 0;
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    this.isChartFound = false;
+    this.isSearchingForChart = false;
 
+    // DOES NOT DISCONNECT! Screenshare stays alive and HUD stays open in Ready state!
     this.updateFloatingOverlayHUD({
-      direction: this.latestResult?.direction || 'WAIT',
-      confidence: this.latestResult?.confidence || 0,
+      direction: 'WAIT',
+      confidence: 0,
       durationText: '--:--',
-      verdictTitle: defaultTitle,
-      reasonText: defaultReason,
+      verdictTitle: '⚡ প্রস্তুত (Ready)',
+      reasonText: 'স্ক্যান করতে বাটনে চাপুন',
       latencyMs: 0,
-      aiState: 'READY',
+      aiState: 'IDLE',
       isScanning: false,
     });
 
@@ -2183,16 +2167,20 @@ export class LiveScreenService {
   }
 
   public toggleScanning(): void {
-    this.startScanning();
+    if (this.isScanningActive) {
+      this.stopScanning();
+    } else {
+      this.startScanning();
+    }
   }
 
   public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.startScanning();
+    await this.captureAndAnalyzeCurrentFrame();
     return this.latestResult;
   }
 
   public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.startScanning();
+    await this.captureAndAnalyzeCurrentFrame();
     return this.latestResult;
   }
 
@@ -2207,19 +2195,13 @@ export class LiveScreenService {
    * Grabs high-fidelity frame snapshot and calls backend Vision API
    */
   public async captureAndAnalyzeCurrentFrame(): Promise<void> {
-    if (this.isProcessingFrame && Date.now() - this.lastProcessingStartTime < 15000) {
-      return;
-    }
-    this.isProcessingFrame = true;
-    this.lastProcessingStartTime = Date.now();
-    this.aiState = 'ANALYZING';
-    this.notify();
+    if (this.isProcessingFrame) return;
 
     // 1. Android Native capture via MediaProjection Surface
     if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
       try {
         const frameRes = await TradePulseNativeScreen.captureSingleFrame();
-        if (frameRes && frameRes.imageBase64) {
+        if (frameRes && frameRes.imageBase64 && this.isScanningActive) {
           await this.processNativeFrameData({
             imageBase64: frameRes.imageBase64,
             timestamp: frameRes.timestamp || Date.now(),
@@ -2227,84 +2209,37 @@ export class LiveScreenService {
             width: frameRes.width || 720,
             height: frameRes.height || 1280,
           });
-        } else {
-          this.errorMessage = 'অ্যান্ড্রয়েড স্ক্রিন ফ্রেম ক্যাপচার করা সম্ভব হয়নি।';
         }
-      } catch (err: any) {
+      } catch (err) {
         console.warn('Native capture frame error:', err);
-        this.errorMessage = err?.message || 'ক্যাপচার এরর';
-      } finally {
-        this.isProcessingFrame = false;
-        this.isScanningActive = false;
-        this.aiState = 'READY';
-        this.notify();
       }
       return;
     }
 
-    // 2. Demo test stream fallback (if stream is not a physical display capture)
-    if (!this.stream && this.state === 'STREAMING') {
-      try {
-        await this.startDemoTestStream();
-      } finally {
-        this.isProcessingFrame = false;
-        this.isScanningActive = false;
-        this.aiState = 'READY';
-        this.notify();
-      }
-      return;
-    }
-
-    // 3. Browser getDisplayMedia capture
-    if (!this.videoEl || !this.canvasEl || !this.stream) {
-      this.errorMessage = 'স্ক্রিন শেয়ার সংযুক্ত নেই। অনুগ্রহ করে প্রথমে "Connect Live Screen" বাটনে চাপুন।';
-      this.isProcessingFrame = false;
-      this.isScanningActive = false;
-      this.aiState = 'IDLE';
-      this.notify();
-      return;
-    }
+    // 2. Browser getDisplayMedia capture
+    if (!this.videoEl || !this.canvasEl || !this.stream) return;
 
     const video = this.videoEl;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
-    // If video frame metadata is not ready yet, wait up to 2 seconds for first frame decoding
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      await new Promise<void>((resolve) => {
-        let attempts = 0;
-        const check = () => {
-          attempts++;
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            resolve();
-          } else if (attempts >= 20) {
-            resolve();
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        check();
-      });
-    }
+    this.isProcessingFrame = true;
+    this.notify();
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000); // 25s resilient timeout for vision API
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25s resilient timeout for multimodal vision API
     let frameCapturedAt = Date.now();
     let imageBase64 = '';
 
     try {
       const canvas = this.canvasEl;
-      const vidW = video.videoWidth > 0 ? video.videoWidth : 1280;
-      const vidH = video.videoHeight > 0 ? video.videoHeight : 720;
       const maxDim = 1024;
-      const scale = Math.min(1, maxDim / Math.max(vidW, vidH));
-      canvas.width = Math.round(vidW * scale);
-      canvas.height = Math.round(vidH * scale);
+      const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
 
       const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        this.errorMessage = 'ক্যানভাস ফ্রেম প্রসেসিং ব্যর্থ হয়েছে।';
-        return;
-      }
+      if (!ctx) return;
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       frameCapturedAt = Date.now();
@@ -2327,8 +2262,8 @@ export class LiveScreenService {
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
-          const localResult = await this.analyzeFrameLocally(imageBase64, frameCapturedAt);
-          this.processResult(localResult, latencyMs);
+          this.errorMessage = 'Backend returned unexpected format.';
+          this.notify();
           return;
         }
 
@@ -2351,8 +2286,6 @@ export class LiveScreenService {
       this.processResult(localResult, latencyMs);
     } finally {
       this.isProcessingFrame = false;
-      this.isScanningActive = false;
-      this.aiState = 'READY';
       this.notify();
     }
   }

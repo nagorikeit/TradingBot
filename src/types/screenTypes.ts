@@ -28,6 +28,9 @@ export interface ScreenVisionParsedData {
   };
   predictedNextCandle?: 'CALL' | 'PUT' | 'WAIT';
   nextCandlePredictionReasonBn?: string;
+  tradeQualityTier?: 'HIGH_PROBABILITY' | 'MODERATE' | 'HIGH_RISK_DOJI';
+  priceActionSetup?: string;
+  reversalProbabilityPercent?: number;
   visionSummary: string;
   confidenceScore: number;
   isClearTradingChart: boolean;

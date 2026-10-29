@@ -138,16 +138,31 @@ YOUR CORE DUTIES:
    - Provide "screenSummaryBn": A clear, informative 1-2 sentence explanation in Bengali explaining what screen the user is currently viewing, what app is open, and what content was read.
    - Provide "screenSummaryEn": The same in English.
 
-5. INSTANT NEXT-CANDLE FORECASTING ON EVERY SCAN (CRITICAL):
-   - Whenever the screen displays a candlestick trading chart (Quotex, Pocket Option, Binomo, TradingView, etc.):
-     * DO NOT WAIT for any candle to finish! Perform an immediate, active technical analysis of the chart right now at the instant of scan.
-     * PREDICT THE NEXT UPCOMING CANDLE: Will the next candle close GREEN (CALL/UP) or RED (PUT/DOWN)?
-     * Look at the whole chart: 10-20 candle trend, higher highs/lows (Uptrend) vs lower highs/lows (Downtrend), moving average slope, support bounce vs resistance rejection.
-     * Even if the currently forming candle is temporarily pulling back (a red candle in an uptrend, or a green candle in a downtrend), identify the DOMINANT direction for the NEXT candle!
-     * Set "predictedNextCandle": "CALL" if the next candle is predicted to be Bullish/Green.
-     * Set "predictedNextCandle": "PUT" if the next candle is predicted to be Bearish/Red.
-     * Only set "WAIT" if the screen is not a chart or market has 0 volatility/no candles.
-     * Provide "nextCandlePredictionReasonBn": Clear, confident 1-sentence Bengali explanation of why the next candle will be Green (CALL) or Red (PUT).
+5. PROFESSIONAL CANDLESTICK PRICE ACTION & NEXT-CANDLE FORECAST (HIGH ACCURACY):
+   When analyzing a candlestick trading chart (Quotex, Pocket Option, Binomo, TradingView, etc.):
+   
+   RULE 1 - WICK / SHADOW REJECTIONS (Most Powerful Binary Options Signal):
+   - LONG UPPER WICK (Upper shadow >= 40% of candle height, e.g. Shooting Star, Bearish Pin Bar, Inverted Hammer):
+     -> SELLERS OVERWHELMED BUYERS. Even if previous candles were green, the NEXT candle has high probability of closing RED (PUT / DOWN)!
+   - LONG LOWER WICK (Lower shadow >= 40% of candle height, e.g. Hammer, Bullish Pin Bar):
+     -> BUYERS REJECTED SELLERS. Even if previous candles were red, the NEXT candle has high probability of closing GREEN (CALL / UP)!
+   
+   RULE 2 - CONSECUTIVE EXHAUSTION vs RETRACEMENT (Avoid entering at the very top or bottom):
+   - 3 or more consecutive GREEN candles hitting resistance or upper boundary:
+     -> EXHAUSTION! Buyers are out of breath. A RED pullback/reversal candle is imminent! Set "predictedNextCandle": "PUT", "priceActionSetup": "3-Candle Bullish Exhaustion (Red Pullback Expected)"!
+   - 3 or more consecutive RED candles hitting support or lower boundary:
+     -> EXHAUSTION! Sellers are out of breath. A GREEN bounce/reversal candle is imminent! Set "predictedNextCandle": "CALL", "priceActionSetup": "3-Candle Bearish Exhaustion (Green Bounce Expected)"!
+   
+   RULE 3 - ENGULFING & MOMENTUM EXPANSION:
+   - Bearish Engulfing: Fresh solid red candle completely engulfing previous green body -> Next candle is RED (PUT / DOWN).
+   - Bullish Engulfing: Fresh solid green candle completely engulfing previous red body -> Next candle is GREEN (CALL / UP).
+   
+   RULE 4 - HEALTHY TREND CONTINUATION:
+   - Clean solid body with minimal opposing wicks (1st or 2nd candle of an EMA cross or support bounce) -> Next candle follows trend direction.
+   
+   RULE 5 - DOJI / INDECISION / SQUEEZE (HIGH RISK PROTECTION):
+   - If the candle is a Doji (hairline/cross body with no direction) or trapped in a flat horizontal squeeze:
+     -> Direction is 50/50 noise! Set "predictedNextCandle": "WAIT", "tradeQualityTier": "HIGH_RISK_DOJI", and warn the trader in Bengali to avoid gambling on this candle.
 
 6. SAFETY & PRIVACY:
    - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
@@ -160,7 +175,7 @@ YOUR CORE DUTIES:
         try {
           const userPromptText = customPrompt
             ? `Analyze this screen frame. The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
-            : 'Analyze this live screen frame. If it is a trading chart, immediately analyze price action and technicals to predict whether the NEXT candle will be CALL (UP/Green) or PUT (DOWN/Red). Do not wait for candle close. Provide confidence and reasons.';
+            : 'Analyze this live screen frame. If it is a trading chart, apply professional price action rules (wicks, exhaustion, engulfing, S/R) to accurately predict whether the NEXT candle will close CALL (Green) or PUT (Red).';
 
           response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -223,11 +238,23 @@ YOUR CORE DUTIES:
                   },
                   predictedNextCandle: {
                     type: Type.STRING,
-                    description: 'CALL, PUT, or WAIT - Decisive forecast of what the NEXT candle will be based on overall trend and momentum',
+                    description: 'CALL, PUT, or WAIT - Precise forecast of the NEXT upcoming candle based on price action and wicks',
                   },
                   nextCandlePredictionReasonBn: {
                     type: Type.STRING,
                     description: 'Direct Bengali explanation of why next candle is predicted to be CALL (Green) or PUT (Red)',
+                  },
+                  tradeQualityTier: {
+                    type: Type.STRING,
+                    description: 'HIGH_PROBABILITY, MODERATE, or HIGH_RISK_DOJI',
+                  },
+                  priceActionSetup: {
+                    type: Type.STRING,
+                    description: 'Name of the price action setup e.g. Shooting Star Rejection, Hammer Bounce, Exhaustion Pullback, Engulfing',
+                  },
+                  reversalProbabilityPercent: {
+                    type: Type.NUMBER,
+                    description: 'Estimated probability of an immediate reversal candle 0-100',
                   },
                   indicatorsIdentified: {
                     type: Type.ARRAY,
