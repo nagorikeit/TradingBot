@@ -319,26 +319,51 @@ export const WhatsAppAlertConfigPanel: React.FC = () => {
           {/* CALLMEBOT FORM */}
           {config.provider === 'callmebot' && (
             <div className="space-y-4">
-              <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-lg p-3.5 text-xs text-emerald-300 space-y-1.5">
+              <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-lg p-3.5 text-xs text-emerald-300 space-y-3">
                 <div className="flex items-center gap-1.5 font-semibold text-emerald-200">
-                  <HelpCircle className="w-4 h-4 text-emerald-400" />
-                  <span>CallMeBot কীভাবে সেটআপ করবেন? (মাত্র ২ মিনিট)</span>
+                  <HelpCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>CallMeBot হোয়াটসঅ্যাপে কীভাবে কানেক্ট করবেন? (সহজ পদ্ধতি)</span>
                 </div>
-                <ol className="list-decimal list-inside space-y-1 text-slate-300 ml-1">
-                  <li>আপনার ফোনে <span className="font-mono text-emerald-300">+34 644 68 00 24</span> নম্বরটি Contacts-এ সংরক্ষণ করুন।</li>
-                  <li>হোয়াটসঅ্যাপে ঐ নম্বরে মেসেজ পাঠান: <span className="font-mono text-emerald-300 bg-slate-900 px-1 py-0.5 rounded">I allow callmebot to send me messages</span></li>
-                  <li>বট সাথে সাথে রিপ্লাই দিয়ে আপনার নিজস্ব <strong>API Key</strong> জানিয়ে দেবে। নিচের ঘরে নম্বর ও কী বসিয়ে দিন!</li>
-                </ol>
-                <div className="pt-1">
+
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  হোয়াটসঅ্যাপে নাম্বার সেভ করে মেসেজ দেওয়ার পর রেসপন্স না পেলে নিচে থাকা সরাসরি বোতামে ক্লিক করে অন্য সক্রিয় বট নম্বরে মেসেজ পাঠান (সার্ভার লোডের কারণে একটি নম্বরে রিপ্লাই না আসলে অন্য নম্বরে সাথে সাথে পাওয়া যায়):
+                </p>
+
+                {/* Direct 1-Click WhatsApp Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <a
-                    href="https://www.callmebot.com/blog/free-api-whatsapp-messages/"
+                    href="https://wa.me/34623789595?text=I%20allow%20callmebot%20to%20send%20me%20messages"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline"
+                    className="flex items-center justify-between px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95"
                   >
-                    <span>অফিসিয়াল CallMeBot ডিরেক্ট গাইড দেখুন</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>📲 ১-ক্লিকে বট ১ চ্যাট খুলুন (+34 623 78 95 95)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
+
+                  <a
+                    href="https://wa.me/34644263377?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-2 bg-teal-700 hover:bg-teal-600 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95"
+                  >
+                    <span>📲 বিকল্প বট ২ চ্যাট খুলুন (+34 644 26 33 77)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5 text-[11px] text-slate-300 space-y-1">
+                  <div className="font-semibold text-emerald-300">📌 ৩টি সহজ ধাপ:</div>
+                  <div>১. ওপরের যেকোনো একটি বোতামে চাপ দিন, হোয়াটসঅ্যাপে সরাসরি মেসেজটি প্রম্পট হবে: <span className="font-mono text-emerald-300 bg-slate-900 px-1 py-0.5 rounded">I allow callmebot to send me messages</span></div>
+                  <div>২. মেসেজটি পাঠিয়ে দিন। বট ফিরতি মেসেজে একটি <strong>APIKEY: [সংখ্যা]</strong> লিখে পাঠাবে (যেমন: <span className="font-mono text-cyan-300">apikey: 123456</span>)। ১-২ মিনিট অপেক্ষা করুন।</div>
+                  <div>৩. সেই API Key এবং আপনার ফোন নম্বর নিচের ঘরে বসিয়ে <strong>"🧪 টেস্ট মেসেজ পাঠান"</strong> বাটনে চাপলেই সাথে সাথে কানেক্ট হয়ে যাবে!</div>
+                </div>
+
+                <div className="text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-500/30 p-2 rounded flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>রেসপন্স পেতে দেরি হলে:</strong> অনেক সময় কলমিবট সার্ভারে সারিবদ্ধ (Queue) থাকার কারণে ২-৫ মিনিট সময় লাগতে পারে। যদি বট ১ থেকে উত্তর না আসে, তবে উপরের <strong>বিকল্প বট ২</strong> বাটনে ক্লিক করে মেসেজ পাঠান।
+                  </span>
                 </div>
               </div>
 

@@ -47,6 +47,7 @@ import {
   setCustomApiUrl,
   checkBackendHealth,
 } from '../services/apiConfig';
+import { WhatsAppAlertConfigPanel } from './WhatsAppAlertConfigPanel';
 
 export const LiveScreenAnalyzer: React.FC = () => {
   const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
@@ -58,6 +59,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
   const [now, setNow] = useState<number>(Date.now());
   const [isVoiceOn, setIsVoiceOn] = useState<boolean>(voiceAssistantService.isVoiceEnabled());
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
   const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
 
   const [expirySec, setExpirySec] = useState<number>(liveScreenService.getExpirySecondsLeft());
@@ -429,6 +431,16 @@ export const LiveScreenAnalyzer: React.FC = () => {
             >
               <Layers className="w-4 h-4 text-cyan-400" />
               <span>{isOverlayActive ? 'ফ্লোটিং HUD অন' : 'ফ্লোটিং HUD'}</span>
+            </button>
+
+            {/* WhatsApp Signal Alerts Button */}
+            <button
+              onClick={() => setShowWhatsAppModal(true)}
+              className="px-3 py-2 text-xs font-semibold rounded-lg border border-emerald-500/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50 flex items-center gap-1.5 transition-colors shadow-sm"
+              title="হোয়াটসঅ্যাপ সিগন্যাল অ্যালার্ট কানেক্ট করুন"
+            >
+              <MessageSquare className="w-4 h-4 text-emerald-400" />
+              <span>WhatsApp Alerts</span>
             </button>
 
             {/* Backend Server Settings Button */}
@@ -1186,6 +1198,32 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 সেভ করুন (Save)
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Alert Configuration Modal */}
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl p-5 sm:p-6 relative max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-white">হোয়াটসঅ্যাপ সিগন্যাল অ্যালার্ট কানেকশন</h3>
+                  <p className="text-xs text-slate-400">লাইভ স্ক্রিন বিশ্লেষণ ও পরবর্তী ক্যান্ডেলের পূর্বাভাস আপনার নিজস্ব হোয়াটসঅ্যাপে পান</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWhatsAppModal(false)}
+                className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700 text-xs font-semibold transition-colors"
+              >
+                ✕ বন্ধ করুন
+              </button>
+            </div>
+            <WhatsAppAlertConfigPanel />
           </div>
         </div>
       )}
