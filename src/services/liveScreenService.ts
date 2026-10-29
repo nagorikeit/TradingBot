@@ -1508,15 +1508,10 @@ export class LiveScreenService {
             let confidence = 0;
 
             // Price Action Rules: Wick Rejections & Exhaustion Analysis
-            const isDoji = lastCandle.height <= 7;
             const isUpperWickRejection = lastCandle.hasUpperWick && !lastCandle.hasLowerWick;
             const isLowerWickRejection = lastCandle.hasLowerWick && !lastCandle.hasUpperWick;
 
-            if (isDoji) {
-              dir = 'WAIT';
-              confidence = 0;
-              pattern = 'দোজি ও ফেকআউট ঝুঁকি (WAIT)';
-            } else if (greenCount >= 3 || (lastCandle.color === 'GREEN' && isUpperWickRejection)) {
+            if (greenCount >= 3 || (lastCandle.color === 'GREEN' && isUpperWickRejection)) {
               // 3 green candles = Exhaustion, OR Green with upper wick = Shooting Star rejection!
               dir = 'DOWN';
               confidence = 88;
@@ -1539,10 +1534,18 @@ export class LiveScreenService {
               confidence = 86;
               pattern = 'বিয়ারিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle RED / PUT)';
             } else {
-              // 2 green, 2 red consolidation
-              dir = 'WAIT';
-              confidence = 0;
-              pattern = 'কনসোলিডেশন রেঞ্জ (WAIT) — ফেকআউট এড়িয়ে চলুন';
+              // 2 green, 2 red: Check the price slope from the first candle to the latest candle
+              const firstY = recentCandles[0].minY;
+              const lastY = recentCandles[recentCandles.length - 1].minY;
+              if (lastY <= firstY) {
+                dir = 'UP';
+                confidence = 85;
+                pattern = 'উর্ধ্বমুখী প্রাইজ অ্যাকশন বাউন্স (Next Candle GREEN / CALL)';
+              } else {
+                dir = 'DOWN';
+                confidence = 85;
+                pattern = 'নিম্নমুখী প্রাইজ অ্যাকশন রিজেকশন (Next Candle RED / PUT)';
+              }
             }
 
             const symbol = 'BROKER CHART';

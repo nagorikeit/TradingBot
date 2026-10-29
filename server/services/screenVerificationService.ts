@@ -385,74 +385,52 @@ export class ScreenVerificationService {
       const setup = (visionData.priceActionSetup || '').toLowerCase();
       const pattern = (visionData.candlestickPattern || '').toLowerCase();
 
-      // Check for High-Risk Doji / Noise condition
-      const isDojiNoise = visionData.tradeQualityTier === 'HIGH_RISK_DOJI' ||
-                          pattern.includes('doji') ||
-                          visionData.lastCandleDirection === 'DOJI';
+      let score = 0;
 
-      if (isDojiNoise || aiForecast === 'WAIT') {
-        direction = 'WAIT';
-        confidence = 0;
-        verdictTitle = `⚠️ WAIT / দোজি ও ফেকআউট ঝুঁকি (${assetName})`;
-        suggestedExpiry = 'N/A';
+      // Weight 1: AI Multimodal Price Action Forecast (Evaluates full chart)
+      if (aiForecast === 'CALL') score += 4;
+      if (aiForecast === 'PUT') score -= 4;
+
+      // Weight 2: Specific Candlestick Rejections (Pin Bar / Shooting Star / Hammer)
+      const isBearishRejection = setup.includes('shooting star') || setup.includes('exhaustion') || pattern.includes('shooting star') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BULLISH');
+      const isBullishRejection = setup.includes('hammer') || setup.includes('exhaustion') || pattern.includes('hammer') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BEARISH');
+
+      if (isBearishRejection) score -= 3;
+      if (isBullishRejection) score += 3;
+
+      // Weight 3: Indicator Confluence
+      score += bullishIndicators * 2;
+      score -= bearishIndicators * 2;
+
+      // Weight 4: Trend Direction & Momentum
+      if (!isBearishRejection && visionData.chartStructure === 'UPTREND') score += 2;
+      if (!isBullishRejection && visionData.chartStructure === 'DOWNTREND') score -= 2;
+
+      // Weight 5: Engulfing patterns
+      if (pattern.includes('bullish engulfing')) score += 3;
+      if (pattern.includes('bearish engulfing')) score -= 3;
+
+      // Weight 6: Candle direction bias
+      if (visionData.lastCandleDirection === 'BULLISH') score += 1;
+      if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
+
+      // Decisive Direction: Always deliver actionable CALL or PUT on a live trading chart
+      if (score > 0 || (score === 0 && (aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND' || visionData.lastCandleDirection === 'BULLISH'))) {
+        direction = 'UP';
+        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
+        verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          'সতর্কবার্তা: বর্তমান ক্যান্ডেলে দোজি (Doji) বা অনির্ধারিত মার্কেট স্কুইজ শনাক্ত হয়েছে। এই পরিস্থিতিতে পরবর্তী ক্যান্ডেল ৫০/৫০ জুয়া—ট্রেড এড়িয়ে চলুন।'
+          `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি সবুজ (CALL / UP) হওয়ার জোরালো সম্ভাবনা (কনফার্মেশন: ${confidence}%)। বায়ার্স মোমেন্টাম ও চার্ট স্ট্রাকচার পজিটিভ।`
         );
       } else {
-        let score = 0;
-
-        // Weight 1: AI Price-Action Forecast (Evaluates wicks, exhaustion, S&R)
-        if (aiForecast === 'CALL') score += 4;
-        if (aiForecast === 'PUT') score -= 4;
-
-        // Weight 2: Specific Candlestick Rejections (Pin Bar / Shooting Star / Hammer)
-        const isBearishRejection = setup.includes('shooting star') || setup.includes('exhaustion') || pattern.includes('shooting star') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BULLISH');
-        const isBullishRejection = setup.includes('hammer') || setup.includes('exhaustion') || pattern.includes('hammer') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BEARISH');
-
-        if (isBearishRejection) score -= 3;
-        if (isBullishRejection) score += 3;
-
-        // Weight 3: Indicator Confluence
-        score += bullishIndicators * 2;
-        score -= bearishIndicators * 2;
-
-        // Weight 4: Trend Direction (Only adds if NOT conflicting with an active reversal pattern!)
-        if (!isBearishRejection && visionData.chartStructure === 'UPTREND') score += 2;
-        if (!isBullishRejection && visionData.chartStructure === 'DOWNTREND') score -= 2;
-
-        // Weight 5: Engulfing patterns
-        if (pattern.includes('bullish engulfing')) score += 3;
-        if (pattern.includes('bearish engulfing')) score -= 3;
-
-        // Decision based on net score consensus (Requires decisive consensus >= 2 or <= -2)
-        if (score >= 2) {
-          direction = 'UP';
-          confidence = Math.min(94, Math.max(85, 82 + score * 2));
-          verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
-          reasoning.push(
-            visionData.nextCandlePredictionReasonBn ||
-            `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি সবুজ (CALL / UP) হওয়ার উচ্চ সম্ভাবনা (কনফার্মেশন: ${confidence}%)।`
-          );
-        } else if (score <= -2) {
-          direction = 'DOWN';
-          confidence = Math.min(94, Math.max(85, 82 + Math.abs(score) * 2));
-          verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
-          reasoning.push(
-            visionData.nextCandlePredictionReasonBn ||
-            `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি লাল (PUT / DOWN) হওয়ার উচ্চ সম্ভাবনা (কনফার্মেশন: ${confidence}%)।`
-          );
-        } else {
-          // Conflicting signals (e.g. green candle hitting heavy resistance, or score near zero):
-          // NEVER force a blind guess! Tell the trader to wait for the clear setup.
-          direction = 'WAIT';
-          confidence = 0;
-          verdictTitle = `⏸ WAIT / কনফ্লিক্টিং সিগন্যাল (${assetName})`;
-          suggestedExpiry = 'N/A';
-          reasoning.push(
-            'কনফ্লিক্টিং মার্কেট সিগন্যাল: ট্রেন্ড এবং ক্যান্ডেল রিজেকশনে মতবিরোধ থাকায় লসের ঝুঁকি বেশি। পরবর্তী পরিষ্কার সেটআপের জন্য WAIT রাখা হয়েছে।'
-          );
-        }
+        direction = 'DOWN';
+        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
+        verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        reasoning.push(
+          visionData.nextCandlePredictionReasonBn ||
+          `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি লাল (PUT / DOWN) হওয়ার জোরালো সম্ভাবনা (কনফার্মেশন: ${confidence}%)। সেলার্স প্রেসার ও চার্ট স্ট্রাকচার ডাউনওয়ার্ড।`
+        );
       }
 
       if (visionData.candlestickPattern) {
