@@ -2177,14 +2177,70 @@ export class LiveScreenService {
     }
   }
 
-  public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+  /**
+   * One-Click, One-Scan, One-Signal Engine:
+   * Performs exactly ONE scan of the current frame and locks ONE decisive signal.
+   * Cancels any recurring interval timers so the signal never flickers or auto-changes!
+   */
+  public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
+    if (this.state !== 'STREAMING') {
+      const ok = await this.connectScreen();
+      if (!ok) return null;
+    }
+
+    // 1. Instantly kill recurring intervals to guarantee single-scan discipline
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = null;
+    }
+    this.isScanningActive = false;
+
+    // 2. Set analyzing feedback on UI and Floating HUD
+    this.aiState = 'ANALYZING';
+    this.updateFloatingOverlayHUD({
+      direction: 'WAIT',
+      confidence: 0,
+      durationText: '...',
+      verdictTitle: '⚡ ১-ক্লিক স্ক্যান হচ্ছে...',
+      reasonText: 'ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে',
+      latencyMs: 0,
+      aiState: 'ANALYZING',
+      isScanning: true,
+    });
+    this.notify();
+
+    // 3. Capture and analyze exactly ONE frame
     await this.captureAndAnalyzeCurrentFrame();
+
+    // 4. Ensure recurring scanning remains stopped and single signal is locked
+    this.isScanningActive = false;
+    this.aiState = 'IDLE';
+
+    if (this.latestResult) {
+      this.updateFloatingOverlayHUD({
+        direction: this.latestResult.direction,
+        confidence: this.latestResult.confidence,
+        durationText: this.expirySecondsLeft > 0
+          ? `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(this.expirySecondsLeft % 60).padStart(2, '0')}`
+          : '--:--',
+        verdictTitle: this.latestResult.direction === 'UP'
+          ? '▲ CALL (সবুজ) — 🔒 লকড'
+          : this.latestResult.direction === 'DOWN'
+          ? '▼ PUT (লাল) — 🔒 লকড'
+          : 'WAIT',
+        reasonText: this.latestResult.visionData?.nextCandlePredictionReasonBn || this.latestResult.reasoning[0] || '১-ক্লিক সিগন্যাল লকড',
+        latencyMs: 0,
+        aiState: 'IDLE',
+        isScanning: false,
+      });
+    }
+
+    this.notify();
     return this.latestResult;
   }
 
-  public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
-    await this.captureAndAnalyzeCurrentFrame();
-    return this.latestResult;
+  public async triggerSingleScan(): Promise<ScreenAnalysisFinalResult | null> {
+    return await this.triggerScanAndLock();
   }
 
   private resetIntervalTimer(): void {

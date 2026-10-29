@@ -291,17 +291,17 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 <button
                   onClick={() => liveScreenService.triggerScanAndLock()}
                   disabled={isBusy}
-                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                  className={`px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md active:scale-95 ${
                     isBusy
-                      ? 'bg-slate-800 text-cyan-300 border border-cyan-500/40 cursor-wait'
+                      ? 'bg-slate-800 text-cyan-300 border border-cyan-500/50 cursor-wait'
                       : result
-                      ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400/40 shadow-cyan-950/40'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/40 shadow-emerald-950/40'
                   }`}
-                  title="এক ক্লিকে স্ক্যান ও ফলাফল লক করুন (স্বয়ংক্রিয়ভাবে স্টপ হবে)"
+                  title="এক ক্লিকে একবার স্ক্যান করে একটি সিগন্যাল লক করুন"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-                  <span>{isBusy ? 'বিশ্লেষণ হচ্ছে...' : result ? '🔍 নতুন স্ক্যান' : '🔍 স্ক্যান'}</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin text-cyan-300' : ''}`} />
+                  <span>{isBusy ? 'বিশ্লেষণ হচ্ছে...' : result ? '⚡ নতুন সিগন্যাল স্ক্যান করুন' : '⚡ ১-ক্লিকে স্ক্যান (১টি সিগন্যাল)'}</span>
                 </button>
                 <button
                   onClick={handleDisconnect}
@@ -708,6 +708,9 @@ export const LiveScreenAnalyzer: React.FC = () => {
                       ⚠️ দোজি ফেকআউট
                     </span>
                   )}
+                  <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900/90 border border-emerald-500/50 text-emerald-300">
+                    🔒 সিগন্যাল লকড (একবার স্ক্যান)
+                  </span>
                 </div>
 
                 {/* 1-Click AI Self-Learning Outcome Feedback */}
