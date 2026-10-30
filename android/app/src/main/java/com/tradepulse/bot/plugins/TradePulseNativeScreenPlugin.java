@@ -1056,6 +1056,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             bg.setStroke(2, 0xFF34D399);
         }
         btn.setBackground(bg);
+    }
+
     private void performOneClickScanNative() {
         if (overlayView == null) return;
         final TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
