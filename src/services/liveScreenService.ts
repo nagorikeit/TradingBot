@@ -987,8 +987,8 @@ export class LiveScreenService {
     await this.processNativeFrameData(frame);
   }
 
-  public async processNativeFrameData(frame: NativeCaptureFrameEvent): Promise<void> {
-    if (!this.isScanningActive) {
+  public async processNativeFrameData(frame: NativeCaptureFrameEvent, isSingleScan: boolean = false): Promise<void> {
+    if (!this.isScanningActive && !isSingleScan && !this.isSingleScanInProgress) {
       return;
     }
 
@@ -1022,8 +1022,8 @@ export class LiveScreenService {
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
 
-      // Discard if user stopped scanning or a newer frame was processed while awaiting
-      if (!this.isScanningActive || (this.latestProcessedSequenceId > frame.sequenceId)) {
+      // Discard if newer frame was processed while awaiting
+      if ((!this.isScanningActive && !isSingleScan && !this.isSingleScanInProgress) || (this.latestProcessedSequenceId > frame.sequenceId)) {
         return;
       }
 
@@ -1930,7 +1930,10 @@ export class LiveScreenService {
     this.hasFloatingOverlayActive = true;
     this.notify();
     try {
-      await TradePulseNativeScreen.showFloatingOverlay(data);
+      await TradePulseNativeScreen.showFloatingOverlay({
+        ...data,
+        backendUrl: getApiBaseUrl() || DEFAULT_HOSTED_BACKEND_URL,
+      } as any);
     } catch (e) {
       console.warn('Could not launch overlay:', e);
     }
@@ -1939,7 +1942,10 @@ export class LiveScreenService {
   public async updateFloatingOverlayHUD(data: FloatingOverlayData): Promise<void> {
     if (!this.hasFloatingOverlayActive) return;
     try {
-      await TradePulseNativeScreen.updateFloatingOverlay(data);
+      await TradePulseNativeScreen.updateFloatingOverlay({
+        ...data,
+        backendUrl: getApiBaseUrl() || DEFAULT_HOSTED_BACKEND_URL,
+      } as any);
     } catch (e) {
       console.warn('Could not update overlay:', e);
     }
@@ -2082,6 +2088,7 @@ export class LiveScreenService {
   }
 
   private isScanningActive: boolean = false;
+  private isSingleScanInProgress: boolean = false;
   private scanTimer: any = null;
 
   public isScanning(): boolean {
@@ -2209,7 +2216,12 @@ export class LiveScreenService {
     this.notify();
 
     // 3. Capture and analyze exactly ONE frame
-    await this.captureAndAnalyzeCurrentFrame();
+    this.isSingleScanInProgress = true;
+    try {
+      await this.captureAndAnalyzeCurrentFrame();
+    } finally {
+      this.isSingleScanInProgress = false;
+    }
 
     // 4. Ensure recurring scanning remains stopped and single signal is locked
     this.isScanningActive = false;
@@ -2259,14 +2271,14 @@ export class LiveScreenService {
     if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
       try {
         const frameRes = await TradePulseNativeScreen.captureSingleFrame();
-        if (frameRes && frameRes.imageBase64 && this.isScanningActive) {
+        if (frameRes && frameRes.imageBase64 && (this.isScanningActive || this.isSingleScanInProgress)) {
           await this.processNativeFrameData({
             imageBase64: frameRes.imageBase64,
             timestamp: frameRes.timestamp || Date.now(),
             sequenceId: frameRes.sequenceId || ++this.latestFrameCount,
             width: frameRes.width || 720,
             height: frameRes.height || 1280,
-          });
+          }, true);
         }
       } catch (err) {
         console.warn('Native capture frame error:', err);

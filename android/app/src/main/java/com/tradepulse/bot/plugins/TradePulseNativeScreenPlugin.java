@@ -78,7 +78,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private volatile long latestFrameTimestamp = 0;
     private volatile boolean isScanningActive = false;
     private volatile boolean isScanRequested = false;
+    private volatile boolean isOneClickScanPending = false;
     private PluginCall pendingCaptureCall = null;
+    private Runnable overlayCountdownRunnable = null;
+    private int overlaySecondsRemaining = 0;
 
     // Floating overlay window state
     private WindowManager windowManager;
@@ -397,6 +400,22 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         isScanRequested = false;
                         emitCachedFrame();
                     }
+
+                    if (isOneClickScanPending) {
+                        isOneClickScanPending = false;
+                        final String frame = latestFrameBase64;
+                        final long ts = latestFrameTimestamp;
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    executeNativeAnalysis(frame, ts);
+                                }
+                            });
+                        } else {
+                            executeNativeAnalysis(frame, ts);
+                        }
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
@@ -436,41 +455,24 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private void captureAndEmitLatestFrame() {
         if (latestFrameBase64 != null) {
             emitCachedFrame();
-            analyzeNativeFrameInBackground(latestFrameBase64, latestFrameTimestamp);
+            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
             return;
         }
         isScanRequested = true;
     }
 
     private void analyzeNativeFrameInBackground(final String frameBase64, final long timestamp) {
-        if (!isScanningActive || frameBase64 == null) return;
+        executeNativeAnalysis(frameBase64, timestamp);
+    }
 
-        // If user is currently looking at TradePulse itself, do not generate false broker chart signals!
-        boolean isForeground = isTradePulseActivityInForeground;
-        if (getActivity() != null && getActivity().hasWindowFocus()) {
-            isForeground = true;
-        }
-        if (isForeground) {
-            if (getActivity() != null) {
-                getActivity().runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        updateOverlayDirect("WAIT", 0, "ট্রেডপাল্স অ্যাপ সক্রিয়", "অ্যাপটি মিনিমাইজ করে Quotex চার্ট খুলুন", "TRADEPULSE");
-                    }
-                });
-            }
-            JSObject nativeResult = new JSObject();
-            nativeResult.put("direction", "WAIT");
-            nativeResult.put("confidence", 0);
-            nativeResult.put("verdictTitle", "ট্রেডপাল্স অ্যাপ সক্রিয়");
-            nativeResult.put("reasonText", "ট্রেডপাল্স মিনিমাইজ করে Quotex চার্ট খুলুন");
-            nativeResult.put("symbol", "TRADEPULSE");
-            notifyListeners("onNativeAnalysisComplete", nativeResult);
+    public void executeNativeAnalysis(final String frameBase64, final long timestamp) {
+        if (frameBase64 == null) {
+            showAnalysisErrorOnOverlay("স্ক্রিন ফ্রেম লোড হয়নি — আবার চেষ্টা করুন");
             return;
         }
 
         if (!isAnalyzingNativeFrame.compareAndSet(false, true)) {
-            return; // Previous analysis request still in progress
+            return; // Analysis already running
         }
 
         networkExecutor.execute(new Runnable() {
@@ -484,8 +486,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     connection.setRequestMethod("POST");
                     connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                     connection.setRequestProperty("Accept", "application/json");
-                    connection.setConnectTimeout(8000);
-                    connection.setReadTimeout(12000);
+                    connection.setConnectTimeout(10000);
+                    connection.setReadTimeout(15000);
                     connection.setDoOutput(true);
 
                     JSONObject body = new JSONObject();
@@ -513,7 +515,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         if (json.optBoolean("ok") && json.has("result")) {
                             final JSONObject res = json.getJSONObject("result");
                             final String direction = res.optString("direction", "WAIT");
-                            final int confidence = res.optInt("confidence", 0);
+                            final int confidence = res.optInt("confidence", 85);
                             final String verdictTitle = res.optString("verdictTitle", "ANALYZING");
 
                             JSONArray reasons = res.optJSONArray("reasoning");
@@ -535,7 +537,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                 getActivity().runOnUiThread(new Runnable() {
                                     @Override
                                     public void run() {
-                                        updateOverlayDirect(direction, confidence, verdictTitle, finalReason, finalSymbol);
+                                        applySignalToOverlay(direction, confidence, verdictTitle, finalReason, finalSymbol);
                                     }
                                 });
                             }
@@ -546,6 +548,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                     ttsMsg = "কল আপ সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
                                 } else if ("DOWN".equalsIgnoreCase(direction)) {
                                     ttsMsg = "পুট ডাউন সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
+                                } else {
+                                    ttsMsg = "মার্কেট রেঞ্জিং। পরবর্তী ক্যান্ডেলের জন্য প্রস্তুত থাকুন।";
                                 }
                                 if (ttsMsg != null) {
                                     final String msg = ttsMsg;
@@ -569,10 +573,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                             nativeResult.put("reasonText", finalReason);
                             nativeResult.put("symbol", finalSymbol);
                             notifyListeners("onNativeAnalysisComplete", nativeResult);
+                        } else {
+                            showAnalysisErrorOnOverlay("বিশ্লেষণ ব্যর্থ হয়েছে — আবার চাপুন");
                         }
+                    } else {
+                        showAnalysisErrorOnOverlay("সার্ভার কোড " + responseCode + " — পুনরায় চেষ্টা করুন");
                     }
                 } catch (Exception e) {
-                    Log.w("TradePulseNativeScreen", "Native background AI analysis note: " + e.getMessage());
+                    Log.w("TradePulseNativeScreen", "Native AI analysis error: " + e.getMessage());
+                    showAnalysisErrorOnOverlay("সংযোগ সমস্যা — পুনরায় স্ক্যান করুন");
                 } finally {
                     if (connection != null) {
                         try { connection.disconnect(); } catch (Exception ignored) {}
@@ -583,27 +592,136 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         });
     }
 
-    private void updateOverlayDirect(String direction, int confidence, String verdictTitle, String reason, String symbol) {
+    private void applySignalToOverlay(String direction, int confidence, String verdictTitle, String reason, String symbol) {
         if (overlayView == null) return;
         TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
         TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+        TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
 
+        boolean hasSignal = "UP".equalsIgnoreCase(direction) || "DOWN".equalsIgnoreCase(direction);
+        int strokeColor = 0xFFF59E0B; // Amber
+        String badgeText = "⏸ WAIT";
+
+        if ("UP".equalsIgnoreCase(direction)) {
+            strokeColor = 0xFF10B981; // Emerald Green
+            badgeText = "▲ CALL (সবুজ)";
+        } else if ("DOWN".equalsIgnoreCase(direction)) {
+            strokeColor = 0xFFEF4444; // Rose Red
+            badgeText = "▼ PUT (লাল)";
+        }
+
+        // 1. Update rounded border of overlay bubble
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        shape.setCornerRadius(42f);
+        shape.setColor(0xF50F172A);
+        shape.setStroke(3, strokeColor);
+        overlayView.setBackground(shape);
+
+        // 2. Update Direction & Confidence
         if (dirView != null) {
-            if ("UP".equalsIgnoreCase(direction)) {
-                dirView.setText("▲ CALL (UP) " + confidence + "%");
-                dirView.setTextColor(0xFF34D399); // Emerald
-            } else if ("DOWN".equalsIgnoreCase(direction)) {
-                dirView.setText("▼ PUT (DOWN) " + confidence + "%");
-                dirView.setTextColor(0xFFF87171); // Rose red
+            dirView.setTextColor(strokeColor);
+            if (hasSignal) {
+                dirView.setText(badgeText + "  " + confidence + "%  ⏱ 01:00");
             } else {
-                dirView.setText("⏸ WAIT / প্রস্তুত");
-                dirView.setTextColor(0xFFFBBF24); // Amber
+                dirView.setText(verdictTitle != null && !verdictTitle.isEmpty() ? verdictTitle : "⏸ চার্ট মেলেনি (WAIT)");
             }
         }
 
+        // 3. Update Details Text
         if (detView != null) {
-            String details = (symbol != null && !symbol.isEmpty() ? symbol + " · " : "") + reason;
-            detView.setText(details);
+            String shortReason = (reason != null && !reason.isEmpty()) ? reason : "মোমেন্টাম নিশ্চিত";
+            if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
+            String sym = (symbol != null && !symbol.isEmpty()) ? symbol : "CHART";
+            if (hasSignal) {
+                detView.setText(sym + " • " + shortReason + " • 🔒 লকড");
+            } else {
+                detView.setText(sym + " • " + shortReason);
+            }
+        }
+
+        // 4. Update Button visual to 'New Scan' button!
+        if (toggleBtn != null) {
+            updateScanButtonVisual(toggleBtn, false, hasSignal);
+        }
+
+        // 5. Start live countdown timer on the overlay bubble
+        if (hasSignal) {
+            startOverlayCountdown(badgeText, confidence, symbol != null ? symbol : "CHART", reason != null ? reason : "মোমেন্টাম নিশ্চিত");
+        } else {
+            stopOverlayCountdown();
+        }
+    }
+
+    private void showAnalysisErrorOnOverlay(final String errorMsg) {
+        if (getActivity() != null) {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (overlayView == null) return;
+                    TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
+                    TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+                    TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFFEF4444);
+                        dirView.setText("⚠️ " + errorMsg);
+                    }
+                    if (detView != null) {
+                        detView.setText("পুনরায় স্ক্যান করতে বাটনে চাপুন");
+                    }
+                    if (toggleBtn != null) {
+                        updateScanButtonVisual(toggleBtn, false, false);
+                    }
+                }
+            });
+        }
+    }
+
+    private void startOverlayCountdown(final String badgeText, final int confidence, final String symbol, final String reason) {
+        stopOverlayCountdown();
+        overlaySecondsRemaining = 60;
+        overlayCountdownRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (overlayView == null) return;
+                overlaySecondsRemaining--;
+                TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
+                TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+
+                if (overlaySecondsRemaining > 0) {
+                    int mins = overlaySecondsRemaining / 60;
+                    int secs = overlaySecondsRemaining % 60;
+                    String timeStr = String.format(Locale.US, "%02d:%02d", mins, secs);
+                    if (dirView != null) {
+                        dirView.setText(badgeText + "  " + confidence + "%  ⏱ " + timeStr);
+                    }
+                    if (captureHandler != null) {
+                        captureHandler.postDelayed(this, 1000);
+                    }
+                } else {
+                    if (dirView != null) {
+                        dirView.setText(badgeText + "  " + confidence + "%  ⏱ সমাপ্ত");
+                    }
+                    if (detView != null) {
+                        detView.setText(symbol + " • এক্সপায়ারি শেষ • নতুন সিগন্যালে ট্যাপ করুন");
+                    }
+                    TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+                    if (toggleBtn != null) {
+                        updateScanButtonVisual(toggleBtn, false, false);
+                    }
+                }
+            }
+        };
+        if (captureHandler != null) {
+            captureHandler.postDelayed(overlayCountdownRunnable, 1000);
+        }
+    }
+
+    private void stopOverlayCountdown() {
+        if (captureHandler != null && overlayCountdownRunnable != null) {
+            captureHandler.removeCallbacks(overlayCountdownRunnable);
+            overlayCountdownRunnable = null;
         }
     }
 
@@ -765,6 +883,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                stopOverlayCountdown();
                 if (overlayView != null && windowManager != null) {
                     try {
                         windowManager.removeView(overlayView);
@@ -882,23 +1001,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void onClick(View v) {
                 // One-Click, One-Scan triggered directly from the Floating Bubble!
-                TextView dirView = overlayView != null ? (TextView) overlayView.findViewWithTag("directionText") : null;
-                TextView detView = overlayView != null ? (TextView) overlayView.findViewWithTag("detailsText") : null;
-
-                if (dirView != null) {
-                    dirView.setTextColor(0xFF38BDF8);
-                    dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
-                }
-                if (detView != null) {
-                    detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
-                }
-                updateScanButtonVisual(scanToggleBtn, true, false);
-
-                // Notify JavaScript service to trigger triggerScanAndLock()
-                JSObject data = new JSObject();
-                data.put("action", "scanAndLock");
-                notifyListeners("onOverlayScanToggle", data);
-                notifyListeners("onOverlayScanClicked", data);
+                performOneClickScanNative();
             }
         });
         buttonRow.addView(scanToggleBtn);
@@ -953,10 +1056,67 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             bg.setStroke(2, 0xFF34D399);
         }
         btn.setBackground(bg);
+    private void performOneClickScanNative() {
+        if (overlayView == null) return;
+        final TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
+        final TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+        final TextView scanToggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+
+        stopOverlayCountdown();
+
+        if (dirView != null) {
+            dirView.setTextColor(0xFF38BDF8);
+            dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
+        }
+        if (detView != null) {
+            detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
+        }
+        if (scanToggleBtn != null) {
+            updateScanButtonVisual(scanToggleBtn, true, false);
+        }
+
+        // Notify JavaScript listeners in case app is foregrounded or for state sync
+        JSObject data = new JSObject();
+        data.put("action", "scanAndLock");
+        notifyListeners("onOverlayScanToggle", data);
+        notifyListeners("onOverlayScanClicked", data);
+
+        if (latestFrameBase64 != null) {
+            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
+        } else {
+            isScanRequested = true;
+            isOneClickScanPending = true;
+            if (captureHandler != null) {
+                captureHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isOneClickScanPending) {
+                            isOneClickScanPending = false;
+                            isAnalyzingNativeFrame.set(false);
+                            if (dirView != null) {
+                                dirView.setTextColor(0xFFF59E0B);
+                                dirView.setText("⚠️ ফ্রেম বিলম্বিত — আবার চাপুন");
+                            }
+                            if (detView != null) {
+                                detView.setText("ট্রেডিং চার্ট সামনে রেখে বাটনে চাপুন");
+                            }
+                            if (scanToggleBtn != null) {
+                                updateScanButtonVisual(scanToggleBtn, false, false);
+                            }
+                        }
+                    }
+                }, 4000);
+            }
+        }
     }
 
     private void updateOverlayContent(PluginCall call) {
         if (overlayView == null) return;
+
+        String customUrl = call.getString("backendUrl", "");
+        if (customUrl != null && !customUrl.trim().isEmpty()) {
+            this.backendUrl = customUrl.trim().replaceAll("/+$", "");
+        }
 
         String direction = call.getString("direction", "WAIT");
         int confidence = call.getInt("confidence", 0);
