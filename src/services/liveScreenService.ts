@@ -805,14 +805,13 @@ export class LiveScreenService {
         this.expirySecondsLeft = 0;
         this.latestResult = null;
 
-        // Register overlay toggle button and native analysis listeners
+        // Register overlay 1-click scan button and native analysis listeners
         try {
-          TradePulseNativeScreen.addListener('onOverlayScanToggle', (data: { isScanning: boolean }) => {
-            if (data && data.isScanning) {
-              this.startScanning();
-            } else {
-              this.stopScanning();
-            }
+          TradePulseNativeScreen.addListener('onOverlayScanToggle', () => {
+            this.triggerScanAndLock();
+          });
+          TradePulseNativeScreen.addListener('onOverlayScanClicked', () => {
+            this.triggerScanAndLock();
           });
           TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
             this.hideFloatingOverlayHUD();

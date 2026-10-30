@@ -862,11 +862,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         layout.addView(dragContainer);
 
-        // Bottom Action Button Row with ONE SINGLE Scan / Stop Toggle Button
+        // Bottom Action Button Row with ONE-CLICK SCAN BUTTON (Controlled directly from Floating Bubble)
         android.widget.LinearLayout buttonRow = new android.widget.LinearLayout(getContext());
         buttonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
         buttonRow.setGravity(Gravity.CENTER);
-        buttonRow.setPadding(0, 16, 0, 4);
+        buttonRow.setPadding(0, 14, 0, 4);
 
         final TextView scanToggleBtn = new TextView(getContext());
         scanToggleBtn.setId(android.view.View.generateViewId());
@@ -874,43 +874,31 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         scanToggleBtn.setTextSize(13);
         scanToggleBtn.setTextColor(0xFFFFFFFF);
         scanToggleBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-        scanToggleBtn.setPadding(46, 14, 46, 14);
+        scanToggleBtn.setPadding(42, 14, 42, 14);
         scanToggleBtn.setClickable(true);
-        updateScanButtonVisual(scanToggleBtn, isScanningActive);
+        updateScanButtonVisual(scanToggleBtn, false, false);
 
         scanToggleBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                isScanningActive = !isScanningActive;
-                updateScanButtonVisual(scanToggleBtn, isScanningActive);
-
+                // One-Click, One-Scan triggered directly from the Floating Bubble!
                 TextView dirView = overlayView != null ? (TextView) overlayView.findViewWithTag("directionText") : null;
                 TextView detView = overlayView != null ? (TextView) overlayView.findViewWithTag("detailsText") : null;
 
-                if (isScanningActive) {
-                    if (dirView != null) {
-                        dirView.setTextColor(0xFF38BDF8);
-                        dirView.setText("🔍 স্ক্যান করা হচ্ছে...");
-                    }
-                    if (detView != null) {
-                        detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
-                    }
-                    startNativeScanningLoop();
-                    captureAndEmitLatestFrame();
-                } else {
-                    if (dirView != null) {
-                        dirView.setTextColor(0xFF38BDF8);
-                        dirView.setText("⚡ প্রস্তুত (Ready)");
-                    }
-                    if (detView != null) {
-                        detView.setText("স্ক্যান করতে বাটনে চাপুন");
-                    }
-                    stopNativeScanningLoop();
+                if (dirView != null) {
+                    dirView.setTextColor(0xFF38BDF8);
+                    dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
                 }
+                if (detView != null) {
+                    detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
+                }
+                updateScanButtonVisual(scanToggleBtn, true, false);
 
+                // Notify JavaScript service to trigger triggerScanAndLock()
                 JSObject data = new JSObject();
-                data.put("isScanning", isScanningActive);
+                data.put("action", "scanAndLock");
                 notifyListeners("onOverlayScanToggle", data);
+                notifyListeners("onOverlayScanClicked", data);
             }
         });
         buttonRow.addView(scanToggleBtn);
@@ -945,20 +933,24 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         windowManager.addView(overlayView, overlayParams);
     }
 
-    private void updateScanButtonVisual(TextView btn, boolean isScanning) {
+    private void updateScanButtonVisual(TextView btn, boolean isBusy, boolean hasResult) {
         if (btn == null) return;
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
         bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         bg.setCornerRadius(24f);
 
-        if (isScanning) {
-            btn.setText("⏹ স্ক্যান স্টপ");
-            bg.setColor(0xFFDC2626); // Rose red
-            bg.setStroke(2, 0xFFEF4444);
+        if (isBusy) {
+            btn.setText("⏳ বিশ্লেষণ হচ্ছে...");
+            bg.setColor(0xFF0369A1); // Cyan-700
+            bg.setStroke(2, 0xFF38BDF8);
+        } else if (hasResult) {
+            btn.setText("⚡ নতুন স্ক্যান করুন");
+            bg.setColor(0xFF2563EB); // Vibrant Blue
+            bg.setStroke(2, 0xFF60A5FA);
         } else {
-            btn.setText("🔍 স্ক্যান শুরু করুন");
-            bg.setColor(0xFF059669); // Emerald green
-            bg.setStroke(2, 0xFF10B981);
+            btn.setText("⚡ ১-ক্লিক স্ক্যান");
+            bg.setColor(0xFF059669); // Emerald-600
+            bg.setStroke(2, 0xFF34D399);
         }
         btn.setBackground(bg);
     }
@@ -982,8 +974,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         TextView dirView = overlayView.findViewWithTag("directionText");
         TextView detView = overlayView.findViewWithTag("detailsText");
+        TextView toggleBtn = overlayView.findViewWithTag("scanToggleBtn");
 
         boolean hasError = errorReason != null && !errorReason.trim().isEmpty();
+        boolean hasSignal = "UP".equalsIgnoreCase(direction) || "DOWN".equalsIgnoreCase(direction);
+        boolean isBusy = "ANALYZING".equalsIgnoreCase(aiState);
 
         int strokeColor = 0xFFF59E0B; // Amber
         if (hasError) strokeColor = 0xFFEF4444; // Rose Red
@@ -998,20 +993,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         shape.setStroke(3, strokeColor);
         overlayView.setBackground(shape);
 
-        if (call.getData().has("isScanning")) {
-            boolean isScanning = call.getBoolean("isScanning", isScanningActive);
-            if (isScanning != isScanningActive) {
-                isScanningActive = isScanning;
-                if (isScanningActive) {
-                    startNativeScanningLoop();
-                } else {
-                    stopNativeScanningLoop();
-                }
-            }
-        }
-        TextView toggleBtn = overlayView.findViewWithTag("scanToggleBtn");
         if (toggleBtn != null) {
-            updateScanButtonVisual(toggleBtn, isScanningActive);
+            updateScanButtonVisual(toggleBtn, isBusy, hasSignal);
         }
 
         if (dirView != null && detView != null) {
@@ -1020,16 +1003,26 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 dirView.setText("⚠️ " + errorReason);
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
-            } else if (!isScanningActive) {
+            } else if (isBusy) {
                 dirView.setTextColor(0xFF38BDF8);
-                dirView.setText("⚡ প্রস্তুত (Ready)");
+                dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
                 detView.setVisibility(View.VISIBLE);
-                detView.setText("স্ক্যান করতে বাটনে চাপুন");
-            } else if ("ANALYZING".equalsIgnoreCase(aiState)) {
-                dirView.setTextColor(0xFF38BDF8);
-                dirView.setText("🔍 স্ক্যান করা হচ্ছে...");
+                detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
+            } else if (hasSignal) {
+                // When chart analyzed: UP / DOWN - ALWAYS SHOW IT PROMINENTLY ON THE FLOATING BUBBLE!
                 detView.setVisibility(View.VISIBLE);
-                detView.setText("স্ক্রিন ফ্রেম রিয়েল-টাইম প্রসেসিং...");
+                String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
+                dirView.setTextColor(strokeColor);
+
+                // Include Live Candle Expiry Timer (durationText) right next to direction & confidence!
+                String timerBadge = (durationText != null && !durationText.equals("--:--") && !durationText.trim().isEmpty())
+                        ? "  ⏱ " + durationText
+                        : "";
+                dirView.setText(badgeText + "  " + confidence + "%" + timerBadge);
+
+                String shortReason = (reasonText != null && !reasonText.isEmpty()) ? reasonText : "মোমেন্টাম নিশ্চিত";
+                if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
+                detView.setText(symbol + " • " + shortReason + " • 🔒 লকড");
             } else if ("WAIT".equalsIgnoreCase(direction)) {
                 dirView.setTextColor(0xFFF59E0B);
                 if (verdictTitle != null && !verdictTitle.isEmpty()) {
@@ -1044,15 +1037,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 if (sub.length() > 36) sub = sub.substring(0, 34) + "..";
                 detView.setText(sub);
             } else {
-                // When chart analyzed: UP / DOWN
+                dirView.setTextColor(0xFF38BDF8);
+                dirView.setText("⚡ প্রস্তুত (Ready)");
                 detView.setVisibility(View.VISIBLE);
-                String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (UP)" : "DOWN".equalsIgnoreCase(direction) ? "▼ PUT (DOWN)" : "● WAIT";
-                dirView.setTextColor(strokeColor);
-                dirView.setText(badgeText + "  •  " + confidence + "%");
-
-                String shortReason = (reasonText != null && !reasonText.isEmpty()) ? reasonText : "মোমেন্টাম নিশ্চিত";
-                if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
-                detView.setText(symbol + " • " + shortReason);
+                detView.setText("স্ক্যান করতে নিচের বাটনে ট্যাপ করুন");
             }
         }
     }
