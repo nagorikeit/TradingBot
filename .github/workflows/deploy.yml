@@ -60,6 +60,7 @@ jobs:
   build-android-apk:
     name: Build Android APK (Debug / Release)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -78,15 +79,11 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-34 platforms;android-35 build-tools;34.0.0 build-tools;35.0.0'
-
       - name: Accept Android SDK Licenses
         run: |
-          yes | sdkmanager --licenses || true
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          mkdir -p "$ANDROID_HOME/licenses" || true
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$ANDROID_HOME/licenses/android-sdk-license" || true
+          printf "84831b9409646a243e30e466e443661490f54736\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license" || true
 
       - name: Install Web Dependencies
         run: npm ci || npm install
