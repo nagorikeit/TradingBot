@@ -81,7 +81,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-34 platforms;android-35 platforms;android-36 build-tools;34.0.0 build-tools;35.0.1 build-tools;36.0.0'
+          packages: 'platform-tools platforms;android-34 platforms;android-35 build-tools;34.0.0 build-tools;35.0.0'
 
       - name: Accept Android SDK Licenses
         run: |

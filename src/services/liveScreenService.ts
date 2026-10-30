@@ -810,9 +810,6 @@ export class LiveScreenService {
           TradePulseNativeScreen.addListener('onOverlayScanToggle', () => {
             this.triggerScanAndLock();
           });
-          TradePulseNativeScreen.addListener('onOverlayScanClicked', () => {
-            this.triggerScanAndLock();
-          });
           TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
             this.hideFloatingOverlayHUD();
           });
@@ -1038,7 +1035,6 @@ export class LiveScreenService {
           this.processResult(result, latencyMs);
         } else {
           const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
-          if (!this.isScanningActive) return;
           this.aiState = 'READY';
           this.lastErrorReason = null;
           this.errorMessage = null;
@@ -1046,7 +1042,6 @@ export class LiveScreenService {
         }
       } else {
         const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
-        if (!this.isScanningActive) return;
         this.aiState = 'READY';
         this.lastErrorReason = null;
         this.errorMessage = null;
@@ -1056,7 +1051,6 @@ export class LiveScreenService {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
       this.latestApiLatencyMs = latencyMs;
-      if (!this.isScanningActive) return;
       const localResult = await this.analyzeFrameLocally(frame.imageBase64, frame.timestamp);
       this.aiState = 'READY';
       this.lastErrorReason = null;
