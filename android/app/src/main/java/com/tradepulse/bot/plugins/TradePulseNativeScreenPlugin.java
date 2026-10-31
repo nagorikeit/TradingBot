@@ -577,15 +577,53 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            int totalCandlePixels = greenPixels + redPixels;
+            // 1. Background Uniformity Verification (Anti-Wallpaper / Anti-HomeScreen Guard)
+            // Quotex, Pocket Option, and Binomo have solid dark navy (#121620, #161924, #1c202e) or white canvas
+            int bgNavyDark = 0;
+            int bgWhiteLight = 0;
+            int totalBgSampled = 0;
+            int bgStep = 4;
+            for (int y = startY; y < endY; y += bgStep) {
+                for (int x = startX; x < endX; x += bgStep) {
+                    int pixel = bitmap.getPixel(x, y);
+                    int r = (pixel >> 16) & 0xff;
+                    int g = (pixel >> 8) & 0xff;
+                    int b = pixel & 0xff;
+                    totalBgSampled++;
+                    // Quotex / Pocket Option / Binomo dark theme canvas (R <= 52, G <= 58, B <= 75)
+                    if (r <= 55 && g <= 60 && b <= 78) {
+                        bgNavyDark++;
+                    } else if (r >= 225 && g >= 225 && b >= 225) {
+                        bgWhiteLight++;
+                    }
+                }
+            }
+            float darkRatio = (float) bgNavyDark / (float) Math.max(1, totalBgSampled);
+            float lightRatio = (float) bgWhiteLight / (float) Math.max(1, totalBgSampled);
+            boolean hasBrokerBackground = (darkRatio >= 0.35f || lightRatio >= 0.35f);
 
-            // Non-chart screen guard (home screen, wallpaper, settings, blank)
-            if (totalCandlePixels < 40) {
+            // Reject wallpapers, home screen, YouTube, WhatsApp, or photographic screens
+            if (!hasBrokerBackground) {
                 updateOverlayUI(
                         "WAIT",
                         0,
                         "⏸ চার্ট মেলেনি (WAIT)",
-                        "ট্রেডিং চার্ট সামনে রেখে বাটনে চাপুন",
+                        "ট্রেডিং চার্ট সামনে রেখে স্ক্যান করুন",
+                        "NO_CHART"
+                );
+                bitmap.recycle();
+                return;
+            }
+
+            int totalCandlePixels = greenPixels + redPixels;
+
+            // Real charts have at least 100+ green/red candlestick pixels
+            if (totalCandlePixels < 100) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "⏸ চার্ট মেলেনি (WAIT)",
+                        "ক্যান্ডেলস্টিক চার্ট সামনে রেখে বাটনে চাপুন",
                         "NO_CHART"
                 );
                 bitmap.recycle();
@@ -657,19 +695,46 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             String finalReason = "মোমেন্টাম নিশ্চিত";
             String finalSymbol = "QUOTEX • OTC";
 
-            if (bands.size() >= 2) {
-                CandleBand lastCandle = bands.get(bands.size() - 1);
-                CandleBand prevCandle = bands.get(bands.size() - 2);
-                CandleBand thirdCandle = bands.size() >= 3 ? bands.get(bands.size() - 3) : null;
+            // A valid trading chart must have at least 4 distinct sequential candlestick bars
+            if (bands.size() < 4) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "⏸ চার্ট মেলেনি (WAIT)",
+                        "কমপক্ষে ৪টি ক্যান্ডেল স্ক্রিনে স্পষ্ট রাখুন",
+                        "NO_CHART"
+                );
+                bitmap.recycle();
+                return;
+            }
 
-                // Examine last 5 candles
-                int recentRed = 0;
-                int recentGreen = 0;
-                int startIdx = Math.max(0, bands.size() - 5);
-                for (int i = startIdx; i < bands.size(); i++) {
-                    if (bands.get(i).isGreen) recentGreen++;
-                    else recentRed++;
-                }
+            // Verify horizontal span (candles must be spread horizontally across time, not clustered in an icon)
+            CandleBand firstCandle = bands.get(0);
+            CandleBand lastCandle = bands.get(bands.size() - 1);
+            int horizontalSpan = lastCandle.centerX - firstCandle.centerX;
+            if (horizontalSpan < width * 0.12f) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "⏸ চার্ট মেলেনি (WAIT)",
+                        "টাইমলাইন ক্যান্ডেল স্পষ্ট রাখুন",
+                        "NO_CHART"
+                );
+                bitmap.recycle();
+                return;
+            }
+
+            CandleBand prevCandle = bands.get(bands.size() - 2);
+            CandleBand thirdCandle = bands.get(bands.size() - 3);
+
+            // Examine last 5 candles
+            int recentRed = 0;
+            int recentGreen = 0;
+            int startIdx = Math.max(0, bands.size() - 5);
+            for (int i = startIdx; i < bands.size(); i++) {
+                if (bands.get(i).isGreen) recentGreen++;
+                else recentRed++;
+            }
 
                 // Scenario A: Bearish Drop / Downward Continuation (matches user's Quotex Cosmos chart)
                 if (recentRed >= 3 && !lastCandle.isGreen) {
@@ -710,30 +775,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     verdictTitle = "▼ PUT (লাল)";
                     confidence = 87;
                     finalReason = "বেয়ারিশ সেলিং প্রেসার প্রাধান্য — পুট সিগন্যাল";
-                } else {
                     direction = lastCandle.isGreen ? "UP" : "DOWN";
                     verdictTitle = lastCandle.isGreen ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
                     confidence = 85;
                     finalReason = "লেটেস্ট ক্যান্ডেলস্টিক ডিরেকশন ফলো — " + (lastCandle.isGreen ? "কল" : "পুট");
                 }
-            } else {
-                if (greenPixels > redPixels * 1.15f) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = 86;
-                    finalReason = "বুলিশ ক্যান্ডেল প্রেসার সনাক্ত — কল সিগন্যাল";
-                } else if (redPixels > greenPixels * 1.15f) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = 87;
-                    finalReason = "বেয়ারিশ সেলিং প্রেসার সনাক্ত — পুট সিগন্যাল";
-                } else {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = 85;
-                    finalReason = "ক্যান্ডেলস্টিক ভলিউম বিশ্লেষণ সম্পন্ন";
-                }
-            }
 
             updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol);
             bitmap.recycle();
@@ -817,7 +863,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         if (dirView != null) {
             dirView.setTextColor(strokeColor);
             if (hasSignal) {
-                dirView.setText(badgeText + "  " + confidence + "%  ⏱ 01:00");
+                int sec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND);
+                int initSecs = 60 - sec;
+                if (initSecs < 4) initSecs += 60;
+                String initTimeStr = String.format(Locale.US, "%02d:%02d", initSecs / 60, initSecs % 60);
+                dirView.setText(badgeText + "  " + confidence + "%  ⏱ " + initTimeStr);
             } else {
                 dirView.setText(verdictTitle != null && !verdictTitle.isEmpty() ? verdictTitle : "⏸ চার্ট মেলেনি (WAIT)");
             }
@@ -875,7 +925,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void startOverlayCountdown(final String badgeText, final int confidence, final String symbol, final String reason) {
         stopOverlayCountdown();
-        overlaySecondsRemaining = 60;
+        
+        // Synchronize with the live trading candle clock!
+        // In 1-minute (M1) trading charts, candles expire exactly at the :00 second mark of each minute.
+        // If current second is 47s, remaining candle time is 13s. If < 4s remaining, count down next full candle (60s).
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        int sec = cal.get(java.util.Calendar.SECOND);
+        int remainingInCandle = 60 - sec;
+        if (remainingInCandle < 4) {
+            remainingInCandle += 60;
+        }
+        overlaySecondsRemaining = remainingInCandle;
         overlayCountdownRunnable = new Runnable() {
             @Override
             public void run() {
@@ -1277,36 +1337,35 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         data.put("action", "scanAndLock");
         notifyListeners("onOverlayScanToggle", data);
 
-        if (latestFrameBase64 != null) {
-            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
-        } else {
-            isScanRequested = true;
-            isOneClickScanPending = true;
-            if (captureHandler != null) {
-                captureHandler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (isOneClickScanPending) {
-                            isOneClickScanPending = false;
-                            isAnalyzingNativeFrame.set(false);
-                            if (latestFrameBase64 != null) {
-                                executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
-                            } else {
-                                if (dirView != null) {
-                                    dirView.setTextColor(0xFFF59E0B);
-                                    dirView.setText("⚠️ ফ্রেম প্রস্তুত হয়নি — আবার চাপুন");
-                                }
-                                if (detView != null) {
-                                    detView.setText("ট্রেডিং চার্ট স্ক্রিনে রেখে বাটনে চাপুন");
-                                }
-                                if (scanToggleBtn != null) {
-                                    updateScanButtonVisual(scanToggleBtn, false, false);
-                                }
+        // Invalidate stale frame cache to force capturing fresh live screen!
+        latestFrameBase64 = null;
+        isScanRequested = true;
+        isOneClickScanPending = true;
+
+        if (captureHandler != null) {
+            captureHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (isOneClickScanPending) {
+                        isOneClickScanPending = false;
+                        isAnalyzingNativeFrame.set(false);
+                        if (latestFrameBase64 != null) {
+                            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
+                        } else {
+                            if (dirView != null) {
+                                dirView.setTextColor(0xFFF59E0B);
+                                dirView.setText("⚠️ চার্ট স্পর্শ করুন");
+                            }
+                            if (detView != null) {
+                                detView.setText("স্ক্রিনে আঙুল দিয়ে একটু সোয়াইপ করুন ও চাপুন");
+                            }
+                            if (scanToggleBtn != null) {
+                                updateScanButtonVisual(scanToggleBtn, false, false);
                             }
                         }
                     }
-                }, 3000);
-            }
+                }
+            }, 2500);
         }
     }
 
