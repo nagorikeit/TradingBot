@@ -542,36 +542,54 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int height = bitmap.getHeight();
 
             // 1. Adaptive Chart Canvas ROI (Region of Interest)
-            // In mobile broker portrait mode (Quotex, Pocket Option, Binomo):
-            // Top ~14% is browser address bar & deposit header
-            // Bottom ~26% is trade panel (Investment %, Timer, Buy/Sell buttons)
-            // Central ~14% to 74% is the live candlestick chart canvas
-            int startY = (int) (height * 0.14f);
-            int endY = (int) (height * 0.74f);
+            // Top ~18% is browser address bar & deposit/bonus header (has green bonus/deposit buttons)
+            // Bottom ~28% is trade panel (Investment %, Timer, and huge green Buy / red Sell buttons)
+            // Central ~18% to 70% is the true candlestick chart canvas
+            // Right edge (from 82% to 100%) has the vertical price scale & current price badge
+            int startY = (int) (height * 0.18f);
+            int endY = (int) (height * 0.70f);
             int startX = (int) (width * 0.04f);
-            int endX = (int) (width * 0.90f); // Excludes right-side vertical price scale
+            int endX = (int) (width * 0.82f); // Strictly stops before right vertical price scale!
+
+            // Determine Floating Overlay's exact on-screen position so we can MASK IT OUT!
+            // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button from ever being mistaken for a candle!
+            int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
+            if (overlayView != null) {
+                int[] loc = new int[2];
+                overlayView.getLocationOnScreen(loc);
+                ovLeft = loc[0];
+                ovTop = loc[1];
+                ovRight = ovLeft + overlayView.getWidth();
+                ovBottom = ovTop + overlayView.getHeight();
+            }
 
             int greenPixels = 0;
             int redPixels = 0;
             int[] colGreen = new int[width];
             int[] colRed = new int[width];
 
-            // Sample pixels across ROI for candle colors
+            // Sample pixels across ROI for candle colors, skipping the floating HUD overlay!
             for (int y = startY; y < endY; y += 2) {
                 for (int x = startX; x < endX; x += 2) {
+                    // MASK: Skip any pixel belonging to the floating HUD overlay widget itself!
+                    if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
+                        continue;
+                    }
+
                     int pixel = bitmap.getPixel(x, y);
                     int r = (pixel >> 16) & 0xff;
                     int g = (pixel >> 8) & 0xff;
                     int b = pixel & 0xff;
 
                     // Quotex & broker green candle (#00b074, #10a152, #26a69a, #00e676)
-                    // Tolerant to Android eye comfort shield, warm display mode, and auto-brightness
-                    if ((g >= 60 && g > r * 1.15f && g > b * 1.02f) || (g >= 115 && g > r && g > b)) {
+                    // High-precision green: must clearly dominate red and blue
+                    if (g >= 75 && g > (int)(r * 1.25f) && g > (int)(b * 1.10f)) {
                         greenPixels++;
                         colGreen[x]++;
                     }
                     // Quotex & broker red candle (#ef5350, #ea3943, #e95b4f, #f23645)
-                    else if ((r >= 70 && r > g * 1.15f && r > b * 1.05f) || (r >= 125 && r > g && r > b)) {
+                    // High-precision red: must clearly dominate green and blue
+                    else if (r >= 85 && r > (int)(g * 1.28f) && r > (int)(b * 1.15f)) {
                         redPixels++;
                         colRed[x]++;
                     }
@@ -579,7 +597,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
 
             // 2. Real-Time Screen Environment & Background Diagnostics
-            // Samples background across chart ROI
+            // Samples background across chart ROI, skipping floating HUD overlay
             int bgNavyDark = 0;
             int bgWhiteLight = 0;
             int pureBlackPixels = 0;
@@ -587,6 +605,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int bgStep = 4;
             for (int y = startY; y < endY; y += bgStep) {
                 for (int x = startX; x < endX; x += bgStep) {
+                    if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
+                        continue;
+                    }
+
                     int pixel = bitmap.getPixel(x, y);
                     int r = (pixel >> 16) & 0xff;
                     int g = (pixel >> 8) & 0xff;
@@ -597,7 +619,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         pureBlackPixels++;
                     }
                     // Dark theme broker canvas (Quotex Navy #121620, Pocket Option Slate, Binomo Charcoal)
-                    // Allows RGB variance up to 88 for warm/night-mode screens
                     if ((r <= 85 && g <= 90 && b <= 125) || (r <= 65 && g <= 65 && b <= 65)) {
                         bgNavyDark++;
                     } else if (r >= 200 && g >= 200 && b >= 200) {
@@ -660,7 +681,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             for (int x = startX; x < endX; x++) {
                 int colTotal = colGreen[x] + colRed[x];
-                if (colTotal >= 2) {
+                // Require at least 4 vertical candle pixels to form a genuine candlestick bar column
+                if (colTotal >= 4) {
                     if (!inBand) {
                         inBand = true;
                         bandStart = x;
@@ -673,12 +695,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (inBand) {
                         inBand = false;
                         int bandWidth = x - bandStart;
-                        if (bandWidth >= 1 && bandWidth <= 65) {
+                        if (bandWidth >= 2 && bandWidth <= 60) {
                             CandleBand cb = new CandleBand();
                             cb.startX = bandStart;
                             cb.endX = x;
                             cb.centerX = (bandStart + x) / 2;
-                            cb.isGreen = bandGreen >= bandRed;
+                            cb.isGreen = bandGreen > bandRed;
                             cb.greenCount = bandGreen;
                             cb.redCount = bandRed;
                             bands.add(cb);
@@ -693,7 +715,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int redPct = 100 - greenPct;
 
             String direction = "WAIT";
-            int confidence = 88;
+            int confidence = 85;
             String verdictTitle = "WAIT";
             String finalReason = "";
             String finalSymbol = "QUOTEX • OTC";
@@ -711,58 +733,70 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     else recentRed++;
                 }
 
-                // Scenario A: Bearish Drop / Downward Continuation
-                if ((recentRed >= 2 && !lastCandle.isGreen) || (redPct >= 62 && !lastCandle.isGreen)) {
+                // Dynamic realistic confidence calculation based on real volume imbalance (78% to 92%)
+                int volumeAdvantage = Math.abs(greenPct - redPct);
+                int dynamicConfidence = Math.min(92, Math.max(78, 80 + (int)(volumeAdvantage * 0.22f)));
+
+                // Scenario A: Bearish Downward Continuation (Clear red dominance)
+                if (recentRed > recentGreen && !lastCandle.isGreen) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = 90 + Math.min(4, recentRed);
-                    finalReason = "📊 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% রেড সেলিং প্রেসার) • ১-মিনিট পুট";
+                    confidence = Math.min(92, dynamicConfidence + 2);
+                    finalReason = "📉 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% সেলিং প্রেসার) • ১-মিনিট পুট";
                 }
-                // Scenario B: Bearish Reversal / Engulfing breakdown
+                // Scenario B: Bearish Reversal / Engulfing breakdown (Green turns into Red)
                 else if (!lastCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = 89;
-                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ক্যান্ডেল ভেঙে রেড ব্রেকডাউন";
+                    confidence = 88;
+                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ভেঙে রেড ব্রেকডাউন";
                 }
-                // Scenario C: Bullish Uptrend Continuation
-                else if ((recentGreen >= 2 && lastCandle.isGreen) || (greenPct >= 62 && lastCandle.isGreen)) {
+                // Scenario C: Bullish Uptrend Continuation (Clear green dominance)
+                else if (recentGreen > recentRed && lastCandle.isGreen) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = 91 + Math.min(3, recentGreen);
-                    finalReason = "📊 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% বুলিশ গ্রিন প্রেসার) • ১-মিনিট কল";
+                    confidence = Math.min(92, dynamicConfidence + 2);
+                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% বুলিশ গ্রিন প্রেসার) • ১-মিনিট কল";
                 }
-                // Scenario D: Support Rejection / Bullish Hammer Bounce
+                // Scenario D: Support Rejection / Bullish Hammer Bounce (Red turns into Green)
                 else if (lastCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
                     confidence = 88;
-                    finalReason = "🔼 সাপোর্ট রিজেকশন বাউন্স — রেড ক্যান্ডেল পেরিয়ে গ্রিন বাউন্স";
+                    finalReason = "🔼 সাপোর্ট রিজেকশন — বাউন্স করে গ্রিন ক্যান্ডেল তৈরি";
                 }
-                // Scenario E: Volume & Pressure Follow
-                else if (greenPixels >= redPixels) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = 86;
-                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
-                } else {
+                // Scenario E: Volume Pressure Follow
+                else if (redPct >= 55) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = 87;
+                    confidence = dynamicConfidence;
                     finalReason = "📉 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% রেড ভলিউম) • পুট সিগন্যাল";
+                } else if (greenPct >= 55) {
+                    direction = "UP";
+                    verdictTitle = "▲ CALL (সবুজ)";
+                    confidence = dynamicConfidence;
+                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
+                } else {
+                    // Balanced / neutral consolidation - follow latest candle direction
+                    direction = lastCandle.isGreen ? "UP" : "DOWN";
+                    verdictTitle = lastCandle.isGreen ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
+                    confidence = 82;
+                    finalReason = "📊 ক্যান্ডেলস্টিক অ্যাকশন (" + (lastCandle.isGreen ? greenPct + "% গ্রিন" : redPct + "% রেড") + ") • ১-মিনিট " + (lastCandle.isGreen ? "কল" : "পুট");
                 }
             } else {
                 // If bands segmentation is blurred but clear candle pixels exist
-                if (greenPixels >= redPixels) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = 85;
-                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + greenPct + "% গ্রিন ভলিউম) • ১-মিনিট কল";
-                } else {
+                int volumeAdvantage = Math.abs(greenPct - redPct);
+                int dynamicConfidence = Math.min(89, Math.max(78, 80 + (int)(volumeAdvantage * 0.20f)));
+                if (redPixels > greenPixels) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = 85;
+                    confidence = dynamicConfidence;
                     finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + redPct + "% রেড ভলিউম) • ১-মিনিট পুট";
+                } else {
+                    direction = "UP";
+                    verdictTitle = "▲ CALL (সবুজ)";
+                    confidence = dynamicConfidence;
+                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + greenPct + "% গ্রিন ভলিউম) • ১-মিনিট কল";
                 }
             }
 

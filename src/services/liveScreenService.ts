@@ -808,7 +808,8 @@ export class LiveScreenService {
         // Register overlay 1-click scan button and native analysis listeners
         try {
           TradePulseNativeScreen.addListener('onOverlayScanToggle', () => {
-            this.triggerScanAndLock();
+            this.aiState = 'ANALYZING';
+            this.notify();
           });
           TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
             this.hideFloatingOverlayHUD();
