@@ -83,6 +83,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private PluginCall pendingCaptureCall = null;
     private Runnable overlayCountdownRunnable = null;
     private int overlaySecondsRemaining = 0;
+    private final java.util.List<Runnable> pendingScanProgressRunnables = new java.util.ArrayList<>();
+
+    private void cancelPendingScanProgress() {
+        if (captureHandler != null) {
+            for (Runnable r : pendingScanProgressRunnables) {
+                captureHandler.removeCallbacks(r);
+            }
+        }
+        pendingScanProgressRunnables.clear();
+        isOneClickScanPending = false;
+    }
 
     // Floating overlay window state
     private WindowManager windowManager;
@@ -581,17 +592,34 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int g = (pixel >> 8) & 0xff;
                     int b = pixel & 0xff;
 
-                    // Quotex & broker green candle (#00b074, #10a152, #26a69a, #00e676)
-                    // High-precision green: must clearly dominate red and blue
-                    if (g >= 75 && g > (int)(r * 1.25f) && g > (int)(b * 1.10f)) {
-                        greenPixels++;
-                        colGreen[x]++;
-                    }
-                    // Quotex & broker red candle (#ef5350, #ea3943, #e95b4f, #f23645)
-                    // High-precision red: must clearly dominate green and blue
-                    else if (r >= 85 && r > (int)(g * 1.28f) && r > (int)(b * 1.15f)) {
-                        redPixels++;
-                        colRed[x]++;
+                    int max = Math.max(r, Math.max(g, b));
+                    int min = Math.min(r, Math.min(g, b));
+                    int delta = max - min;
+
+                    // Exclude near-grayscale background, grid lines, and text
+                    if (delta >= 18 && max >= 60) {
+                        float hue;
+                        if (max == r) {
+                            hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
+                        } else if (max == g) {
+                            hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
+                        } else {
+                            hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
+                        }
+                        float sat = (float) delta / (float) max;
+
+                        // Green Candlestick: Emerald, Neon, Teal (Quotex #26a69a is Hue ~174°, #00b074 is Hue ~160°, #00e676 is Hue ~151°)
+                        // Saturation >= 0.20, Max >= 60, Hue between 118° and 195°
+                        if (hue >= 118f && hue <= 195f && sat >= 0.20f) {
+                            greenPixels++;
+                            colGreen[x]++;
+                        }
+                        // Red Candlestick: Crimson, Ruby, Coral (#ef5350 is Hue ~1°, #ea3943 is Hue ~356°, #f23645 is Hue ~355°)
+                        // Saturation >= 0.22, Max >= 70, Hue >= 340° or <= 25°
+                        else if ((hue >= 340f || hue <= 25f) && sat >= 0.22f && max >= 70) {
+                            redPixels++;
+                            colRed[x]++;
+                        }
                     }
                 }
             }
@@ -1156,6 +1184,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                cancelPendingScanProgress();
                 stopOverlayCountdown();
                 if (overlayView != null && windowManager != null) {
                     try {
@@ -1337,14 +1366,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         final TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
         final TextView scanToggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
 
+        cancelPendingScanProgress();
         stopOverlayCountdown();
 
+        // Stage 1 (0ms): Initialize deep technical analysis
         if (dirView != null) {
             dirView.setTextColor(0xFF38BDF8);
-            dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
+            dirView.setText("🔍 ক্যানভাস স্ক্যানিং (১/৩)...");
         }
         if (detView != null) {
-            detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
+            detView.setText("১ম ধাপ: চার্ট ফ্রেম ও এস/আর লেভেল রিড হচ্ছে");
         }
         if (scanToggleBtn != null) {
             updateScanButtonVisual(scanToggleBtn, true, false);
@@ -1362,7 +1393,44 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         isOneClickScanPending = true;
 
         if (captureHandler != null) {
-            captureHandler.postDelayed(new Runnable() {
+            // Stage 2 (650ms): Candlestick & Momentum Analysis
+            Runnable stage2Runnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (!isOneClickScanPending || overlayView == null) return;
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("📊 মোমেন্টাম হিসাব (২/৩)...");
+                    }
+                    if (detView != null) {
+                        detView.setText("২য় ধাপ: গ্রিন বনাম রেড ক্যান্ডেল ভলিউম পরিমাপ");
+                    }
+                    isScanRequested = true;
+                }
+            };
+            pendingScanProgressRunnables.add(stage2Runnable);
+            captureHandler.postDelayed(stage2Runnable, 650);
+
+            // Stage 3 (1300ms): Price Action & Reversal Confirmation
+            Runnable stage3Runnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (!isOneClickScanPending || overlayView == null) return;
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("🎯 ট্রেন্ড কনফার্মেশন (৩/৩)...");
+                    }
+                    if (detView != null) {
+                        detView.setText("৩য় ধাপ: প্রাইস অ্যাকশন ও রিভার্সাল সিগন্যাল লক");
+                    }
+                    isScanRequested = true;
+                }
+            };
+            pendingScanProgressRunnables.add(stage3Runnable);
+            captureHandler.postDelayed(stage3Runnable, 1300);
+
+            // Stage 4 (1850ms): Final Deep Analysis & Execution
+            Runnable finalAnalysisRunnable = new Runnable() {
                 @Override
                 public void run() {
                     if (isOneClickScanPending) {
@@ -1386,7 +1454,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                     }
                 }
-            }, 350);
+            };
+            pendingScanProgressRunnables.add(finalAnalysisRunnable);
+            captureHandler.postDelayed(finalAnalysisRunnable, 1850);
         }
     }
 
