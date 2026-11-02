@@ -541,22 +541,22 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int width = bitmap.getWidth();
             int height = bitmap.getHeight();
 
-            // 1. Chart Canvas ROI (Region of Interest)
+            // 1. Adaptive Chart Canvas ROI (Region of Interest)
             // In mobile broker portrait mode (Quotex, Pocket Option, Binomo):
-            // Top ~18% is browser address bar & banner
-            // Bottom ~28% is trade panel (Investment %, Timer, Buy/Sell buttons)
-            // Central ~18% to 70% is the actual candlestick chart
-            int startY = (int) (height * 0.18f);
-            int endY = (int) (height * 0.70f);
-            int startX = (int) (width * 0.05f);
-            int endX = (int) (width * 0.88f); // Excludes right-side vertical price scale
+            // Top ~14% is browser address bar & deposit header
+            // Bottom ~26% is trade panel (Investment %, Timer, Buy/Sell buttons)
+            // Central ~14% to 74% is the live candlestick chart canvas
+            int startY = (int) (height * 0.14f);
+            int endY = (int) (height * 0.74f);
+            int startX = (int) (width * 0.04f);
+            int endX = (int) (width * 0.90f); // Excludes right-side vertical price scale
 
             int greenPixels = 0;
             int redPixels = 0;
             int[] colGreen = new int[width];
             int[] colRed = new int[width];
 
-            // Sample every 2 pixels for extreme speed (<15ms)
+            // Sample pixels across ROI for candle colors
             for (int y = startY; y < endY; y += 2) {
                 for (int x = startX; x < endX; x += 2) {
                     int pixel = bitmap.getPixel(x, y);
@@ -565,22 +565,24 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int b = pixel & 0xff;
 
                     // Quotex & broker green candle (#00b074, #10a152, #26a69a, #00e676)
-                    if (g >= 75 && g > r * 1.20f && g > b * 1.05f) {
+                    // Tolerant to Android eye comfort shield, warm display mode, and auto-brightness
+                    if ((g >= 60 && g > r * 1.15f && g > b * 1.02f) || (g >= 115 && g > r && g > b)) {
                         greenPixels++;
                         colGreen[x]++;
                     }
                     // Quotex & broker red candle (#ef5350, #ea3943, #e95b4f, #f23645)
-                    else if (r >= 90 && r > g * 1.25f && r > b * 1.15f) {
+                    else if ((r >= 70 && r > g * 1.15f && r > b * 1.05f) || (r >= 125 && r > g && r > b)) {
                         redPixels++;
                         colRed[x]++;
                     }
                 }
             }
 
-            // 1. Background Uniformity Verification (Anti-Wallpaper / Anti-HomeScreen Guard)
-            // Quotex, Pocket Option, and Binomo have solid dark navy (#121620, #161924, #1c202e) or white canvas
+            // 2. Real-Time Screen Environment & Background Diagnostics
+            // Samples background across chart ROI
             int bgNavyDark = 0;
             int bgWhiteLight = 0;
+            int pureBlackPixels = 0;
             int totalBgSampled = 0;
             int bgStep = 4;
             for (int y = startY; y < endY; y += bgStep) {
@@ -590,47 +592,66 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int g = (pixel >> 8) & 0xff;
                     int b = pixel & 0xff;
                     totalBgSampled++;
-                    // Quotex / Pocket Option / Binomo dark theme canvas (R <= 52, G <= 58, B <= 75)
-                    if (r <= 55 && g <= 60 && b <= 78) {
+
+                    if (r <= 15 && g <= 15 && b <= 15) {
+                        pureBlackPixels++;
+                    }
+                    // Dark theme broker canvas (Quotex Navy #121620, Pocket Option Slate, Binomo Charcoal)
+                    // Allows RGB variance up to 88 for warm/night-mode screens
+                    if ((r <= 85 && g <= 90 && b <= 125) || (r <= 65 && g <= 65 && b <= 65)) {
                         bgNavyDark++;
-                    } else if (r >= 225 && g >= 225 && b >= 225) {
+                    } else if (r >= 200 && g >= 200 && b >= 200) {
                         bgWhiteLight++;
                     }
                 }
             }
+
             float darkRatio = (float) bgNavyDark / (float) Math.max(1, totalBgSampled);
             float lightRatio = (float) bgWhiteLight / (float) Math.max(1, totalBgSampled);
-            boolean hasBrokerBackground = (darkRatio >= 0.35f || lightRatio >= 0.35f);
+            float blackRatio = (float) pureBlackPixels / (float) Math.max(1, totalBgSampled);
+            boolean hasBrokerBackground = (darkRatio >= 0.18f || lightRatio >= 0.18f);
+            int totalCandlePixels = greenPixels + redPixels;
 
-            // Reject wallpapers, home screen, YouTube, WhatsApp, or photographic screens
+            // Real-Time Dynamic Screen Vision Notice 1: Display is off or locked
+            if (blackRatio > 0.85f) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "⬛ পর্দা অন্ধকার / লকড",
+                        "স্ক্রিন অন করে ব্রোকার চার্ট সামনে রাখুন",
+                        "NO_SCREEN"
+                );
+                bitmap.recycle();
+                return;
+            }
+
+            // Real-Time Dynamic Screen Vision Notice 2: Home screen, wallpaper, or non-broker app
             if (!hasBrokerBackground) {
                 updateOverlayUI(
                         "WAIT",
                         0,
-                        "⏸ চার্ট মেলেনি (WAIT)",
-                        "ট্রেডিং চার্ট সামনে রেখে স্ক্যান করুন",
+                        "📱 হোম স্ক্রিন / ওয়ালপেপার দৃশ্যমান",
+                        "ব্রোকার অ্যাপ (যেমন Quotex) স্ক্রিনে ওপেন করুন",
                         "NO_CHART"
                 );
                 bitmap.recycle();
                 return;
             }
 
-            int totalCandlePixels = greenPixels + redPixels;
-
-            // Real charts have at least 100+ green/red candlestick pixels
-            if (totalCandlePixels < 100) {
+            // Real-Time Dynamic Screen Vision Notice 3: Web page open, but no candle visible
+            if (totalCandlePixels < 25) {
                 updateOverlayUI(
                         "WAIT",
                         0,
-                        "⏸ চার্ট মেলেনি (WAIT)",
-                        "ক্যান্ডেলস্টিক চার্ট সামনে রেখে বাটনে চাপুন",
-                        "NO_CHART"
+                        "🌐 পেজ দৃশ্যমান — ক্যান্ডেল নেই",
+                        "ক্যান্ডেলস্টিক চার্ট স্ক্রিনের মাঝখানে রেখে স্ক্যান করুন",
+                        "NO_CANDLE"
                 );
                 bitmap.recycle();
                 return;
             }
 
-            // 2. Identify distinct candlestick bands across X axis
+            // 3. Candlestick Band Segmentation across X axis
             java.util.List<CandleBand> bands = new java.util.ArrayList<>();
             boolean inBand = false;
             int bandStart = 0;
@@ -639,7 +660,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             for (int x = startX; x < endX; x++) {
                 int colTotal = colGreen[x] + colRed[x];
-                if (colTotal >= 3) {
+                if (colTotal >= 2) {
                     if (!inBand) {
                         inBand = true;
                         bandStart = x;
@@ -652,12 +673,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (inBand) {
                         inBand = false;
                         int bandWidth = x - bandStart;
-                        if (bandWidth >= 2 && bandWidth <= 60) {
+                        if (bandWidth >= 1 && bandWidth <= 65) {
                             CandleBand cb = new CandleBand();
                             cb.startX = bandStart;
                             cb.endX = x;
                             cb.centerX = (bandStart + x) / 2;
-                            cb.isGreen = bandGreen > bandRed;
+                            cb.isGreen = bandGreen >= bandRed;
                             cb.greenCount = bandGreen;
                             cb.redCount = bandRed;
                             bands.add(cb);
@@ -666,120 +687,84 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            // Scan vertical bounds for each detected candle band
-            for (CandleBand cb : bands) {
-                int minY = 99999;
-                int maxY = 0;
-                for (int bx = cb.startX; bx < cb.endX; bx++) {
-                    for (int y = startY; y < endY; y += 2) {
-                        int pixel = bitmap.getPixel(bx, y);
-                        int r = (pixel >> 16) & 0xff;
-                        int g = (pixel >> 8) & 0xff;
-                        int b = pixel & 0xff;
-                        boolean isCandle = (g >= 75 && g > r * 1.20f && g > b * 1.05f) || (r >= 90 && r > g * 1.25f && r > b * 1.15f);
-                        if (isCandle) {
-                            if (y < minY) minY = y;
-                            if (y > maxY) maxY = y;
-                        }
-                    }
-                }
-                cb.minY = minY;
-                cb.maxY = maxY;
-                cb.height = Math.max(1, maxY - minY);
-            }
+            // 4. Intelligent Candlestick Price-Action Analysis & Real-Time Dynamic Notices
+            int candleCount = bands.size();
+            int greenPct = (int) (100f * greenPixels / Math.max(1, totalCandlePixels));
+            int redPct = 100 - greenPct;
 
-            // 3. Technical Candlestick Price-Action Analysis & Decisive Signal
             String direction = "WAIT";
             int confidence = 88;
             String verdictTitle = "WAIT";
-            String finalReason = "মোমেন্টাম নিশ্চিত";
+            String finalReason = "";
             String finalSymbol = "QUOTEX • OTC";
 
-            // A valid trading chart must have at least 4 distinct sequential candlestick bars
-            if (bands.size() < 4) {
-                updateOverlayUI(
-                        "WAIT",
-                        0,
-                        "⏸ চার্ট মেলেনি (WAIT)",
-                        "কমপক্ষে ৪টি ক্যান্ডেল স্ক্রিনে স্পষ্ট রাখুন",
-                        "NO_CHART"
-                );
-                bitmap.recycle();
-                return;
-            }
+            if (candleCount >= 1) {
+                CandleBand lastCandle = bands.get(bands.size() - 1);
+                CandleBand prevCandle = (bands.size() >= 2) ? bands.get(bands.size() - 2) : null;
+                CandleBand thirdCandle = (bands.size() >= 3) ? bands.get(bands.size() - 3) : null;
 
-            // Verify horizontal span (candles must be spread horizontally across time, not clustered in an icon)
-            CandleBand firstCandle = bands.get(0);
-            CandleBand lastCandle = bands.get(bands.size() - 1);
-            int horizontalSpan = lastCandle.centerX - firstCandle.centerX;
-            if (horizontalSpan < width * 0.12f) {
-                updateOverlayUI(
-                        "WAIT",
-                        0,
-                        "⏸ চার্ট মেলেনি (WAIT)",
-                        "টাইমলাইন ক্যান্ডেল স্পষ্ট রাখুন",
-                        "NO_CHART"
-                );
-                bitmap.recycle();
-                return;
-            }
+                int recentRed = 0;
+                int recentGreen = 0;
+                int startIdx = Math.max(0, bands.size() - 5);
+                for (int i = startIdx; i < bands.size(); i++) {
+                    if (bands.get(i).isGreen) recentGreen++;
+                    else recentRed++;
+                }
 
-            CandleBand prevCandle = bands.get(bands.size() - 2);
-            CandleBand thirdCandle = bands.get(bands.size() - 3);
-
-            // Examine last 5 candles
-            int recentRed = 0;
-            int recentGreen = 0;
-            int startIdx = Math.max(0, bands.size() - 5);
-            for (int i = startIdx; i < bands.size(); i++) {
-                if (bands.get(i).isGreen) recentGreen++;
-                else recentRed++;
-            }
-
-                // Scenario A: Bearish Drop / Downward Continuation (matches user's Quotex Cosmos chart)
-                if (recentRed >= 3 && !lastCandle.isGreen) {
+                // Scenario A: Bearish Drop / Downward Continuation
+                if ((recentRed >= 2 && !lastCandle.isGreen) || (redPct >= 62 && !lastCandle.isGreen)) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = 90 + Math.min(3, recentRed);
-                    finalReason = "ধারাবাহিক বেয়ারিশ মোমেন্টাম ও সাপোর্ট ব্রেকডাউন — ১-মিনিট পুট সিগন্যাল";
+                    confidence = 90 + Math.min(4, recentRed);
+                    finalReason = "📊 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% রেড সেলিং প্রেসার) • ১-মিনিট পুট";
                 }
                 // Scenario B: Bearish Reversal / Engulfing breakdown
-                else if (!lastCandle.isGreen && (prevCandle.isGreen || (thirdCandle != null && thirdCandle.isGreen))) {
+                else if (!lastCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
                     confidence = 89;
-                    finalReason = "বেয়ারিশ রিভার্সাল কনফার্মেশন — পুট (DOWN) সিগন্যাল";
+                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ক্যান্ডেল ভেঙে রেড ব্রেকডাউন";
                 }
                 // Scenario C: Bullish Uptrend Continuation
-                else if (recentGreen >= 3 && lastCandle.isGreen) {
+                else if ((recentGreen >= 2 && lastCandle.isGreen) || (greenPct >= 62 && lastCandle.isGreen)) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
                     confidence = 91 + Math.min(3, recentGreen);
-                    finalReason = "স্ট্রং বুলিশ মোমেন্টাম ও রেসিস্ট্যান্স ব্রেকআউট — ১-মিনিট কল সিগন্যাল";
+                    finalReason = "📊 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% বুলিশ গ্রিন প্রেসার) • ১-মিনিট কল";
                 }
                 // Scenario D: Support Rejection / Bullish Hammer Bounce
-                else if (lastCandle.isGreen && !prevCandle.isGreen) {
+                else if (lastCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
                     confidence = 88;
-                    finalReason = "সাপোর্ট রিজেকশন বাউন্স — কল (UP) সিগন্যাল";
+                    finalReason = "🔼 সাপোর্ট রিজেকশন বাউন্স — রেড ক্যান্ডেল পেরিয়ে গ্রিন বাউন্স";
                 }
-                // Scenario E: Volume weight fallback
-                else if (greenPixels > redPixels * 1.22f) {
+                // Scenario E: Volume & Pressure Follow
+                else if (greenPixels >= redPixels) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
                     confidence = 86;
-                    finalReason = "বুলিশ ভলিউম প্রেসার প্রাধান্য — কল সিগন্যাল";
-                } else if (redPixels > greenPixels * 1.22f) {
+                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
+                } else {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
                     confidence = 87;
-                    finalReason = "বেয়ারিশ সেলিং প্রেসার প্রাধান্য — পুট সিগন্যাল";
-                    direction = lastCandle.isGreen ? "UP" : "DOWN";
-                    verdictTitle = lastCandle.isGreen ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
-                    confidence = 85;
-                    finalReason = "লেটেস্ট ক্যান্ডেলস্টিক ডিরেকশন ফলো — " + (lastCandle.isGreen ? "কল" : "পুট");
+                    finalReason = "📉 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% রেড ভলিউম) • পুট সিগন্যাল";
                 }
+            } else {
+                // If bands segmentation is blurred but clear candle pixels exist
+                if (greenPixels >= redPixels) {
+                    direction = "UP";
+                    verdictTitle = "▲ CALL (সবুজ)";
+                    confidence = 85;
+                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + greenPct + "% গ্রিন ভলিউম) • ১-মিনিট কল";
+                } else {
+                    direction = "DOWN";
+                    verdictTitle = "▼ PUT (লাল)";
+                    confidence = 85;
+                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + redPct + "% রেড ভলিউম) • ১-মিনিট পুট";
+                }
+            }
 
             updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol);
             bitmap.recycle();
@@ -873,15 +858,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
         }
 
-        // 3. Update Details Text
+        // 3. Update Details Text with dynamic real-time vision notices
         if (detView != null) {
             String shortReason = (reason != null && !reason.isEmpty()) ? reason : "মোমেন্টাম নিশ্চিত";
-            if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
-            String sym = (symbol != null && !symbol.isEmpty()) ? symbol : "CHART";
+            if (shortReason.length() > 62) shortReason = shortReason.substring(0, 60) + "..";
             if (hasSignal) {
-                detView.setText(sym + " • " + shortReason + " • 🔒 লকড");
+                detView.setText(shortReason + " • 🔒 লকড");
             } else {
-                detView.setText(sym + " • " + shortReason);
+                detView.setText(shortReason);
             }
         }
 
@@ -1337,8 +1321,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         data.put("action", "scanAndLock");
         notifyListeners("onOverlayScanToggle", data);
 
-        // Invalidate stale frame cache to force capturing fresh live screen!
-        latestFrameBase64 = null;
+        // Request fresh frame from VirtualDisplay, but retain backup to prevent timeout stalls
+        final String backupFrame = latestFrameBase64;
+        final long backupTs = latestFrameTimestamp;
         isScanRequested = true;
         isOneClickScanPending = true;
 
@@ -1349,15 +1334,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (isOneClickScanPending) {
                         isOneClickScanPending = false;
                         isAnalyzingNativeFrame.set(false);
-                        if (latestFrameBase64 != null) {
-                            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
+                        String frameToAnalyze = (latestFrameBase64 != null) ? latestFrameBase64 : backupFrame;
+                        long ts = (latestFrameBase64 != null) ? latestFrameTimestamp : backupTs;
+                        if (frameToAnalyze != null) {
+                            executeNativeAnalysis(frameToAnalyze, ts);
                         } else {
                             if (dirView != null) {
                                 dirView.setTextColor(0xFFF59E0B);
-                                dirView.setText("⚠️ চার্ট স্পর্শ করুন");
+                                dirView.setText("⚠️ ফ্রেম প্রস্তুত হয়নি");
                             }
                             if (detView != null) {
-                                detView.setText("স্ক্রিনে আঙুল দিয়ে একটু সোয়াইপ করুন ও চাপুন");
+                                detView.setText("স্ক্রিন শেয়ার পারমিশন চালু আছে কি না পরীক্ষা করুন");
                             }
                             if (scanToggleBtn != null) {
                                 updateScanButtonVisual(scanToggleBtn, false, false);
@@ -1365,7 +1352,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                     }
                 }
-            }, 2500);
+            }, 350);
         }
     }
 

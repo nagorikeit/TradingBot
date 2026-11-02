@@ -1191,9 +1191,11 @@ export class LiveScreenService {
             const domRGB_R = domR << 3;
             const domRGB_G = domG << 3;
             const domRGB_B = domB << 3;
-            const isBrokerDarkTheme = domRGB_R <= 68 && domRGB_G <= 72 && domRGB_B <= 88;
-            const isBrokerLightTheme = domRGB_R >= 220 && domRGB_G >= 220 && domRGB_B >= 220;
-            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.38;
+            // Robust dark theme broker canvas (Quotex Navy, Pocket Option Slate, Binomo Charcoal)
+            // Allows RGB tolerance up to 95/125 for Android eye comfort / night light shields
+            const isBrokerDarkTheme = (domRGB_R <= 90 && domRGB_G <= 95 && domRGB_B <= 125) || (domRGB_R <= 70 && domRGB_G <= 70 && domRGB_B <= 70);
+            const isBrokerLightTheme = domRGB_R >= 200 && domRGB_G >= 200 && domRGB_B >= 200;
+            const hasBrokerTheme = (isBrokerDarkTheme || isBrokerLightTheme) && bgUniformityRatio >= 0.18;
 
             // Blank screen rejection
             const blackRatio = pureBlackPixels / Math.max(1, totalSampled);
@@ -1208,8 +1210,8 @@ export class LiveScreenService {
                 hasBrokerBackground: false,
                 backgroundUniformityPercent: 99,
                 failureReason: blackRatio > 0.88
-                  ? 'কালো স্ক্রিন সনাক্ত: ডিসপ্লে সম্পূর্ণ অন্ধকার, চার্ট লোড হওয়ার অপেক্ষায়...'
-                  : 'সাদা স্ক্রিন সনাক্ত: ডিসপ্লে সম্পূর্ণ সাদা, চার্ট লোড হওয়ার অপেক্ষায়...',
+                  ? '⬛ পর্দা অন্ধকার / লকড: ডিসপ্লে সম্পূর্ণ অন্ধকার, চার্ট দৃশ্যমান নয়।'
+                  : '⬜ সাদা স্ক্রিন সনাক্ত: ডিসপ্লে সম্পূর্ণ সাদা, চার্ট লোড হওয়ার অপেক্ষায়...',
                 recommendedAction: 'ব্রোকার অ্যাপে ক্যান্ডেলস্টিক চার্টটি সঠিকভাবে ওপেন রাখুন।',
               };
               return resolve({
@@ -1217,7 +1219,7 @@ export class LiveScreenService {
                 dir: 'WAIT',
                 confidence: 0,
                 symbol: 'BLANK_SCREEN',
-                pattern: 'চার্ট মেলেনি (WAIT)',
+                pattern: '⬛ পর্দা অন্ধকার / লকড',
                 reason: [diag.failureReason!, 'কোনো ক্যান্ডেল বা প্রাইস অ্যাকশন দৃশ্যমান নেই।'],
                 diagnostic: diag,
               });
@@ -1413,19 +1415,15 @@ export class LiveScreenService {
             const req1_ChartFrame = Boolean(
               !isTradePulseScreen &&
               hasBrokerTheme &&
-              bgUniformityRatio >= 0.38 &&
-              totalCandlePixels <= totalExamined * 0.35
+              bgUniformityRatio >= 0.18 &&
+              totalCandlePixels <= totalExamined * 0.45
             );
 
-            const req2_CandleColor = totalCandlePixels >= 50 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
+            const req2_CandleColor = totalCandlePixels >= 25 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
 
-            const req3_VerticalAndWicks = distinctCandleBars >= 3;
+            const req3_VerticalAndWicks = distinctCandleBars >= 1 || totalCandlePixels >= 35;
 
-            const req4_TimelineSeries =
-              distinctCandleBars >= 3 &&
-              !isTextRow &&
-              horizontalSpan >= targetWidth * 0.14 &&
-              (topSpread >= 6 || bottomSpread >= 6 || verticalDispersion >= 8);
+            const req4_TimelineSeries = !isTextRow;
 
             const isCandlestickChart =
               !isTradePulseScreen &&
@@ -1446,38 +1444,39 @@ export class LiveScreenService {
               backgroundUniformityPercent,
             };
 
-            // If verification failed, explain precisely WHICH of the 4 requirements failed
+            // If verification failed, explain precisely WHICH of the requirements failed
             if (!isCandlestickChart) {
               const failureReasons: string[] = [];
+              let patternTitle = '⏸ চার্ট মেলেনি (WAIT)';
               if (isTradePulseScreen) {
-                failureReasons.push('⚠️ ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে Quotex, Binomo বা Pocket Option ব্রোকার চার্ট খুলুন।');
+                patternTitle = '📱 ট্রেডপাল্স অ্যাপ দৃশ্যমান';
+                failureReasons.push('ট্রেডপাল্স নিজস্ব ইন্টারফেস: অ্যাপটি মিনিমাইজ করে Quotex, Binomo বা Pocket Option ব্রোকার চার্ট খুলুন।');
               } else if (!req1_ChartFrame) {
-                failureReasons.push(`রিকোয়ারমেন্ট ১ মেলেনি (চার্ট ফ্রেম অনুপস্থিত): ক্যানভাস সমসত্ত্ব নয় (${backgroundUniformityPercent}%)। ওয়ালপেপার, ঘরের ছবি বা নন-ট্রেডিং অ্যাপ বাতিল।`);
+                patternTitle = '📱 হোম স্ক্রিন / ওয়ালপেপার দৃশ্যমান';
+                failureReasons.push(`ব্রোকার চার্ট ব্যাকগ্রাউন্ড মেলেনি (${backgroundUniformityPercent}%)। ওয়ালপেপার বা অন্য অ্যাপের পরিবর্তে ব্রোকার চার্ট ওপেন করুন।`);
               } else if (!req2_CandleColor) {
-                failureReasons.push('রিকোয়ারমেন্ট ২ মেলেনি (ক্যান্ডেল কালার অনুপস্থিত): স্ক্রিনে কোনো প্রমাণ্য বুলিশ গ্রিন বা বিয়ারিশ রেড ক্যান্ডেল মেলেনি।');
+                patternTitle = '🌐 পেজ দৃশ্যমান — ক্যান্ডেল নেই';
+                failureReasons.push('স্ক্রিনে কোনো প্রমাণ্য বুলিশ গ্রিন বা বিয়ারিশ রেড ক্যান্ডেল মেলেনি। ক্যান্ডেলস্টিক চার্ট স্ক্রিনে আনুন।');
               } else if (!req3_VerticalAndWicks) {
-                failureReasons.push(`রিকোয়ারমেন্ট ৩ মেলেনি (লম্বালম্বি ক্যান্ডেল অনুপস্থিত): কমপক্ষে ৩টি স্পষ্ট উল্লম্ব ক্যান্ডেল প্রয়োজন (পাওয়া গেছে: ${distinctCandleBars}টি)।`);
-              } else if (!req4_TimelineSeries) {
-                failureReasons.push(isTextRow
-                  ? 'রিকোয়ারমেন্ট ৪ মেলেনি: স্ক্রিনে টেক্সট বা বাটন রো সনাক্ত হয়েছে (ক্যান্ডেলস্টিক চার্টের প্রাকৃতিক প্রাইস ওঠানামা অনুপস্থিত)।'
-                  : `রিকোয়ারমেন্ট ৪ মেলেনি (টাইমলাইন সিরিজ অনুপস্থিত): টাইমলাইনে ক্রমানুসারে সাজানো ক্যান্ডেল পাওয়া যায়নি (বার: ${distinctCandleBars}, টাইম বিস্তার: ${horizontalSpanPercent}%)।`);
+                patternTitle = '🔍 ক্যান্ডেল অস্পষ্ট';
+                failureReasons.push(`স্ক্রিনে পর্যাপ্ত ক্যান্ডেল পাওয়া যায়নি। চার্ট একটু জুম করুন।`);
               } else {
-                failureReasons.push('চার্ট শনাক্তকরণের ৪টি রিকোয়ারমেন্টের সবগুলো পূরণ হয়নি (WAIT)।');
+                patternTitle = '⏸ চার্ট মেলেনি (WAIT)';
+                failureReasons.push('ট্রেডিং ক্যান্ডেলস্টিক চার্ট স্ক্রিনে রেখে পুনরায় স্ক্যান করুন।');
               }
 
               diagnostic.failureReason = failureReasons[0];
-              diagnostic.recommendedAction = 'Quotex, Binomo বা Pocket Option ব্রোকার অ্যাপটি ফুলস্ক্রিনে নিয়ে আসুন।';
+              diagnostic.recommendedAction = 'Quotex, Binomo বা Pocket Option ব্রোকার চার্টটি স্ক্রিনে রাখুন।';
 
               return resolve({
                 isChart: false,
                 dir: 'WAIT',
                 confidence: 0,
-                symbol: isTradePulseScreen ? 'TRADEPULSE_APP' : 'UNKNOWN',
-                pattern: 'চার্ট মেলেনি (WAIT)',
+                symbol: isTradePulseScreen ? 'TRADEPULSE_APP' : 'NO_CHART',
+                pattern: patternTitle,
                 reason: [
                   failureReasons[0],
-                  'চার্ট নিশ্চিত না হওয়া পর্যন্ত এআই কোনো অনুমানভিত্তিক UP/DOWN সিগন্যাল প্রদান করে না (WAIT সংরক্ষিত)।',
-                  'ফ্লোটিং HUD-তে নজর রাখুন।',
+                  'ফ্লোটিং বাবুলের রিয়েল-টাইম নোটিশে নজর রাখুন।',
                 ],
                 diagnostic,
               });
