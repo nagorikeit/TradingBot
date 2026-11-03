@@ -83,6 +83,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private PluginCall pendingCaptureCall = null;
     private Runnable overlayCountdownRunnable = null;
     private int overlaySecondsRemaining = 0;
+    private volatile boolean isPreparationPhase = false;
     private final java.util.List<Runnable> pendingScanProgressRunnables = new java.util.ArrayList<>();
 
     private void cancelPendingScanProgress() {
@@ -984,16 +985,23 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private void startOverlayCountdown(final String badgeText, final int confidence, final String symbol, final String reason) {
         stopOverlayCountdown();
         
-        // Synchronize with the live trading candle clock!
-        // In 1-minute (M1) trading charts, candles expire exactly at the :00 second mark of each minute.
-        // If current second is 47s, remaining candle time is 13s. If < 4s remaining, count down next full candle (60s).
+        // Two-Phase Trading Clock:
+        // Phase 1 (Preparation): If scanned mid-candle (e.g. at 45s), count down remaining 15s to candle close so user prepares entry!
+        // Phase 2 (Active Trade): When candle closes (:00), count down the FULL 1-MINUTE (60s) TRADE duration until trade expires!
         java.util.Calendar cal = java.util.Calendar.getInstance();
         int sec = cal.get(java.util.Calendar.SECOND);
-        int remainingInCandle = 60 - sec;
-        if (remainingInCandle < 4) {
-            remainingInCandle += 60;
+        int remainingInCurrentCandle = 60 - sec;
+
+        if (sec <= 8) {
+            // Candle just opened within last 8 seconds: start active 1-minute trade immediately!
+            isPreparationPhase = false;
+            overlaySecondsRemaining = remainingInCurrentCandle;
+        } else {
+            // Mid-candle: Phase 1 is waiting for the new candle to open!
+            isPreparationPhase = true;
+            overlaySecondsRemaining = remainingInCurrentCandle;
         }
-        overlaySecondsRemaining = remainingInCandle;
+
         overlayCountdownRunnable = new Runnable() {
             @Override
             public void run() {
@@ -1006,22 +1014,62 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int mins = overlaySecondsRemaining / 60;
                     int secs = overlaySecondsRemaining % 60;
                     String timeStr = String.format(Locale.US, "%02d:%02d", mins, secs);
-                    if (dirView != null) {
-                        dirView.setText(badgeText + "  " + confidence + "%  ⏱ " + timeStr);
+
+                    if (isPreparationPhase) {
+                        if (dirView != null) {
+                            dirView.setText(badgeText + "  " + confidence + "%  ⏳ এন্ট্রি: " + timeStr);
+                        }
+                        if (detView != null) {
+                            detView.setText("রানিং ক্যান্ডেল শেষ হলে " + timeStr + " পর নতুন ক্যান্ডেলে ট্রেড নিন");
+                        }
+                        // Audio warning 2 seconds before new candle
+                        if (overlaySecondsRemaining == 2 && isTtsInitialized && textToSpeech != null) {
+                            textToSpeech.speak("প্রস্তুত হোন, এখনই ট্রেড নিন", TextToSpeech.QUEUE_FLUSH, null, "TP_READY_" + System.currentTimeMillis());
+                        }
+                    } else {
+                        if (dirView != null) {
+                            dirView.setText(badgeText + "  " + confidence + "%  ⏱ ট্রেড: " + timeStr);
+                        }
+                        if (detView != null) {
+                            detView.setText(symbol + " • ১-মিনিট ট্রেড চলমান • এক্সপায়ারি অপেক্ষা");
+                        }
                     }
+
                     if (captureHandler != null) {
                         captureHandler.postDelayed(this, 1000);
                     }
                 } else {
-                    if (dirView != null) {
-                        dirView.setText(badgeText + "  " + confidence + "%  ⏱ সমাপ্ত");
-                    }
-                    if (detView != null) {
-                        detView.setText(symbol + " • এক্সপায়ারি শেষ • নতুন সিগন্যালে ট্যাপ করুন");
-                    }
-                    TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
-                    if (toggleBtn != null) {
-                        updateScanButtonVisual(toggleBtn, false, false);
+                    // Counter reached zero:
+                    if (isPreparationPhase) {
+                        // TRANSITION FROM PREPARATION TO ACTIVE 1-MINUTE TRADE!
+                        isPreparationPhase = false;
+                        overlaySecondsRemaining = 60; // Start full 60s trade countdown!
+
+                        if (dirView != null) {
+                            dirView.setText(badgeText + "  " + confidence + "%  🚀 এখনই ট্রেড নিন!");
+                        }
+                        if (detView != null) {
+                            detView.setText("১-মিনিট ট্রেড ওপেন করুন • এক্সপায়ারি ৬০ সেকেন্ড");
+                        }
+                        if (isTtsInitialized && textToSpeech != null) {
+                            textToSpeech.speak("এখনই ট্রেড ওপেন করুন", TextToSpeech.QUEUE_FLUSH, null, "TP_GO_" + System.currentTimeMillis());
+                        }
+
+                        if (captureHandler != null) {
+                            captureHandler.postDelayed(this, 1000);
+                        }
+                    } else {
+                        // Active 1-minute trade is officially complete!
+                        if (dirView != null) {
+                            dirView.setText(badgeText + "  " + confidence + "%  ✅ সমাপ্ত");
+                        }
+                        if (detView != null) {
+                            detView.setText(symbol + " • ১-মিনিট ট্রেড শেষ • নতুন সিগন্যালে ট্যাপ করুন");
+                        }
+                        TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+                        if (toggleBtn != null) {
+                            updateScanButtonVisual(toggleBtn, false, false);
+                        }
                     }
                 }
             }
