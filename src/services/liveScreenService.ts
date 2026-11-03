@@ -882,20 +882,23 @@ export class LiveScreenService {
       clearInterval(this.countdownTimer);
     }
 
-    // Default candle countdown duration: 60 seconds
-    this.expirySecondsLeft = 60;
+    // Synchronize countdown with live M1 trading candle clock
+    const currentSec = new Date().getSeconds();
+    let remaining = 60 - currentSec;
+    if (remaining < 4) remaining += 60;
+    this.expirySecondsLeft = remaining;
 
     this.countdownTimer = setInterval(() => {
       if (this.state !== 'STREAMING' || !this.isChartFound) return;
 
       this.expirySecondsLeft -= 1;
 
-      // Update overlay HUD countdown every second
+      // Update overlay HUD countdown every second (only for web/browser, native manages its own view directly)
       const countdownStr = `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(
         this.expirySecondsLeft % 60
       ).padStart(2, '0')}`;
 
-      if (this.latestResult) {
+      if (this.latestResult && (!Capacitor.isNativePlatform() || !this.isNativeCaptureActive)) {
         this.updateFloatingOverlayHUD({
           direction: this.latestResult.direction,
           confidence: this.latestResult.confidence,

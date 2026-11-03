@@ -608,15 +608,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                         float sat = (float) delta / (float) max;
 
-                        // Green Candlestick: Emerald, Neon, Teal (Quotex #26a69a is Hue ~174°, #00b074 is Hue ~160°, #00e676 is Hue ~151°)
-                        // Saturation >= 0.20, Max >= 60, Hue between 118° and 195°
-                        if (hue >= 118f && hue <= 195f && sat >= 0.20f) {
+                        // Green Candlestick: Emerald, Neon, Teal (Quotex #26a69a Hue ~174°, #00b074 Hue ~160°, #00e676 Hue ~151°, #089981 Hue ~170°)
+                        // Strict Candlestick boundaries: G strictly dominates R by >= 25, G >= B - 5, Hue strictly 135° to 178°
+                        // Excludes non-candlestick Cyan / Sky-Blue price lines and indicators where Hue > 178° (B > G)
+                        if (g >= 70 && g >= r + 25 && g >= b - 5 && hue >= 135f && hue <= 178f && sat >= 0.22f) {
                             greenPixels++;
                             colGreen[x]++;
                         }
-                        // Red Candlestick: Crimson, Ruby, Coral (#ef5350 is Hue ~1°, #ea3943 is Hue ~356°, #f23645 is Hue ~355°)
-                        // Saturation >= 0.22, Max >= 70, Hue >= 340° or <= 25°
-                        else if ((hue >= 340f || hue <= 25f) && sat >= 0.22f && max >= 70) {
+                        // Red Candlestick: Crimson, Ruby, Coral (#ef5350 Hue ~1°, #ea3943 Hue ~356°, #f23645 Hue ~355°)
+                        // Strict Candlestick boundaries: R strictly dominates G by >= 35, R >= B + 35, Hue in red zone
+                        else if (r >= 75 && r >= g + 35 && r >= b + 35 && (hue >= 342f || hue <= 18f) && sat >= 0.22f) {
                             redPixels++;
                             colRed[x]++;
                         }
@@ -755,61 +756,72 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
                 int recentRed = 0;
                 int recentGreen = 0;
+                int recentGreenVol = 0;
+                int recentRedVol = 0;
                 int startIdx = Math.max(0, bands.size() - 5);
                 for (int i = startIdx; i < bands.size(); i++) {
-                    if (bands.get(i).isGreen) recentGreen++;
-                    else recentRed++;
+                    CandleBand cb = bands.get(i);
+                    if (cb.isGreen) {
+                        recentGreen++;
+                        recentGreenVol += cb.greenCount;
+                    } else {
+                        recentRed++;
+                        recentRedVol += cb.redCount;
+                    }
                 }
+                int recentTotalVol = recentGreenVol + recentRedVol;
+                int recentGreenVolPct = (int) (100f * recentGreenVol / Math.max(1, recentTotalVol));
+                int recentRedVolPct = 100 - recentGreenVolPct;
 
-                // Dynamic realistic confidence calculation based on real volume imbalance (78% to 92%)
-                int volumeAdvantage = Math.abs(greenPct - redPct);
-                int dynamicConfidence = Math.min(92, Math.max(78, 80 + (int)(volumeAdvantage * 0.22f)));
+                // Dynamic realistic confidence calculation based on recent candle volume imbalance (80% to 92%)
+                int volumeAdvantage = Math.abs(recentGreenVolPct - recentRedVolPct);
+                int dynamicConfidence = Math.min(92, Math.max(80, 81 + (int)(volumeAdvantage * 0.22f)));
 
-                // Scenario A: Bearish Downward Continuation (Clear red dominance)
-                if (recentRed > recentGreen && !lastCandle.isGreen) {
+                // Scenario 1: Resistance Reversal / Bearish Engulfing (Green turns to Red at top)
+                if (!lastCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
-                    confidence = Math.min(92, dynamicConfidence + 2);
-                    finalReason = "📉 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% সেলিং প্রেসার) • ১-মিনিট পুট";
+                    confidence = Math.min(91, dynamicConfidence + 2);
+                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ভেঙে স্ট্রং রেড ক্যান্ডেল";
                 }
-                // Scenario B: Bearish Reversal / Engulfing breakdown (Green turns into Red)
-                else if (!lastCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = 88;
-                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ভেঙে রেড ব্রেকডাউন";
-                }
-                // Scenario C: Bullish Uptrend Continuation (Clear green dominance)
-                else if (recentGreen > recentRed && lastCandle.isGreen) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = Math.min(92, dynamicConfidence + 2);
-                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% বুলিশ গ্রিন প্রেসার) • ১-মিনিট কল";
-                }
-                // Scenario D: Support Rejection / Bullish Hammer Bounce (Red turns into Green)
+                // Scenario 2: Support Bounce / Bullish Hammer Bounce (Red turns to Green at bottom)
                 else if (lastCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = 88;
-                    finalReason = "🔼 সাপোর্ট রিজেকশন — বাউন্স করে গ্রিন ক্যান্ডেল তৈরি";
+                    confidence = Math.min(91, dynamicConfidence + 2);
+                    finalReason = "🔼 সাপোর্ট বাউন্স — রেড ভেঙে স্ট্রং গ্রিন রিজেকশন";
                 }
-                // Scenario E: Volume Pressure Follow
-                else if (redPct >= 55) {
+                // Scenario 3: Bearish Momentum Continuation (Recent Red dominance)
+                else if (!lastCandle.isGreen && recentRed >= recentGreen) {
                     direction = "DOWN";
                     verdictTitle = "▼ PUT (লাল)";
                     confidence = dynamicConfidence;
-                    finalReason = "📉 " + candleCount + "টি ক্যান্ডেল (" + redPct + "% রেড ভলিউম) • পুট সিগন্যাল";
-                } else if (greenPct >= 55) {
+                    finalReason = "📉 বিয়ারিশ মোমেন্টাম (" + recentRedVolPct + "% সেলিং ভলিউম) • ১-মিনিট পুট";
+                }
+                // Scenario 4: Bullish Momentum Continuation (Recent Green dominance)
+                else if (lastCandle.isGreen && recentGreen >= recentRed) {
                     direction = "UP";
                     verdictTitle = "▲ CALL (সবুজ)";
                     confidence = dynamicConfidence;
-                    finalReason = "📈 " + candleCount + "টি ক্যান্ডেল (" + greenPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
+                    finalReason = "📈 বুলিশ মোমেন্টাম (" + recentGreenVolPct + "% বায়িং ভলিউম) • ১-মিনিট কল";
+                }
+                // Scenario 5: Recent volume pressure follow
+                else if (recentRedVolPct >= 55) {
+                    direction = "DOWN";
+                    verdictTitle = "▼ PUT (লাল)";
+                    confidence = dynamicConfidence;
+                    finalReason = "📉 সাম্প্রতিক সেলার্স চাপ (" + recentRedVolPct + "% রেড ভলিউম) • পুট সিগন্যাল";
+                } else if (recentGreenVolPct >= 55) {
+                    direction = "UP";
+                    verdictTitle = "▲ CALL (সবুজ)";
+                    confidence = dynamicConfidence;
+                    finalReason = "📈 সাম্প্রতিক বায়ার্স চাপ (" + recentGreenVolPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
                 } else {
-                    // Balanced / neutral consolidation - follow latest candle direction
+                    // Indecisive / consolidating - follow latest candle direction
                     direction = lastCandle.isGreen ? "UP" : "DOWN";
                     verdictTitle = lastCandle.isGreen ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
                     confidence = 82;
-                    finalReason = "📊 ক্যান্ডেলস্টিক অ্যাকশন (" + (lastCandle.isGreen ? greenPct + "% গ্রিন" : redPct + "% রেড") + ") • ১-মিনিট " + (lastCandle.isGreen ? "কল" : "পুট");
+                    finalReason = "📊 রানিং ক্যান্ডেল অ্যাকশন (" + (lastCandle.isGreen ? recentGreenVolPct + "% বায়ার্স" : recentRedVolPct + "% সেলার্স") + ") • " + (lastCandle.isGreen ? "কল" : "পুট");
                 }
             } else {
                 // If bands segmentation is blurred but clear candle pixels exist
@@ -1524,10 +1536,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
                 dirView.setTextColor(strokeColor);
 
-                // Include Live Candle Expiry Timer (durationText) right next to direction & confidence!
-                String timerBadge = (durationText != null && !durationText.equals("--:--") && !durationText.trim().isEmpty())
-                        ? "  ⏱ " + durationText
-                        : "";
+                // Include Live Candle Expiry Timer: prioritize active synchronized native clock!
+                String timerBadge = "";
+                if (overlaySecondsRemaining > 0) {
+                    int mins = overlaySecondsRemaining / 60;
+                    int secs = overlaySecondsRemaining % 60;
+                    timerBadge = String.format(Locale.US, "  ⏱ %02d:%02d", mins, secs);
+                } else if (durationText != null && !durationText.equals("--:--") && !durationText.trim().isEmpty()) {
+                    timerBadge = "  ⏱ " + durationText;
+                }
                 dirView.setText(badgeText + "  " + confidence + "%" + timerBadge);
 
                 String shortReason = (reasonText != null && !reasonText.isEmpty()) ? reasonText : "মোমেন্টাম নিশ্চিত";
