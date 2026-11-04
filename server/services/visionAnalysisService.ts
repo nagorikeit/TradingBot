@@ -160,13 +160,15 @@ YOUR CORE DUTIES:
    RULE 4 - HEALTHY TREND CONTINUATION:
    - Clean solid body with minimal opposing wicks (1st or 2nd candle of an EMA cross or support bounce) -> Next candle follows trend direction.
    
-   RULE 5 - DECISIVE DIRECTION ON EVERY VALID CHART (AVOID UNNECESSARY 'WAIT'):
-   - Every single candle in binary options must close either GREEN (CALL) or RED (PUT).
-   - You MUST pick whether CALL (Green) or PUT (Red) has the higher statistical probability for the upcoming candle.
-   - Do NOT output 'WAIT' simply because of a small candle or minor consolidation. Choose the side that has the price action or momentum advantage:
-     * If buyers are defending, price is bouncing, or upward slope -> PREDICT "CALL".
-     * If sellers are pressing, price is rejecting, or downward slope -> PREDICT "PUT".
-     * Only set "WAIT" if the screen is literally NOT a trading chart (e.g. desktop, browser, video player).
+   RULE 5 - 5-STEP INSTITUTIONAL SIGNAL FLOW & QUALITY FILTER:
+   To prevent 50% loss rates caused by choppy sideways consolidation or false signals, strictly enforce this 5-step institutional flow:
+   - Step 1 (Chart Verification): Verify the chart asset, 1M timeframe, and clean candlestick data.
+   - Step 2 (Candle Data Collection): Measure body vs wick ratio. If upper wick >= 40%, sellers rejected; if lower wick >= 40%, buyers defended.
+   - Step 3 (Multi-Timeframe Trend Confluence): Confirm trend direction across visible macro slope (15m equivalent) and secondary slope (5m equivalent).
+   - Step 4 (Market Condition Filter): If the chart is in SIDEWAYS consolidation (alternating green-red candles, dojis, tight range) or abnormal volatility spikes, DO NOT FORCE TRADES! Set "predictedNextCandle": "WAIT", "tradeQualityTier": "HIGH_RISK_DOJI", "chartStructure": "RANGING", and explain why in reasoning.
+   - Step 5 (Signal Scoring Threshold): Combine Price Action (0-5) + Indicators/Momentum (0-3) + Trend Confluence (0-2).
+     * If Total Score >= 7.5: Issue high-confidence "CALL" or "PUT" with "HIGH_PROBABILITY".
+     * If Total Score < 7.5 or market is choppy/unclear: Set "predictedNextCandle": "WAIT", "tradeQualityTier": "MODERATE" or "HIGH_RISK_DOJI".
 
 6. SAFETY & PRIVACY:
    - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
@@ -179,7 +181,7 @@ YOUR CORE DUTIES:
         try {
           const userPromptText = customPrompt
             ? `Analyze this screen frame. The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
-            : 'Analyze this live screen frame. If it is a trading chart, apply professional price action rules (wicks, exhaustion, engulfing, S/R) to decisively forecast whether the NEXT candle will close CALL (Green) or PUT (Red). Do NOT default to WAIT on trading charts.';
+            : 'Analyze this live screen frame using the 5-step institutional signal flow. If it is a trading chart, verify chart, measure candle OHLC & wicks, align trend, filter out sideways chop or news spikes with WAIT, and score setup (>= 7.5 score required for CALL/PUT, otherwise WAIT).';
 
           response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',
@@ -242,7 +244,7 @@ YOUR CORE DUTIES:
                   },
                   predictedNextCandle: {
                     type: Type.STRING,
-                    description: 'CALL or PUT - Must be CALL (Green) or PUT (Red) for the next candle on a trading chart',
+                    description: 'CALL, PUT, or WAIT - Must be CALL (Green) or PUT (Red) only if setup score >= 7.5; otherwise WAIT if sideways or unclear',
                   },
                   nextCandlePredictionReasonBn: {
                     type: Type.STRING,

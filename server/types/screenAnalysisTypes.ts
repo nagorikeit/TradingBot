@@ -35,6 +35,51 @@ export interface ScreenVisionParsedData {
   confidenceScore: number; // 0.0 - 1.0
   isClearTradingChart: boolean;
   containsSensitivePrivateData: boolean; // Flag if user balance or account ID detected
+  signalFlow?: InstitutionalSignalFlow;
+}
+
+export interface InstitutionalSignalFlow {
+  chartVerification: {
+    isChartValid: boolean;
+    detectedAsset: string;
+    detectedTimeframe: string;
+    candleBarsCount: number;
+    notes: string;
+  };
+  candleData: {
+    candleCount: number;
+    closedCandle: {
+      type: 'BULLISH' | 'BEARISH' | 'DOJI';
+      bodySizePx: number;
+      upperWickPx: number;
+      lowerWickPx: number;
+      isRejection: boolean;
+    };
+    runningCandle: {
+      isForming: boolean;
+      intraBarBias: 'BUYING' | 'SELLING' | 'NEUTRAL';
+    };
+    candleTimerSecondsLeft: number;
+  };
+  multiTimeframe: {
+    macroTrend15m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    secondaryTrend5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    microTrend1m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    confluenceStatus: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL';
+  };
+  marketFilter: {
+    regime: 'TRENDING' | 'SIDEWAYS' | 'HIGH_VOLATILITY_SPIKE' | 'DOJI_CHOPPY';
+    passed: boolean;
+    blockReason?: string;
+  };
+  signalScoring: {
+    priceActionScore: number;
+    indicatorMomentumScore: number;
+    trendAlignmentScore: number;
+    totalScore: number;
+    thresholdRequired: number;
+    finalVerdict: 'CALL' | 'PUT' | 'WAIT';
+  };
 }
 
 export interface MarketVerificationResult {
@@ -63,6 +108,7 @@ export interface ScreenAnalysisFinalResult {
     ruleDirection?: string;
     concordance: 'AGREES' | 'CONFLICTS' | 'NO_RULE_DATA';
   };
+  signalFlow?: InstitutionalSignalFlow;
   safetyDisclaimer: string;
 
   // Universal Screen Recognition & Switch Tracking
@@ -73,4 +119,5 @@ export interface ScreenAnalysisFinalResult {
     switchedAt: number;
   };
 }
+
 

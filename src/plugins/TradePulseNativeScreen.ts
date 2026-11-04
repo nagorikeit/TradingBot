@@ -22,6 +22,11 @@ export interface FloatingOverlayData {
   aiState?: 'IDLE' | 'ANALYZING' | 'READY' | 'ERROR' | 'TIMEOUT';
   errorReason?: string;
   isScanning?: boolean;
+  scanStep?: {
+    step: number;
+    title: string;
+    subtitle: string;
+  };
 }
 
 export interface NativeCaptureFrameEvent {
@@ -129,6 +134,21 @@ export interface TradePulseNativeScreenPlugin {
   addListener(
     eventName: 'onNativeAnalysisComplete',
     listenerFunc: (result: any) => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
+   * Subscribes to auto-verified trade outcome resolution event
+   */
+  addListener(
+    eventName: 'onTradeOutcomeResolved',
+    listenerFunc: (result: {
+      signalId: string;
+      direction: string;
+      symbol: string;
+      result: 'WIN' | 'LOSS';
+      isCandleGreen: boolean;
+      timestamp: number;
+    }) => void
   ): Promise<{ remove: () => void }>;
 
   /**

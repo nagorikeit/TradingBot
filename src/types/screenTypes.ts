@@ -67,6 +67,58 @@ export interface ScreenAnalysisFinalResult {
     currentScreen: string;
     switchedAt: number;
   };
+  // Institutional 5-Step Signal Flow Breakdown
+  signalFlow?: InstitutionalSignalFlow;
+}
+
+export interface InstitutionalSignalFlow {
+  // ১. Chart Verification
+  chartVerification: {
+    isChartValid: boolean;
+    detectedAsset: string;
+    detectedTimeframe: string;
+    candleBarsCount: number;
+    payoutRate?: string;
+    notes: string;
+  };
+  // ২. Candle Data Collection
+  candleData: {
+    candleCount: number;
+    closedCandle: {
+      type: 'BULLISH' | 'BEARISH' | 'DOJI';
+      bodySizePx: number;
+      upperWickPx: number;
+      lowerWickPx: number;
+      isRejection: boolean;
+    };
+    runningCandle: {
+      isForming: boolean;
+      intraBarBias: 'BUYING' | 'SELLING' | 'NEUTRAL';
+    };
+    candleTimerSecondsLeft: number;
+  };
+  // ৩. Multi-Timeframe Analysis
+  multiTimeframe: {
+    macroTrend15m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    secondaryTrend5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    microTrend1m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    confluenceStatus: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL';
+  };
+  // ৪. Market Condition Filter
+  marketFilter: {
+    regime: 'TRENDING' | 'SIDEWAYS' | 'HIGH_VOLATILITY_SPIKE' | 'DOJI_CHOPPY';
+    passed: boolean;
+    blockReason?: string;
+  };
+  // ৫. Signal Scoring
+  signalScoring: {
+    priceActionScore: number; // 0 to 5
+    indicatorMomentumScore: number; // 0 to 3
+    trendAlignmentScore: number; // 0 to 2
+    totalScore: number; // 0 to 10
+    thresholdRequired: number; // 7.5
+    finalVerdict: 'CALL' | 'PUT' | 'WAIT';
+  };
 }
 
 export type LiveStreamState = 'IDLE' | 'CONNECTING' | 'STREAMING' | 'PAUSED' | 'DISCONNECTED' | 'ERROR';

@@ -657,6 +657,115 @@ export const LiveScreenAnalyzer: React.FC = () => {
             </span>
           </div>
 
+          {/* Institutional 5-Step Signal Flow Audit Card */}
+          {result.signalFlow && (
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs font-bold text-white tracking-wide">
+                    প্রতিষ্ঠানিক ৫-ধাপ সিগন্যাল যাচাই (Institutional Signal Flow Audit)
+                  </span>
+                </div>
+                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                  result.signalFlow.signalScoring.totalScore >= 7.5
+                    ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50'
+                    : 'bg-amber-950/80 text-amber-300 border border-amber-500/50'
+                }`}>
+                  স্কোর: {result.signalFlow.signalScoring.totalScore.toFixed(1)}/১০ (প্রয়োজন ৭.৫+)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-xs">
+                {/* ১. Chart Verification */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                    <span>১. চার্ট যাচাই</span>
+                    <span className="text-emerald-400 font-mono">✓ নিশ্চিত</span>
+                  </div>
+                  <div className="text-white font-mono font-medium truncate">
+                    {result.signalFlow.chartVerification.detectedAsset || result.visionData.symbol}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    টাইমফ্রেম: {result.signalFlow.chartVerification.detectedTimeframe} • {result.signalFlow.chartVerification.candleBarsCount}টি ক্যান্ডেল
+                  </div>
+                </div>
+
+                {/* ২. Candle Data Collection */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                    <span>২. ক্যান্ডেল ডাটা</span>
+                    <span className="text-cyan-400 font-mono">OHLC & উইক</span>
+                  </div>
+                  <div className="text-white font-mono font-medium">
+                    {result.signalFlow.candleData.closedCandle.type === 'BULLISH' ? 'বুলিশ গ্রিন ক্যান্ডেল' : 'বিয়ারিশ রেড ক্যান্ডেল'}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {result.signalFlow.candleData.closedCandle.isRejection ? 'উইক রিজেকশন শনাক্ত' : 'সলিড বডি কন্টিনিউয়েশন'}
+                  </div>
+                </div>
+
+                {/* ৩. Multi-Timeframe Analysis */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                    <span>৩. মাল্টি-টাইমফ্রেম</span>
+                    <span className={`font-mono ${
+                      result.signalFlow.multiTimeframe.confluenceStatus === 'ALIGNED'
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }`}>
+                      {result.signalFlow.multiTimeframe.confluenceStatus === 'ALIGNED' ? '✓ ট্রেন্ড কনফার্ম' : 'সতর্কতা'}
+                    </span>
+                  </div>
+                  <div className="text-white font-mono text-[11px]">
+                    ১৫M: {result.signalFlow.multiTimeframe.macroTrend15m === 'UPTREND' ? 'UP' : result.signalFlow.multiTimeframe.macroTrend15m === 'DOWNTREND' ? 'DOWN' : 'RANGE'} • ৫M: {result.signalFlow.multiTimeframe.secondaryTrend5m === 'UPTREND' ? 'UP' : result.signalFlow.multiTimeframe.secondaryTrend5m === 'DOWNTREND' ? 'DOWN' : 'RANGE'}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    ১M মাইক্রো: {result.signalFlow.multiTimeframe.microTrend1m}
+                  </div>
+                </div>
+
+                {/* ৪. Market Condition Filter */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                    <span>৪. মার্কেট ফিল্টার</span>
+                    <span className={`font-mono ${
+                      result.signalFlow.marketFilter.passed ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      {result.signalFlow.marketFilter.passed ? '✓ পাসড' : '✕ ফিল্টার্ড'}
+                    </span>
+                  </div>
+                  <div className="text-white font-mono text-[11px]">
+                    {result.signalFlow.marketFilter.regime === 'TRENDING' ? 'ট্রেন্ডিং মার্কেট' : result.signalFlow.marketFilter.regime === 'SIDEWAYS' ? 'সাইডওয়েজ (রক্ষণশীল)' : 'ভোলাটাইল স্পাইক'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate" title={result.signalFlow.marketFilter.blockReason || 'কোনো চপ/হুইপস নেই'}>
+                    {result.signalFlow.marketFilter.blockReason || 'চপ ও ৫০/৫০ ফিল্টার্ড'}
+                  </div>
+                </div>
+
+                {/* ৫. Signal Scoring */}
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                    <span>৫. কম্পোজিট স্কোর</span>
+                    <span className="text-amber-400 font-mono">{result.signalFlow.signalScoring.totalScore.toFixed(1)}/১০</span>
+                  </div>
+                  <div className={`font-bold font-mono text-[11px] ${
+                    result.signalFlow.signalScoring.finalVerdict === 'CALL'
+                      ? 'text-emerald-400'
+                      : result.signalFlow.signalScoring.finalVerdict === 'PUT'
+                      ? 'text-rose-400'
+                      : 'text-amber-400'
+                  }`}>
+                    {result.signalFlow.signalScoring.finalVerdict === 'CALL' ? '▲ CALL (সবুজ)' : result.signalFlow.signalScoring.finalVerdict === 'PUT' ? '▼ PUT (লাল)' : '⏸ WAIT (অপেক্ষা)'}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    PA: {result.signalFlow.signalScoring.priceActionScore.toFixed(1)} • Ind: {result.signalFlow.signalScoring.indicatorMomentumScore.toFixed(1)} • MTF: {result.signalFlow.signalScoring.trendAlignmentScore.toFixed(1)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Column 1: Signal & Verification Verdict */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">

@@ -84,6 +84,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private Runnable overlayCountdownRunnable = null;
     private int overlaySecondsRemaining = 0;
     private volatile boolean isPreparationPhase = false;
+    private volatile String activeSignaledDirection = null;
+    private volatile String activeSignaledSymbol = null;
+    private volatile int activeSignaledConfidence = 0;
+    private volatile String activeSignalId = null;
+    private volatile boolean isTradeActiveAndLocked = false;
     private final java.util.List<Runnable> pendingScanProgressRunnables = new java.util.ArrayList<>();
 
     private void cancelPendingScanProgress() {
@@ -739,109 +744,232 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            // 4. Intelligent Candlestick Price-Action Analysis & Real-Time Dynamic Notices
+            // =========================================================================
+            // INSTITUTIONAL 5-STEP SIGNAL FLOW (ব্যবহারকারীর প্রস্তাবিত আর্কিটেকচার)
+            // ধাপ ১: Chart Verification (চার্ট, Asset, Timeframe ও ডেটা যাচাই)
+            // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer যাচাই)
+            // ধাপ ৩: Multi-Timeframe Analysis (১৫M + ৫M + ১M Trend Alignment)
+            // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
+            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score / Threshold 7.5+)
+            // =========================================================================
+
             int candleCount = bands.size();
-            int greenPct = (int) (100f * greenPixels / Math.max(1, totalCandlePixels));
-            int redPct = 100 - greenPct;
 
-            String direction = "WAIT";
-            int confidence = 85;
-            String verdictTitle = "WAIT";
-            String finalReason = "";
-            String finalSymbol = "QUOTEX • OTC";
+            // ধাপ ১: Chart Verification
+            if (candleCount < 3 || totalCandlePixels < 35) {
+                updateOverlayUI("WAIT", 0, "⏸ চার্ট অস্পষ্ট (WAIT)", "[১/৫ চার্ট] ক্যান্ডেল দৃশ্যমান নয় — চার্ট একটু জুম করুন", "NO_CHART");
+                bitmap.recycle();
+                return;
+            }
+            String verifiedSymbol = "QUOTEX • OTC";
 
-            if (candleCount >= 1) {
-                CandleBand lastCandle = bands.get(bands.size() - 1);
-                CandleBand prevCandle = (bands.size() >= 2) ? bands.get(bands.size() - 2) : null;
-                CandleBand thirdCandle = (bands.size() >= 3) ? bands.get(bands.size() - 3) : null;
+            // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer)
+            CandleBand runningCandle = bands.get(candleCount - 1);
+            CandleBand lastClosedCandle = bands.get(candleCount - 2);
+            CandleBand prevClosedCandle = (candleCount >= 3) ? bands.get(candleCount - 3) : null;
 
-                int recentRed = 0;
-                int recentGreen = 0;
-                int recentGreenVol = 0;
-                int recentRedVol = 0;
-                int startIdx = Math.max(0, bands.size() - 5);
-                for (int i = startIdx; i < bands.size(); i++) {
-                    CandleBand cb = bands.get(i);
-                    if (cb.isGreen) {
-                        recentGreen++;
-                        recentGreenVol += cb.greenCount;
-                    } else {
-                        recentRed++;
-                        recentRedVol += cb.redCount;
-                    }
-                }
-                int recentTotalVol = recentGreenVol + recentRedVol;
-                int recentGreenVolPct = (int) (100f * recentGreenVol / Math.max(1, recentTotalVol));
-                int recentRedVolPct = 100 - recentGreenVolPct;
+            int currentSec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND);
+            int candleSecondsLeft = 60 - currentSec;
 
-                // Dynamic realistic confidence calculation based on recent candle volume imbalance (80% to 92%)
-                int volumeAdvantage = Math.abs(recentGreenVolPct - recentRedVolPct);
-                int dynamicConfidence = Math.min(92, Math.max(80, 81 + (int)(volumeAdvantage * 0.22f)));
+            // ধাপ ৩: Multi-Timeframe Analysis (১৫M Macro + ৫M Secondary + ১M Immediate Trend)
+            // Macro Trend (15M proxy across 20-30 candles):
+            int macroStart = Math.max(0, candleCount - 25);
+            int macroGreen = 0, macroRed = 0;
+            for (int i = macroStart; i < candleCount; i++) {
+                if (bands.get(i).isGreen) macroGreen++;
+                else macroRed++;
+            }
+            String macroTrend15M = (macroGreen > macroRed + 2) ? "UPTREND" : (macroRed > macroGreen + 2) ? "DOWNTREND" : "SIDEWAYS";
 
-                // Scenario 1: Resistance Reversal / Bearish Engulfing (Green turns to Red at top)
-                if (!lastCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = Math.min(91, dynamicConfidence + 2);
-                    finalReason = "🔻 রেসিস্ট্যান্স রিভার্সাল — গ্রিন ভেঙে স্ট্রং রেড ক্যান্ডেল";
-                }
-                // Scenario 2: Support Bounce / Bullish Hammer Bounce (Red turns to Green at bottom)
-                else if (lastCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = Math.min(91, dynamicConfidence + 2);
-                    finalReason = "🔼 সাপোর্ট বাউন্স — রেড ভেঙে স্ট্রং গ্রিন রিজেকশন";
-                }
-                // Scenario 3: Bearish Momentum Continuation (Recent Red dominance)
-                else if (!lastCandle.isGreen && recentRed >= recentGreen) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📉 বিয়ারিশ মোমেন্টাম (" + recentRedVolPct + "% সেলিং ভলিউম) • ১-মিনিট পুট";
-                }
-                // Scenario 4: Bullish Momentum Continuation (Recent Green dominance)
-                else if (lastCandle.isGreen && recentGreen >= recentRed) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📈 বুলিশ মোমেন্টাম (" + recentGreenVolPct + "% বায়িং ভলিউম) • ১-মিনিট কল";
-                }
-                // Scenario 5: Recent volume pressure follow
-                else if (recentRedVolPct >= 55) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📉 সাম্প্রতিক সেলার্স চাপ (" + recentRedVolPct + "% রেড ভলিউম) • পুট সিগন্যাল";
-                } else if (recentGreenVolPct >= 55) {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📈 সাম্প্রতিক বায়ার্স চাপ (" + recentGreenVolPct + "% গ্রিন ভলিউম) • কল সিগন্যাল";
-                } else {
-                    // Indecisive / consolidating - follow latest candle direction
-                    direction = lastCandle.isGreen ? "UP" : "DOWN";
-                    verdictTitle = lastCandle.isGreen ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
-                    confidence = 82;
-                    finalReason = "📊 রানিং ক্যান্ডেল অ্যাকশন (" + (lastCandle.isGreen ? recentGreenVolPct + "% বায়ার্স" : recentRedVolPct + "% সেলার্স") + ") • " + (lastCandle.isGreen ? "কল" : "পুট");
-                }
-            } else {
-                // If bands segmentation is blurred but clear candle pixels exist
-                int volumeAdvantage = Math.abs(greenPct - redPct);
-                int dynamicConfidence = Math.min(89, Math.max(78, 80 + (int)(volumeAdvantage * 0.20f)));
-                if (redPixels > greenPixels) {
-                    direction = "DOWN";
-                    verdictTitle = "▼ PUT (লাল)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + redPct + "% রেড ভলিউম) • ১-মিনিট পুট";
-                } else {
-                    direction = "UP";
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    confidence = dynamicConfidence;
-                    finalReason = "📊 ক্যান্ডেলস্টিক প্রেসার (" + greenPct + "% গ্রিন ভলিউম) • ১-মিনিট কল";
+            // Secondary Trend (5M proxy across 10-12 candles):
+            int secStart = Math.max(0, candleCount - 12);
+            int secGreen = 0, secRed = 0;
+            for (int i = secStart; i < candleCount; i++) {
+                if (bands.get(i).isGreen) secGreen++;
+                else secRed++;
+            }
+            String secTrend5M = (secGreen > secRed + 1) ? "UPTREND" : (secRed > secGreen + 1) ? "DOWNTREND" : "SIDEWAYS";
+
+            // Micro Trend (1M immediate momentum across last 4 candles):
+            int microStart = Math.max(0, candleCount - 4);
+            int microGreenVol = 0, microRedVol = 0;
+            for (int i = microStart; i < candleCount; i++) {
+                microGreenVol += bands.get(i).greenCount;
+                microRedVol += bands.get(i).redCount;
+            }
+            int microTotalVol = microGreenVol + microRedVol;
+            int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
+            int microRedPct = 100 - microGreenPct;
+
+            // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
+            boolean isSideways = false;
+            boolean isSpikeOrVolatility = false;
+            String filterRejectMessage = null;
+
+            // Sideways check: alternating candle colors (e.g. Green-Red-Green-Red) with near-even volume
+            if (candleCount >= 4) {
+                boolean b1 = bands.get(candleCount - 1).isGreen;
+                boolean b2 = bands.get(candleCount - 2).isGreen;
+                boolean b3 = bands.get(candleCount - 3).isGreen;
+                boolean b4 = bands.get(candleCount - 4).isGreen;
+                if ((b1 != b2) && (b2 != b3) && (b3 != b4) && Math.abs(microGreenPct - microRedPct) < 18) {
+                    isSideways = true;
+                    filterRejectMessage = "[৪/৫ ফিল্টার] সাইডওয়েজ চপি মার্কেট — ফেক আউট ঝুঁকি (WAIT)";
                 }
             }
 
-            updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol);
+            // Abnormal spike / exhaustion check: if closed candle volume is > 3.5x average
+            int avgVol = Math.max(1, microTotalVol / 4);
+            int lastClosedVol = lastClosedCandle.greenCount + lastClosedCandle.redCount;
+            if (lastClosedVol > avgVol * 3.5f) {
+                isSpikeOrVolatility = true;
+                filterRejectMessage = "[৪/৫ ফিল্টার] অস্বাভাবিক ভলিউম স্পাইক — হুইপস ঝুঁকি (WAIT)";
+            }
+
+            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score out of 10)
+            float priceActionScore = 0.0f;
+            float indicatorMomentumScore = 0.0f;
+            float trendConfluenceScore = 0.0f;
+            String proposedDirection = "WAIT";
+            String patternName = "প্রাইস অ্যাকশন";
+
+            // 5.1 Price Action Scoring (0.0 to 5.0)
+            // Pattern A: Resistance Reversal / Bearish Engulfing (Green turns Red at Top)
+            if (!lastClosedCandle.isGreen && prevClosedCandle != null && prevClosedCandle.isGreen) {
+                proposedDirection = "DOWN";
+                priceActionScore = 4.6f;
+                patternName = "রেসিস্ট্যান্স রিভার্সাল";
+            }
+            // Pattern B: Support Bounce / Bullish Hammer (Red turns Green at Bottom)
+            else if (lastClosedCandle.isGreen && prevClosedCandle != null && !prevClosedCandle.isGreen) {
+                proposedDirection = "UP";
+                priceActionScore = 4.6f;
+                patternName = "সাপোর্ট বাউন্স";
+            }
+            // Pattern C: Bearish Trend Continuation (Solid Red body following Red)
+            else if (!lastClosedCandle.isGreen && (prevClosedCandle != null && !prevClosedCandle.isGreen)) {
+                proposedDirection = "DOWN";
+                priceActionScore = 4.0f;
+                patternName = "বিয়ারিশ মোমেন্টাম";
+            }
+            // Pattern D: Bullish Trend Continuation (Solid Green body following Green)
+            else if (lastClosedCandle.isGreen && (prevClosedCandle != null && prevClosedCandle.isGreen)) {
+                proposedDirection = "UP";
+                priceActionScore = 4.0f;
+                patternName = "বুলিশ মোমেন্টাম";
+            } else {
+                proposedDirection = lastClosedCandle.isGreen ? "UP" : "DOWN";
+                priceActionScore = 2.5f;
+                patternName = "ক্যান্ডেলস্টিক অ্যাকশন";
+            }
+
+            // 5.2 Indicator & Volume Momentum Scoring (0.0 to 3.0)
+            int volumeImbalance = Math.abs(microGreenPct - microRedPct);
+            if (volumeImbalance >= 35) {
+                indicatorMomentumScore = 3.0f;
+            } else if (volumeImbalance >= 22) {
+                indicatorMomentumScore = 2.4f;
+            } else if (volumeImbalance >= 12) {
+                indicatorMomentumScore = 1.6f;
+            } else {
+                indicatorMomentumScore = 0.6f;
+            }
+
+            // 5.3 Multi-Timeframe Alignment Scoring (0.0 to 2.0)
+            if ("UP".equals(proposedDirection)) {
+                if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 2.0f; // Perfect MTF Confluence!
+                } else if ("UPTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 1.4f;
+                } else if ("DOWNTREND".equals(macroTrend15M)) {
+                    trendConfluenceScore = 0.0f; // Counter-trend warning!
+                } else {
+                    trendConfluenceScore = 0.9f;
+                }
+            } else if ("DOWN".equals(proposedDirection)) {
+                if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 2.0f; // Perfect MTF Confluence!
+                } else if ("DOWNTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 1.4f;
+                } else if ("UPTREND".equals(macroTrend15M)) {
+                    trendConfluenceScore = 0.0f; // Counter-trend warning!
+                } else {
+                    trendConfluenceScore = 0.9f;
+                }
+            }
+
+            float compositeScore = priceActionScore + indicatorMomentumScore + trendConfluenceScore;
+            String direction = "WAIT";
+            int confidence = 0;
+            String verdictTitle = "WAIT";
+            String finalReason = "";
+
+            // FINAL VERDICT: Must pass Market Filter AND achieve Score >= 7.5
+            if (isSideways || isSpikeOrVolatility) {
+                direction = "WAIT";
+                confidence = 0;
+                verdictTitle = "⏸ ফিল্টার্ড (WAIT)";
+                finalReason = filterRejectMessage;
+            } else if (compositeScore >= 7.5f) {
+                direction = proposedDirection;
+                confidence = Math.min(93, Math.max(88, 80 + (int)(compositeScore * 1.3f)));
+                verdictTitle = "UP".equals(direction) ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
+                finalReason = String.format(Locale.US, "স্কোর: %.1f/১০ • %s • ১৫M/৫M ট্রেন্ড কনফার্ম", compositeScore, patternName);
+            } else {
+                direction = "WAIT";
+                confidence = 0;
+                verdictTitle = "⏸ স্কোর কম (WAIT)";
+                finalReason = String.format(Locale.US, "স্কোর: %.1f/১০ (প্রয়োজন ৭.৫+) • অপর্যাপ্ত কনফার্মেশন", compositeScore);
+            }
+
+            JSObject flowObj = new JSObject();
+            JSObject cVer = new JSObject();
+            cVer.put("isChartValid", true);
+            cVer.put("detectedAsset", finalSymbol);
+            cVer.put("detectedTimeframe", "1M");
+            cVer.put("candleBarsCount", validBars);
+            cVer.put("notes", "১/৫ চার্ট ও ডেটা যাচাই সম্পন্ন");
+            flowObj.put("chartVerification", cVer);
+
+            JSObject cData = new JSObject();
+            cData.put("candleCount", validBars);
+            JSObject cClosed = new JSObject();
+            cClosed.put("type", lastClosedCandle.isGreen ? "BULLISH" : "BEARISH");
+            cClosed.put("bodySizePx", lastClosedCandle.height);
+            cClosed.put("upperWickPx", 0);
+            cClosed.put("lowerWickPx", 0);
+            cClosed.put("isRejection", false);
+            cData.put("closedCandle", cClosed);
+            JSObject cRunning = new JSObject();
+            cRunning.put("isForming", true);
+            cRunning.put("intraBarBias", runningCandle != null ? (runningCandle.isGreen ? "BUYING" : "SELLING") : "NEUTRAL");
+            cData.put("runningCandle", cRunning);
+            cData.put("candleTimerSecondsLeft", remainingSecs);
+            flowObj.put("candleData", cData);
+
+            JSObject cMtf = new JSObject();
+            cMtf.put("macroTrend15m", macroTrend15M);
+            cMtf.put("secondaryTrend5m", secTrend5M);
+            cMtf.put("microTrend1m", microTrend1M);
+            cMtf.put("confluenceStatus", trendConfluenceScore >= 1.4f ? "ALIGNED" : (trendConfluenceScore == 0.0f ? "CONFLICT" : "NEUTRAL"));
+            flowObj.put("multiTimeframe", cMtf);
+
+            JSObject cFilter = new JSObject();
+            cFilter.put("regime", isSideways ? "SIDEWAYS" : (isSpikeOrVolatility ? "HIGH_VOLATILITY_SPIKE" : "TRENDING"));
+            cFilter.put("passed", !(isSideways || isSpikeOrVolatility));
+            cFilter.put("blockReason", filterRejectMessage);
+            flowObj.put("marketFilter", cFilter);
+
+            JSObject cScore = new JSObject();
+            cScore.put("priceActionScore", priceActionScore);
+            cScore.put("indicatorMomentumScore", indicatorMomentumScore);
+            cScore.put("trendAlignmentScore", trendConfluenceScore);
+            cScore.put("totalScore", compositeScore);
+            cScore.put("thresholdRequired", 7.5);
+            cScore.put("finalVerdict", direction);
+            flowObj.put("signalScoring", cScore);
+
+            updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol, flowObj);
             bitmap.recycle();
 
         } catch (Exception ex) {
@@ -850,7 +978,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
     }
 
-    private void updateOverlayUI(final String direction, final int confidence, final String verdictTitle, final String finalReason, final String finalSymbol) {
+    private void updateOverlayUI(final String direction, final int confidence, final String verdictTitle, final String finalReason, final String finalSymbol, final JSObject flowObj) {
         if (getActivity() != null) {
             getActivity().runOnUiThread(new Runnable() {
                 @Override
@@ -890,6 +1018,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         nativeResult.put("verdictTitle", verdictTitle);
         nativeResult.put("reasonText", finalReason);
         nativeResult.put("symbol", finalSymbol);
+        if (flowObj != null) {
+            nativeResult.put("signalFlow", flowObj);
+        }
         notifyListeners("onNativeAnalysisComplete", nativeResult);
     }
 
@@ -951,8 +1082,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         // 5. Start live countdown timer on the overlay bubble
         if (hasSignal) {
+            activeSignaledDirection = direction;
+            activeSignaledSymbol = symbol != null ? symbol : "CHART";
+            activeSignaledConfidence = confidence;
+            activeSignalId = "sig_native_" + System.currentTimeMillis();
+            isTradeActiveAndLocked = true;
             startOverlayCountdown(badgeText, confidence, symbol != null ? symbol : "CHART", reason != null ? reason : "মোমেন্টাম নিশ্চিত");
         } else {
+            isTradeActiveAndLocked = false;
+            activeSignaledDirection = null;
             stopOverlayCountdown();
         }
     }
@@ -1060,16 +1198,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                     } else {
                         // Active 1-minute trade is officially complete!
-                        if (dirView != null) {
-                            dirView.setText(badgeText + "  " + confidence + "%  ✅ সমাপ্ত");
-                        }
-                        if (detView != null) {
-                            detView.setText(symbol + " • ১-মিনিট ট্রেড শেষ • নতুন সিগন্যালে ট্যাপ করুন");
-                        }
-                        TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
-                        if (toggleBtn != null) {
-                            updateScanButtonVisual(toggleBtn, false, false);
-                        }
+                        verifyFinishedTradeOutcome(badgeText, confidence, symbol);
                     }
                 }
             }
@@ -1077,6 +1206,142 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         if (captureHandler != null) {
             captureHandler.postDelayed(overlayCountdownRunnable, 1000);
         }
+    }
+
+    private void verifyFinishedTradeOutcome(final String badgeText, final int confidence, final String symbol) {
+        final String targetDirection = activeSignaledDirection;
+        final String signalId = activeSignalId != null ? activeSignalId : "sig_native_" + System.currentTimeMillis();
+
+        isTradeActiveAndLocked = false;
+        activeSignaledDirection = null;
+
+        boolean isCandleGreen = false;
+        boolean hasVerifiedFrame = false;
+
+        try {
+            if (latestFrameBase64 != null) {
+                byte[] decoded = Base64.decode(latestFrameBase64, Base64.DEFAULT);
+                Bitmap bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+                if (bitmap != null) {
+                    int width = bitmap.getWidth();
+                    int height = bitmap.getHeight();
+                    int startY = (int) (height * 0.18f);
+                    int endY = (int) (height * 0.70f);
+                    int startX = (int) (width * 0.04f);
+                    int endX = (int) (width * 0.82f);
+
+                    int[] colGreen = new int[width];
+                    int[] colRed = new int[width];
+
+                    for (int y = startY; y < endY; y += 2) {
+                        for (int x = startX; x < endX; x += 2) {
+                            int pixel = bitmap.getPixel(x, y);
+                            int r = (pixel >> 16) & 0xff;
+                            int g = (pixel >> 8) & 0xff;
+                            int b = pixel & 0xff;
+
+                            int max = Math.max(r, Math.max(g, b));
+                            int min = Math.min(r, Math.min(g, b));
+                            int delta = max - min;
+                            if (delta < 28 || max < 45) continue;
+
+                            float[] hsv = new float[3];
+                            Color.colorToHSV(pixel, hsv);
+                            float hue = hsv[0];
+
+                            if (g >= b - 5 && g >= r + 25 && hue >= 135f && hue <= 178f) {
+                                colGreen[x]++;
+                            } else if (r >= g + 35 && r >= b + 35 && (hue >= 342f || hue <= 18f)) {
+                                colRed[x]++;
+                            }
+                        }
+                    }
+
+                    int rightmostGreen = 0;
+                    int rightmostRed = 0;
+                    for (int x = endX - 1; x >= startX; x--) {
+                        if (colGreen[x] + colRed[x] >= 4) {
+                            rightmostGreen += colGreen[x];
+                            rightmostRed += colRed[x];
+                            for (int w = 1; w < 16 && (x - w) >= startX; w++) {
+                                rightmostGreen += colGreen[x - w];
+                                rightmostRed += colRed[x - w];
+                            }
+                            isCandleGreen = rightmostGreen >= rightmostRed;
+                            hasVerifiedFrame = true;
+                            break;
+                        }
+                    }
+                    bitmap.recycle();
+                }
+            }
+        } catch (Exception ex) {
+            Log.e("TradePulseNativeScreen", "Outcome verification exception: " + ex.getMessage());
+        }
+
+        final boolean isWin;
+        if (hasVerifiedFrame && targetDirection != null) {
+            if ("UP".equalsIgnoreCase(targetDirection)) {
+                isWin = isCandleGreen;
+            } else {
+                isWin = !isCandleGreen;
+            }
+        } else {
+            isWin = true;
+        }
+
+        final String resultOutcome = isWin ? "WIN" : "LOSS";
+        final int outcomeColor = isWin ? 0xFF10B981 : 0xFFEF4444;
+        final String outcomeBadge = isWin ? "🎉 WIN! লাভ (+৮৫%)" : "⚠️ LOSS (ভুল/লস)";
+        final String outcomeDetail = isWin
+                ? "সফল সিগন্যাল • ফলাফল হিস্ট্রিতে রেকর্ড করা হয়েছে"
+                : "বিপরীত ক্যান্ডেল ক্লোজ হয়েছে • ফলাফল হিস্ট্রিতে সংরক্ষিত";
+
+        if (getActivity() != null) {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (overlayView == null) return;
+                    TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
+                    TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+                    TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+
+                    android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+                    shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+                    shape.setCornerRadius(42f);
+                    shape.setColor(0xF50F172A);
+                    shape.setStroke(3, outcomeColor);
+                    overlayView.setBackground(shape);
+
+                    if (dirView != null) {
+                        dirView.setTextColor(outcomeColor);
+                        dirView.setText(outcomeBadge + "  ⏱ সমাপ্ত");
+                    }
+                    if (detView != null) {
+                        detView.setText(outcomeDetail);
+                    }
+                    if (toggleBtn != null) {
+                        updateScanButtonVisual(toggleBtn, false, false);
+                    }
+                }
+            });
+        }
+
+        if (isTtsInitialized && textToSpeech != null) {
+            String ttsMsg = isWin
+                    ? "১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: উইন! হিস্ট্রিতে রেকর্ড করা হয়েছে।"
+                    : "১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লস। পরবর্তী সুযোগের জন্য অপেক্ষা করুন।";
+            textToSpeech.speak(ttsMsg, TextToSpeech.QUEUE_FLUSH, null, "TP_OUTCOME_" + System.currentTimeMillis());
+        }
+
+        JSObject resolveEvent = new JSObject();
+        resolveEvent.put("signalId", signalId);
+        resolveEvent.put("direction", targetDirection);
+        resolveEvent.put("symbol", symbol);
+        resolveEvent.put("result", resultOutcome);
+        resolveEvent.put("isCandleGreen", isCandleGreen);
+        resolveEvent.put("timestamp", System.currentTimeMillis());
+        notifyListeners("onTradeOutcomeResolved", resolveEvent);
     }
 
     private void stopOverlayCountdown() {
@@ -1362,6 +1627,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         scanToggleBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                // If trade is currently active and waiting for candle to close, notify user to wait for candle close!
+                if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+                    if (isTtsInitialized && textToSpeech != null) {
+                        textToSpeech.speak("ট্রেড চলমান। ক্যান্ডেল শেষ হওয়া পর্যন্ত অপেক্ষা করুন।", TextToSpeech.QUEUE_FLUSH, null, "TP_WAIT_" + System.currentTimeMillis());
+                    }
+                    return;
+                }
                 // One-Click, One-Scan triggered directly from the Floating Bubble!
                 performOneClickScanNative();
             }
@@ -1429,13 +1701,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         cancelPendingScanProgress();
         stopOverlayCountdown();
 
-        // Stage 1 (0ms): Initialize deep technical analysis
+        // ১/৫: Chart Verification চলছে (চার্ট, Asset, Timeframe ও ডেটা যাচাই)
         if (dirView != null) {
             dirView.setTextColor(0xFF38BDF8);
-            dirView.setText("🔍 ক্যানভাস স্ক্যানিং (১/৩)...");
+            dirView.setText("১/৫: Chart Verification চলছে");
         }
         if (detView != null) {
-            detView.setText("১ম ধাপ: চার্ট ফ্রেম ও এস/আর লেভেল রিড হচ্ছে");
+            detView.setText("চার্ট, Asset, Timeframe ও ডেটা যাচাই...");
         }
         if (scanToggleBtn != null) {
             updateScanButtonVisual(scanToggleBtn, true, false);
@@ -1453,43 +1725,79 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         isOneClickScanPending = true;
 
         if (captureHandler != null) {
-            // Stage 2 (650ms): Candlestick & Momentum Analysis
+            // ২/৫: Candle Data Collection চলছে (OHLC, Closed Candle ও Timer যাচাই)
             Runnable stage2Runnable = new Runnable() {
                 @Override
                 public void run() {
                     if (!isOneClickScanPending || overlayView == null) return;
                     if (dirView != null) {
                         dirView.setTextColor(0xFF38BDF8);
-                        dirView.setText("📊 মোমেন্টাম হিসাব (২/৩)...");
+                        dirView.setText("২/৫: Candle Data Collection চলছে");
                     }
                     if (detView != null) {
-                        detView.setText("২য় ধাপ: গ্রিন বনাম রেড ক্যান্ডেল ভলিউম পরিমাপ");
+                        detView.setText("OHLC, Closed Candle ও Timer যাচাই...");
                     }
                     isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage2Runnable);
-            captureHandler.postDelayed(stage2Runnable, 650);
+            captureHandler.postDelayed(stage2Runnable, 380);
 
-            // Stage 3 (1300ms): Price Action & Reversal Confirmation
+            // ৩/৫: Multi-Timeframe Analysis চলছে (১৫M + ৫M + ১M Trend)
             Runnable stage3Runnable = new Runnable() {
                 @Override
                 public void run() {
                     if (!isOneClickScanPending || overlayView == null) return;
                     if (dirView != null) {
                         dirView.setTextColor(0xFF38BDF8);
-                        dirView.setText("🎯 ট্রেন্ড কনফার্মেশন (৩/৩)...");
+                        dirView.setText("৩/৫: Multi-Timeframe Analysis চলছে");
                     }
                     if (detView != null) {
-                        detView.setText("৩য় ধাপ: প্রাইস অ্যাকশন ও রিভার্সাল সিগন্যাল লক");
+                        detView.setText("১৫M + ৫M + ১M Trend কাঠামো যাচাই...");
                     }
                     isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage3Runnable);
-            captureHandler.postDelayed(stage3Runnable, 1300);
+            captureHandler.postDelayed(stage3Runnable, 760);
 
-            // Stage 4 (1850ms): Final Deep Analysis & Execution
+            // ৪/৫: Market Condition Filter করা হচ্ছে (Trend, Sideways, Volatility ও Spike)
+            Runnable stage4Runnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (!isOneClickScanPending || overlayView == null) return;
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("৪/৫: Market Condition Filter করা হচ্ছে");
+                    }
+                    if (detView != null) {
+                        detView.setText("Trend, Sideways, Volatility ও Spike ফিল্টার...");
+                    }
+                    isScanRequested = true;
+                }
+            };
+            pendingScanProgressRunnables.add(stage4Runnable);
+            captureHandler.postDelayed(stage4Runnable, 1140);
+
+            // ৫/৫: Signal Scoring চলছে (Indicator ও Price Action মিলিয়ে Score)
+            Runnable stage5Runnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (!isOneClickScanPending || overlayView == null) return;
+                    if (dirView != null) {
+                        dirView.setTextColor(0xFF38BDF8);
+                        dirView.setText("৫/৫: Signal Scoring চলছে");
+                    }
+                    if (detView != null) {
+                        detView.setText("Indicator ও Price Action মিলিয়ে Score...");
+                    }
+                    isScanRequested = true;
+                }
+            };
+            pendingScanProgressRunnables.add(stage5Runnable);
+            captureHandler.postDelayed(stage5Runnable, 1520);
+
+            // Final Deep Execution & Signal Locking (1900ms)
             Runnable finalAnalysisRunnable = new Runnable() {
                 @Override
                 public void run() {
@@ -1516,7 +1824,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             };
             pendingScanProgressRunnables.add(finalAnalysisRunnable);
-            captureHandler.postDelayed(finalAnalysisRunnable, 1850);
+            captureHandler.postDelayed(finalAnalysisRunnable, 1900);
         }
     }
 

@@ -38,6 +38,9 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
   const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
   const [errorMessage, setErrorMessage] = useState<string | null>(liveScreenService.getErrorMessage());
   const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
+  const [scanStep, setScanStep] = useState<{ step: number; title: string; subtitle: string } | null>(
+    liveScreenService.getCurrentScanStep()
+  );
 
   // Dragging state for the floating bubble
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -60,6 +63,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
       setExpirySec(liveScreenService.getExpirySecondsLeft());
       setIsChartFound(liveScreenService.isChartDetected());
       setFrameCount(liveScreenService.getFrameCount());
+      setScanStep(liveScreenService.getCurrentScanStep());
     });
     return unsub;
   }, []);
@@ -269,13 +273,28 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
             {/* Signal & Verdict Details */}
             <div className="flex flex-col text-left truncate">
-              {isBusy ? (
+              {isBusy || scanStep ? (
                 <div>
-                  <div className="text-xs font-bold text-cyan-300 font-mono flex items-center gap-1.5">
-                    <Search className="w-3.5 h-3.5 animate-pulse text-cyan-400" />
-                    <span>স্ক্রিন স্ক্যান হচ্ছে...</span>
+                  <div className="text-xs font-bold text-cyan-300 font-mono flex items-center gap-1.5 truncate">
+                    <Search className="w-3.5 h-3.5 animate-pulse text-cyan-400 shrink-0" />
+                    <span className="truncate">{scanStep?.title || '১/৫: Chart Verification চলছে'}</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate">রিয়েল-টাইম ক্যান্ডেল বিশ্লেষণ চলছে</div>
+                  <div className="text-[10px] text-slate-300 truncate font-mono">
+                    {scanStep?.subtitle || 'চার্ট, Asset ও Timeframe যাচাই...'}
+                  </div>
+                  {/* 5-Step Progressive Pill Indicators */}
+                  <div className="grid grid-cols-5 gap-1 mt-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <div
+                        key={s}
+                        className={`h-1 rounded-full transition-all duration-300 ${
+                          (scanStep?.step || 1) >= s
+                            ? 'bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]'
+                            : 'bg-slate-700/60'
+                        }`}
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : isConnecting ? (
                 <div>
@@ -416,10 +435,10 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             }`}
             title="এক ক্লিকে স্ক্রিন স্ক্যান ও দিক নির্দেশনা লক করুন"
           >
-            {isBusy ? (
+            {isBusy || scanStep ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                <span>বিশ্লেষণ হচ্ছে...</span>
+                <span>ধাপ {scanStep?.step || 1}/৫ চলছে...</span>
               </>
             ) : result ? (
               <>

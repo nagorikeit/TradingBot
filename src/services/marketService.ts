@@ -422,6 +422,37 @@ export class MarketService {
     this.notify();
   }
 
+  /**
+   * Records a signal generated from Live Screen Scanner or Android Native HUD
+   */
+  public recordLiveScreenSignal(signal: Signal): void {
+    const isDuplicate = this.signalHistory.some((s) => s.id === signal.id);
+    if (!isDuplicate) {
+      this.signalHistory.unshift(signal);
+      if (this.signalHistory.length > 100) {
+        this.signalHistory.pop();
+      }
+      this.saveHistoryToStorage();
+      this.notify();
+    }
+  }
+
+  /**
+   * Automatically resolves and updates the outcome (WIN/LOSS) of a signal
+   */
+  public updateSignalOutcome(signalId: string, result: 'WIN' | 'LOSS' | 'DRAW', exitPrice?: number): void {
+    const sig = this.signalHistory.find((s) => s.id === signalId);
+    if (sig) {
+      sig.result = result;
+      sig.evaluatedAt = Date.now();
+      if (exitPrice !== undefined && exitPrice > 0) {
+        sig.exitPrice = exitPrice;
+      }
+      this.saveHistoryToStorage();
+      this.notify();
+    }
+  }
+
   // Getters
   public getSymbol(): string {
     return this.currentSymbol;

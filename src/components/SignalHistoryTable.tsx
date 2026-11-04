@@ -137,11 +137,11 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                   <div className="font-mono text-xs">
                     <span className="text-slate-500 text-[10px] block">ENTRY → EXIT</span>
                     <span className="text-slate-200 tabular-nums font-semibold">
-                      {formatPrice(sig.entryPrice, asset.pipDecimals)}
+                      {sig.entryPrice > 0 ? formatPrice(sig.entryPrice, asset.pipDecimals) : 'ক্যান্ডেল শুরু'}
                     </span>
                     <span className="text-slate-500 mx-1.5">→</span>
                     <span className="text-white tabular-nums font-semibold">
-                      {sig.exitPrice ? formatPrice(sig.exitPrice, asset.pipDecimals) : '...'}
+                      {sig.exitPrice ? formatPrice(sig.exitPrice, asset.pipDecimals) : sig.result === 'PENDING' ? '⏳ ক্যান্ডেল চলমান...' : 'ক্যান্ডেল ক্লোজ'}
                     </span>
                   </div>
 
