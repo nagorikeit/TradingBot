@@ -93,6 +93,7 @@ jobs:
           mkdir -p "$ANDROID_HOME/licenses" || true
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$ANDROID_HOME/licenses/android-sdk-license" || true
           printf "84831b9409646a243e30e466e443661490f54736\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license" || true
+          yes | sdkmanager --licenses || true
 
       - name: Install Web Dependencies
         run: npm ci || npm install
@@ -109,12 +110,17 @@ jobs:
 
       - name: Build Android Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
       - name: Prepare Named APK
         run: |
           mkdir -p release-apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/TradePulse-Agent-v1.0.apk
+          APK_FILE=$(find android/app/build/outputs/apk -name "*debug*.apk" -o -name "*.apk" | head -n 1)
+          if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
+            cp "$APK_FILE" release-apk/TradePulse-Agent-v1.0.apk
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/TradePulse-Agent-v1.0.apk
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

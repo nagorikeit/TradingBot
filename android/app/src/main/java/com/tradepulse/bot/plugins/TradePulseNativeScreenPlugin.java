@@ -802,6 +802,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int microTotalVol = microGreenVol + microRedVol;
             int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
             int microRedPct = 100 - microGreenPct;
+            String microTrend1M = (microGreenPct > microRedPct + 10) ? "UPTREND" : (microRedPct > microGreenPct + 10) ? "DOWNTREND" : "SIDEWAYS";
 
             // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
             boolean isSideways = false;
