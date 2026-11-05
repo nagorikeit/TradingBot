@@ -2470,6 +2470,17 @@ export class LiveScreenService {
         aiState: 'IDLE',
         isScanning: false,
       });
+    } else {
+      this.updateFloatingOverlayHUD({
+        direction: 'WAIT',
+        confidence: 0,
+        durationText: '--:--',
+        verdictTitle: '⚡ প্রস্তুত (Ready)',
+        reasonText: 'স্ক্যান করতে বাটনে চাপুন',
+        latencyMs: 0,
+        aiState: 'IDLE',
+        isScanning: false,
+      });
     }
 
     this.notify();

@@ -70,15 +70,19 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
   // Subscribe to voice assistant announcements
   useEffect(() => {
+    let timer: any = null;
     const unsubVoice = voiceAssistantService.subscribe((text) => {
       setVoiceNotification(text);
       setIsVoiceOn(voiceAssistantService.isVoiceEnabled());
-      const timer = setTimeout(() => {
-        setVoiceNotification((prev) => (prev === text ? null : prev));
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        setVoiceNotification(null);
       }, 5000);
-      return () => clearTimeout(timer);
     });
-    return unsubVoice;
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubVoice();
+    };
   }, []);
 
   const isStreaming = streamState === 'STREAMING';

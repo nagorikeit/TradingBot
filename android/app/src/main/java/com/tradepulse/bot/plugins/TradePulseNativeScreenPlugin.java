@@ -925,14 +925,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             JSObject flowObj = new JSObject();
             JSObject cVer = new JSObject();
             cVer.put("isChartValid", true);
-            cVer.put("detectedAsset", finalSymbol);
+            cVer.put("detectedAsset", verifiedSymbol);
             cVer.put("detectedTimeframe", "1M");
-            cVer.put("candleBarsCount", validBars);
+            cVer.put("candleBarsCount", candleCount);
             cVer.put("notes", "১/৫ চার্ট ও ডেটা যাচাই সম্পন্ন");
             flowObj.put("chartVerification", cVer);
 
             JSObject cData = new JSObject();
-            cData.put("candleCount", validBars);
+            cData.put("candleCount", candleCount);
             JSObject cClosed = new JSObject();
             cClosed.put("type", lastClosedCandle.isGreen ? "BULLISH" : "BEARISH");
             cClosed.put("bodySizePx", lastClosedCandle.height);
@@ -944,7 +944,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cRunning.put("isForming", true);
             cRunning.put("intraBarBias", runningCandle != null ? (runningCandle.isGreen ? "BUYING" : "SELLING") : "NEUTRAL");
             cData.put("runningCandle", cRunning);
-            cData.put("candleTimerSecondsLeft", remainingSecs);
+            cData.put("candleTimerSecondsLeft", candleSecondsLeft);
             flowObj.put("candleData", cData);
 
             JSObject cMtf = new JSObject();
@@ -969,13 +969,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cScore.put("finalVerdict", direction);
             flowObj.put("signalScoring", cScore);
 
-            updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol, flowObj);
+            updateOverlayUI(direction, confidence, verdictTitle, finalReason, verifiedSymbol, flowObj);
             bitmap.recycle();
 
         } catch (Exception ex) {
             Log.e("TradePulseNativeScreen", "Local analysis exception: " + ex.getMessage());
             showAnalysisErrorOnOverlay("বিশ্লেষণ ব্যর্থ হয়েছে — আবার চাপুন");
         }
+    }
+
+    private void updateOverlayUI(final String direction, final int confidence, final String verdictTitle, final String finalReason, final String finalSymbol) {
+        updateOverlayUI(direction, confidence, verdictTitle, finalReason, finalSymbol, null);
     }
 
     private void updateOverlayUI(final String direction, final int confidence, final String verdictTitle, final String finalReason, final String finalSymbol, final JSObject flowObj) {

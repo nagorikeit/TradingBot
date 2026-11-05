@@ -24138,7 +24138,7 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 };
 //#endregion
 //#region src/plugins/TradePulseNativeScreen.ts
-var TradePulseNativeScreen = registerPlugin("TradePulseNativeScreen", { web: () => __vitePreload(() => import("./webNativeFallback-Dam-jTCw.js").then((m) => new m.TradePulseNativeScreenWeb()), [], import.meta.url) });
+var TradePulseNativeScreen = registerPlugin("TradePulseNativeScreen", { web: () => __vitePreload(() => import("./webNativeFallback-DkvCyWpR.js").then((m) => new m.TradePulseNativeScreenWeb()), [], import.meta.url) });
 var voiceAssistantService = class VoiceAssistantService {
 	constructor() {
 		this.isEnabled = true;
@@ -26595,6 +26595,16 @@ var liveScreenService = class LiveScreenService {
 			aiState: "IDLE",
 			isScanning: false
 		});
+		else this.updateFloatingOverlayHUD({
+			direction: "WAIT",
+			confidence: 0,
+			durationText: "--:--",
+			verdictTitle: "⚡ প্রস্তুত (Ready)",
+			reasonText: "স্ক্যান করতে বাটনে চাপুন",
+			latencyMs: 0,
+			aiState: "IDLE",
+			isScanning: false
+		});
 		this.notify();
 		return this.latestResult;
 	}
@@ -28023,14 +28033,19 @@ var FloatingLiveScreenController = ({ onNavigateToLiveScreen }) => {
 		});
 	}, []);
 	(0, import_react.useEffect)(() => {
-		return voiceAssistantService.subscribe((text) => {
+		let timer = null;
+		const unsubVoice = voiceAssistantService.subscribe((text) => {
 			setVoiceNotification(text);
 			setIsVoiceOn(voiceAssistantService.isVoiceEnabled());
-			const timer = setTimeout(() => {
-				setVoiceNotification((prev) => prev === text ? null : prev);
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => {
+				setVoiceNotification(null);
 			}, 5e3);
-			return () => clearTimeout(timer);
 		});
+		return () => {
+			if (timer) clearTimeout(timer);
+			unsubVoice();
+		};
 	}, []);
 	const isStreaming = streamState === "STREAMING";
 	const isConnecting = streamState === "CONNECTING";

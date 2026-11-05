@@ -1,4 +1,4 @@
-import { t as WebPlugin } from "./index-CtrHDuRm.js";
+import { t as WebPlugin } from "./index-7gQ5WOY0.js";
 //#region src/plugins/webNativeFallback.ts
 var TradePulseNativeScreenWeb = class extends WebPlugin {
 	constructor(..._args) {
