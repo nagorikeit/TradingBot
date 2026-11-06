@@ -1227,7 +1227,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         try {
             if (latestFrameBase64 != null) {
-                byte[] decoded = Base64.decode(latestFrameBase64, Base64.DEFAULT);
+                String cleanB64 = latestFrameBase64;
+                int commaIdx = cleanB64.indexOf(",");
+                if (commaIdx != -1) {
+                    cleanB64 = cleanB64.substring(commaIdx + 1);
+                }
+                byte[] decoded = Base64.decode(cleanB64, Base64.DEFAULT);
                 Bitmap bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
                 if (bitmap != null) {
                     int width = bitmap.getWidth();
