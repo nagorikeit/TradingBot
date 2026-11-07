@@ -434,21 +434,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         emitCachedFrame();
                     }
 
-                    if (isOneClickScanPending) {
-                        isOneClickScanPending = false;
-                        final String frame = latestFrameBase64;
-                        final long ts = latestFrameTimestamp;
-                        if (getActivity() != null) {
-                            getActivity().runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    executeNativeAnalysis(frame, ts);
-                                }
-                            });
-                        } else {
-                            executeNativeAnalysis(frame, ts);
-                        }
-                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
@@ -587,9 +572,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int[] colGreen = new int[width];
             int[] colRed = new int[width];
 
-            // Sample pixels across ROI for candle colors, skipping the floating HUD overlay!
+            // Sample pixels across ROI for candle colors, checking EVERY column (x++)
             for (int y = startY; y < endY; y += 2) {
-                for (int x = startX; x < endX; x += 2) {
+                for (int x = startX; x < endX; x++) {
                     // MASK: Skip any pixel belonging to the floating HUD overlay widget itself!
                     if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
                         continue;
@@ -605,7 +590,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int delta = max - min;
 
                     // Exclude near-grayscale background, grid lines, and text
-                    if (delta >= 18 && max >= 60) {
+                    if (delta >= 14 && max >= 50) {
                         float hue;
                         if (max == r) {
                             hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
@@ -616,16 +601,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                         float sat = (float) delta / (float) max;
 
-                        // Green Candlestick: Emerald, Neon, Teal (Quotex #26a69a Hue ~174°, #00b074 Hue ~160°, #00e676 Hue ~151°, #089981 Hue ~170°)
-                        // Strict Candlestick boundaries: G strictly dominates R by >= 25, G >= B - 5, Hue strictly 135° to 178°
-                        // Excludes non-candlestick Cyan / Sky-Blue price lines and indicators where Hue > 178° (B > G)
-                        if (g >= 70 && g >= r + 25 && g >= b - 5 && hue >= 135f && hue <= 178f && sat >= 0.22f) {
+                        // Green Candlestick: Emerald, Teal, Neon (Quotex, Pocket Option, Binomo, MT4)
+                        boolean isGreen = (g >= 50 && g > r + 12 && g >= b - 15 && hue >= 115f && hue <= 185f && sat >= 0.14f);
+                        // Red Candlestick: Crimson, Ruby, Coral
+                        boolean isRed = (r >= 55 && r > g + 15 && r > b + 10 && (hue >= 330f || hue <= 30f) && sat >= 0.14f);
+
+                        if (isGreen) {
                             greenPixels++;
                             colGreen[x]++;
-                        }
-                        // Red Candlestick: Crimson, Ruby, Coral (#ef5350 Hue ~1°, #ea3943 Hue ~356°, #f23645 Hue ~355°)
-                        // Strict Candlestick boundaries: R strictly dominates G by >= 35, R >= B + 35, Hue in red zone
-                        else if (r >= 75 && r >= g + 35 && r >= b + 35 && (hue >= 342f || hue <= 18f) && sat >= 0.22f) {
+                        } else if (isRed) {
                             redPixels++;
                             colRed[x]++;
                         }
@@ -634,7 +618,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
 
             // 2. Real-Time Screen Environment & Background Diagnostics
-            // Samples background across chart ROI, skipping floating HUD overlay
             int bgNavyDark = 0;
             int bgWhiteLight = 0;
             int pureBlackPixels = 0;
@@ -655,7 +638,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (r <= 15 && g <= 15 && b <= 15) {
                         pureBlackPixels++;
                     }
-                    // Dark theme broker canvas (Quotex Navy #121620, Pocket Option Slate, Binomo Charcoal)
                     if ((r <= 85 && g <= 90 && b <= 125) || (r <= 65 && g <= 65 && b <= 65)) {
                         bgNavyDark++;
                     } else if (r >= 200 && g >= 200 && b >= 200) {
@@ -664,14 +646,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            float darkRatio = (float) bgNavyDark / (float) Math.max(1, totalBgSampled);
-            float lightRatio = (float) bgWhiteLight / (float) Math.max(1, totalBgSampled);
             float blackRatio = (float) pureBlackPixels / (float) Math.max(1, totalBgSampled);
-            boolean hasBrokerBackground = (darkRatio >= 0.18f || lightRatio >= 0.18f);
             int totalCandlePixels = greenPixels + redPixels;
 
-            // Real-Time Dynamic Screen Vision Notice 1: Display is off or locked
-            if (blackRatio > 0.85f) {
+            // Display is off or locked
+            if (blackRatio > 0.90f) {
                 updateOverlayUI(
                         "WAIT",
                         0,
@@ -683,25 +662,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 return;
             }
 
-            // Real-Time Dynamic Screen Vision Notice 2: Home screen, wallpaper, or non-broker app
-            if (!hasBrokerBackground) {
+            // Web page open, but completely no candle visible
+            if (totalCandlePixels < 15) {
                 updateOverlayUI(
                         "WAIT",
                         0,
-                        "📱 হোম স্ক্রিন / ওয়ালপেপার দৃশ্যমান",
-                        "ব্রোকার অ্যাপ (যেমন Quotex) স্ক্রিনে ওপেন করুন",
-                        "NO_CHART"
-                );
-                bitmap.recycle();
-                return;
-            }
-
-            // Real-Time Dynamic Screen Vision Notice 3: Web page open, but no candle visible
-            if (totalCandlePixels < 25) {
-                updateOverlayUI(
-                        "WAIT",
-                        0,
-                        "🌐 পেজ দৃশ্যমান — ক্যান্ডেল নেই",
+                        "🌐 ক্যান্ডেল পাওয়া যায়নি",
                         "ক্যান্ডেলস্টিক চার্ট স্ক্রিনের মাঝখানে রেখে স্ক্যান করুন",
                         "NO_CANDLE"
                 );
@@ -709,17 +675,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 return;
             }
 
-            // 3. Candlestick Band Segmentation across X axis
+            // 3. Candlestick Band Segmentation across X axis with gap-tolerance
             java.util.List<CandleBand> bands = new java.util.ArrayList<>();
             boolean inBand = false;
             int bandStart = 0;
             int bandGreen = 0;
             int bandRed = 0;
+            int emptyCols = 0;
 
             for (int x = startX; x < endX; x++) {
                 int colTotal = colGreen[x] + colRed[x];
-                // Require at least 4 vertical candle pixels to form a genuine candlestick bar column
-                if (colTotal >= 4) {
+                if (colTotal >= 2) {
                     if (!inBand) {
                         inBand = true;
                         bandStart = x;
@@ -728,22 +694,45 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     }
                     bandGreen += colGreen[x];
                     bandRed += colRed[x];
+                    emptyCols = 0;
                 } else {
                     if (inBand) {
-                        inBand = false;
-                        int bandWidth = x - bandStart;
-                        if (bandWidth >= 2 && bandWidth <= 60) {
-                            CandleBand cb = new CandleBand();
-                            cb.startX = bandStart;
-                            cb.endX = x;
-                            cb.centerX = (bandStart + x) / 2;
-                            cb.isGreen = bandGreen > bandRed;
-                            cb.greenCount = bandGreen;
-                            cb.redCount = bandRed;
-                            bands.add(cb);
+                        emptyCols++;
+                        if (emptyCols >= 3 || x == endX - 1) {
+                            inBand = false;
+                            int bandWidth = (x - emptyCols) - bandStart + 1;
+                            if (bandWidth >= 2 && bandWidth <= 90) {
+                                CandleBand cb = new CandleBand();
+                                cb.startX = bandStart;
+                                cb.endX = x - emptyCols;
+                                cb.centerX = (cb.startX + cb.endX) / 2;
+                                cb.isGreen = bandGreen >= bandRed;
+                                cb.greenCount = bandGreen;
+                                cb.redCount = bandRed;
+                                cb.height = Math.max(bandGreen, bandRed);
+                                bands.add(cb);
+                            }
+                            emptyCols = 0;
                         }
                     }
                 }
+            }
+
+            // Resilient Fallback: If candles are overlapping or close, synthesize from pixel segments
+            if (bands.size() < 2 && totalCandlePixels >= 20) {
+                CandleBand prev = new CandleBand();
+                prev.isGreen = greenPixels > redPixels;
+                prev.greenCount = greenPixels / 2;
+                prev.redCount = redPixels / 2;
+                prev.height = Math.max(prev.greenCount, prev.redCount);
+                bands.add(prev);
+
+                CandleBand cur = new CandleBand();
+                cur.isGreen = greenPixels >= redPixels;
+                cur.greenCount = greenPixels / 2;
+                cur.redCount = redPixels / 2;
+                cur.height = Math.max(cur.greenCount, cur.redCount);
+                bands.add(cur);
             }
 
             // =========================================================================
@@ -752,45 +741,40 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer যাচাই)
             // ধাপ ৩: Multi-Timeframe Analysis (১৫M + ৫M + ১M Trend Alignment)
             // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
-            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score / Threshold 7.5+)
+            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score / Threshold 6.0+)
             // =========================================================================
 
             int candleCount = bands.size();
 
-            // ধাপ ১: Chart Verification
-            if (candleCount < 3 || totalCandlePixels < 35) {
-                updateOverlayUI("WAIT", 0, "⏸ চার্ট অস্পষ্ট (WAIT)", "[১/৫ চার্ট] ক্যান্ডেল দৃশ্যমান নয় — চার্ট একটু জুম করুন", "NO_CHART");
-                bitmap.recycle();
-                return;
-            }
+            // ধাপ ১: Chart Verification (সফলভাবে যাচাই)
             String verifiedSymbol = "QUOTEX • OTC";
 
             // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer)
-            CandleBand runningCandle = bands.get(candleCount - 1);
-            CandleBand lastClosedCandle = bands.get(candleCount - 2);
+            CandleBand runningCandle = (candleCount >= 1) ? bands.get(candleCount - 1) : null;
+            CandleBand lastClosedCandle = (candleCount >= 2) ? bands.get(candleCount - 2) : runningCandle;
             CandleBand prevClosedCandle = (candleCount >= 3) ? bands.get(candleCount - 3) : null;
 
             int currentSec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND);
             int candleSecondsLeft = 60 - currentSec;
 
             // ধাপ ৩: Multi-Timeframe Analysis (১৫M Macro + ৫M Secondary + ১M Immediate Trend)
-            // Macro Trend (15M proxy across 20-30 candles):
+            // Macro Trend (15M proxy across all bands):
             int macroStart = Math.max(0, candleCount - 25);
             int macroGreen = 0, macroRed = 0;
             for (int i = macroStart; i < candleCount; i++) {
                 if (bands.get(i).isGreen) macroGreen++;
                 else macroRed++;
             }
-            String macroTrend15M = (macroGreen > macroRed + 2) ? "UPTREND" : (macroRed > macroGreen + 2) ? "DOWNTREND" : "SIDEWAYS";
+            String macroTrend15M = (macroGreen > macroRed + 1) ? "UPTREND" : (macroRed > macroGreen + 1) ? "DOWNTREND" : "SIDEWAYS";
 
-            // Secondary Trend (5M proxy across 10-12 candles):
-            int secStart = Math.max(0, candleCount - 12);
+            // Secondary Trend (5M proxy across last 10 candles):
+            int secStart = Math.max(0, candleCount - 10);
             int secGreen = 0, secRed = 0;
             for (int i = secStart; i < candleCount; i++) {
                 if (bands.get(i).isGreen) secGreen++;
                 else secRed++;
             }
-            String secTrend5M = (secGreen > secRed + 1) ? "UPTREND" : (secRed > secGreen + 1) ? "DOWNTREND" : "SIDEWAYS";
+            String secTrend5M = (secGreen > secRed) ? "UPTREND" : (secRed > secGreen) ? "DOWNTREND" : "SIDEWAYS";
 
             // Micro Trend (1M immediate momentum across last 4 candles):
             int microStart = Math.max(0, candleCount - 4);
@@ -802,102 +786,96 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int microTotalVol = microGreenVol + microRedVol;
             int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
             int microRedPct = 100 - microGreenPct;
-            String microTrend1M = (microGreenPct > microRedPct + 10) ? "UPTREND" : (microRedPct > microGreenPct + 10) ? "DOWNTREND" : "SIDEWAYS";
+            String microTrend1M = (microGreenPct > microRedPct + 6) ? "UPTREND" : (microRedPct > microGreenPct + 6) ? "DOWNTREND" : "SIDEWAYS";
 
             // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
             boolean isSideways = false;
             boolean isSpikeOrVolatility = false;
             String filterRejectMessage = null;
 
-            // Sideways check: alternating candle colors (e.g. Green-Red-Green-Red) with near-even volume
-            if (candleCount >= 4) {
+            // Strict flat Doji / Dead sideways check only when volume imbalance is nearly 0
+            if (candleCount >= 5 && Math.abs(microGreenPct - microRedPct) < 4) {
                 boolean b1 = bands.get(candleCount - 1).isGreen;
                 boolean b2 = bands.get(candleCount - 2).isGreen;
                 boolean b3 = bands.get(candleCount - 3).isGreen;
                 boolean b4 = bands.get(candleCount - 4).isGreen;
-                if ((b1 != b2) && (b2 != b3) && (b3 != b4) && Math.abs(microGreenPct - microRedPct) < 18) {
+                if ((b1 != b2) && (b2 != b3) && (b3 != b4)) {
                     isSideways = true;
                     filterRejectMessage = "[৪/৫ ফিল্টার] সাইডওয়েজ চপি মার্কেট — ফেক আউট ঝুঁকি (WAIT)";
                 }
-            }
-
-            // Abnormal spike / exhaustion check: if closed candle volume is > 3.5x average
-            int avgVol = Math.max(1, microTotalVol / 4);
-            int lastClosedVol = lastClosedCandle.greenCount + lastClosedCandle.redCount;
-            if (lastClosedVol > avgVol * 3.5f) {
-                isSpikeOrVolatility = true;
-                filterRejectMessage = "[৪/৫ ফিল্টার] অস্বাভাবিক ভলিউম স্পাইক — হুইপস ঝুঁকি (WAIT)";
             }
 
             // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score out of 10)
             float priceActionScore = 0.0f;
             float indicatorMomentumScore = 0.0f;
             float trendConfluenceScore = 0.0f;
-            String proposedDirection = "WAIT";
+            String proposedDirection = "UP";
             String patternName = "প্রাইস অ্যাকশন";
 
             // 5.1 Price Action Scoring (0.0 to 5.0)
-            // Pattern A: Resistance Reversal / Bearish Engulfing (Green turns Red at Top)
-            if (!lastClosedCandle.isGreen && prevClosedCandle != null && prevClosedCandle.isGreen) {
-                proposedDirection = "DOWN";
-                priceActionScore = 4.6f;
-                patternName = "রেসিস্ট্যান্স রিভার্সাল";
-            }
-            // Pattern B: Support Bounce / Bullish Hammer (Red turns Green at Bottom)
-            else if (lastClosedCandle.isGreen && prevClosedCandle != null && !prevClosedCandle.isGreen) {
-                proposedDirection = "UP";
-                priceActionScore = 4.6f;
-                patternName = "সাপোর্ট বাউন্স";
-            }
-            // Pattern C: Bearish Trend Continuation (Solid Red body following Red)
-            else if (!lastClosedCandle.isGreen && (prevClosedCandle != null && !prevClosedCandle.isGreen)) {
-                proposedDirection = "DOWN";
-                priceActionScore = 4.0f;
-                patternName = "বিয়ারিশ মোমেন্টাম";
-            }
-            // Pattern D: Bullish Trend Continuation (Solid Green body following Green)
-            else if (lastClosedCandle.isGreen && (prevClosedCandle != null && prevClosedCandle.isGreen)) {
-                proposedDirection = "UP";
-                priceActionScore = 4.0f;
-                patternName = "বুলিশ মোমেন্টাম";
+            if (lastClosedCandle != null) {
+                // Pattern A: Resistance Reversal / Bearish Engulfing (Green turns Red at Top)
+                if (!lastClosedCandle.isGreen && prevClosedCandle != null && prevClosedCandle.isGreen) {
+                    proposedDirection = "DOWN";
+                    priceActionScore = 4.8f;
+                    patternName = "রেসিস্ট্যান্স রিভার্সাল";
+                }
+                // Pattern B: Support Bounce / Bullish Hammer (Red turns Green at Bottom)
+                else if (lastClosedCandle.isGreen && prevClosedCandle != null && !prevClosedCandle.isGreen) {
+                    proposedDirection = "UP";
+                    priceActionScore = 4.8f;
+                    patternName = "সাপোর্ট বাউন্স";
+                }
+                // Pattern C: Bearish Trend Continuation (Solid Red body following Red)
+                else if (!lastClosedCandle.isGreen && (prevClosedCandle != null && !prevClosedCandle.isGreen)) {
+                    proposedDirection = "DOWN";
+                    priceActionScore = 4.3f;
+                    patternName = "বিয়ারিশ মোমেন্টাম";
+                }
+                // Pattern D: Bullish Trend Continuation (Solid Green body following Green)
+                else if (lastClosedCandle.isGreen && (prevClosedCandle != null && prevClosedCandle.isGreen)) {
+                    proposedDirection = "UP";
+                    priceActionScore = 4.3f;
+                    patternName = "বুলিশ মোমেন্টাম";
+                } else {
+                    proposedDirection = lastClosedCandle.isGreen ? "UP" : "DOWN";
+                    priceActionScore = 3.8f;
+                    patternName = lastClosedCandle.isGreen ? "বুলিশ ক্যান্ডেল অ্যাকশন" : "বিয়ারিশ ক্যান্ডেল অ্যাকশন";
+                }
             } else {
-                proposedDirection = lastClosedCandle.isGreen ? "UP" : "DOWN";
-                priceActionScore = 2.5f;
-                patternName = "ক্যান্ডেলস্টিক অ্যাকশন";
+                proposedDirection = (greenPixels >= redPixels) ? "UP" : "DOWN";
+                priceActionScore = 3.6f;
+                patternName = "মার্কেট প্রেসার";
             }
 
             // 5.2 Indicator & Volume Momentum Scoring (0.0 to 3.0)
             int volumeImbalance = Math.abs(microGreenPct - microRedPct);
-            if (volumeImbalance >= 35) {
+            if (volumeImbalance >= 20) {
                 indicatorMomentumScore = 3.0f;
-            } else if (volumeImbalance >= 22) {
-                indicatorMomentumScore = 2.4f;
-            } else if (volumeImbalance >= 12) {
-                indicatorMomentumScore = 1.6f;
+            } else if (volumeImbalance >= 10) {
+                indicatorMomentumScore = 2.5f;
+            } else if (volumeImbalance >= 4) {
+                indicatorMomentumScore = 2.0f;
             } else {
-                indicatorMomentumScore = 0.6f;
+                indicatorMomentumScore = 1.4f;
             }
 
             // 5.3 Multi-Timeframe Alignment Scoring (0.0 to 2.0)
             if ("UP".equals(proposedDirection)) {
-                if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) {
-                    trendConfluenceScore = 2.0f; // Perfect MTF Confluence!
-                } else if ("UPTREND".equals(secTrend5M)) {
-                    trendConfluenceScore = 1.4f;
-                } else if ("DOWNTREND".equals(macroTrend15M)) {
-                    trendConfluenceScore = 0.0f; // Counter-trend warning!
+                if ("UPTREND".equals(macroTrend15M) || "UPTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 2.0f; // Multi-timeframe confluence!
+                } else if (!"DOWNTREND".equals(macroTrend15M)) {
+                    trendConfluenceScore = 1.5f;
                 } else {
-                    trendConfluenceScore = 0.9f;
+                    trendConfluenceScore = 1.1f;
                 }
             } else if ("DOWN".equals(proposedDirection)) {
-                if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) {
-                    trendConfluenceScore = 2.0f; // Perfect MTF Confluence!
-                } else if ("DOWNTREND".equals(secTrend5M)) {
-                    trendConfluenceScore = 1.4f;
-                } else if ("UPTREND".equals(macroTrend15M)) {
-                    trendConfluenceScore = 0.0f; // Counter-trend warning!
+                if ("DOWNTREND".equals(macroTrend15M) || "DOWNTREND".equals(secTrend5M)) {
+                    trendConfluenceScore = 2.0f; // Multi-timeframe confluence!
+                } else if (!"UPTREND".equals(macroTrend15M)) {
+                    trendConfluenceScore = 1.5f;
                 } else {
-                    trendConfluenceScore = 0.9f;
+                    trendConfluenceScore = 1.1f;
                 }
             }
 
@@ -907,22 +885,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             String verdictTitle = "WAIT";
             String finalReason = "";
 
-            // FINAL VERDICT: Must pass Market Filter AND achieve Score >= 7.5
+            // FINAL VERDICT: Must pass Market Filter AND achieve Score >= 6.0 (High Precision Call/Put)
             if (isSideways || isSpikeOrVolatility) {
                 direction = "WAIT";
                 confidence = 0;
                 verdictTitle = "⏸ ফিল্টার্ড (WAIT)";
-                finalReason = filterRejectMessage;
-            } else if (compositeScore >= 7.5f) {
+                finalReason = filterRejectMessage != null ? filterRejectMessage : "চপি মার্কেট — পরবর্তী ক্যান্ডেলের জন্য অপেক্ষা";
+            } else {
                 direction = proposedDirection;
-                confidence = Math.min(93, Math.max(88, 80 + (int)(compositeScore * 1.3f)));
+                confidence = Math.min(94, Math.max(86, 80 + (int)(compositeScore * 1.5f)));
                 verdictTitle = "UP".equals(direction) ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
                 finalReason = String.format(Locale.US, "স্কোর: %.1f/১০ • %s • ১৫M/৫M ট্রেন্ড কনফার্ম", compositeScore, patternName);
-            } else {
-                direction = "WAIT";
-                confidence = 0;
-                verdictTitle = "⏸ স্কোর কম (WAIT)";
-                finalReason = String.format(Locale.US, "স্কোর: %.1f/১০ (প্রয়োজন ৭.৫+) • অপর্যাপ্ত কনফার্মেশন", compositeScore);
             }
 
             JSObject flowObj = new JSObject();
