@@ -1029,7 +1029,9 @@ export class LiveScreenService {
           if (detection && detection.isChart) {
             const closedColor = (detection as any).lastClosedCandleColor || (detection.dir === 'UP' ? 'GREEN' : 'RED');
             const isGreen = closedColor === 'GREEN';
-            const isWin = (direction === 'CALL' && isGreen) || (direction === 'PUT' && !isGreen);
+            const isCall = direction === 'CALL' || (direction as string) === 'UP';
+            const isPut = direction === 'PUT' || (direction as string) === 'DOWN';
+            const isWin = (isCall && isGreen) || (isPut && !isGreen);
             const resultOutcome: 'WIN' | 'LOSS' = isWin ? 'WIN' : 'LOSS';
             const colorBn = isGreen ? 'সবুজ' : 'লাল';
 
@@ -1688,11 +1690,20 @@ export class LiveScreenService {
 
             const symbol = 'BROKER CHART';
             // Institutional candle outcome tracking:
-            // When timer ends, the rightmost candle is the newly forming one.
-            // The trade candle is the completed penultimate candle (verifiedCandles.length - 2).
-            const closedTradeCandle = verifiedCandles.length >= 2
-              ? verifiedCandles[verifiedCandles.length - 2]
-              : verifiedCandles[0];
+            // verifiedCandles are candles with height >= 8px.
+            let closedTradeCandle = verifiedCandles[verifiedCandles.length - 1];
+            if (verifiedCandles.length >= 2) {
+              const rightmost = verifiedCandles[verifiedCandles.length - 1];
+              const penultimate = verifiedCandles[verifiedCandles.length - 2];
+              // If rightmost is an embryonic/newly opening candle bar (very thin width <= 3px or height <= 8px),
+              // then penultimate is the completed trade candle. Otherwise, rightmost is the trade candle!
+              const isBaby = rightmost.width <= 3 || (rightmost.height <= 9 && rightmost.width <= 4);
+              if (isBaby) {
+                closedTradeCandle = penultimate;
+              } else {
+                closedTradeCandle = rightmost;
+              }
+            }
             const lastClosedCandleColor: 'GREEN' | 'RED' = closedTradeCandle ? closedTradeCandle.color : (dir === 'UP' ? 'GREEN' : 'RED');
 
             return resolve({

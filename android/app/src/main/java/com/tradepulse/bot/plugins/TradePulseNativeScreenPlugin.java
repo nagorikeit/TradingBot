@@ -1257,14 +1257,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         }
                     } else {
                         // Active 1-minute trade is officially complete!
-                        // Post delay 1200ms so the broker chart firmly updates the closed candle and spawns the new candle at the right
+                        // Post delay 2200ms so the broker chart firmly updates the closed candle and spawns the new candle at the right
                         if (captureHandler != null) {
                             captureHandler.postDelayed(new Runnable() {
                                 @Override
                                 public void run() {
                                     verifyFinishedTradeOutcome(badgeText, confidence, symbol);
                                 }
-                            }, 1200);
+                            }, 2200);
                         } else {
                             verifyFinishedTradeOutcome(badgeText, confidence, symbol);
                         }
@@ -1401,17 +1401,31 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (!bands.isEmpty()) {
                         CandleBand tradeCandle;
                         if (bands.size() >= 2) {
-                            // CRITICAL INSTITUTIONAL LOGIC:
-                            // The 1-minute trade was on the candle that JUST CLOSED!
-                            // At expiry (:00), a brand new candle (bands.get(size - 1)) has opened on the right.
-                            // The actual candle of the trade is the PENULTIMATE candle (bands.get(size - 2))!
-                            // Evaluating size - 1 would evaluate the newly starting candle, which is NOT the trade candle.
-                            tradeCandle = bands.get(bands.size() - 2);
-                            CandleBand newestCandle = bands.get(bands.size() - 1);
-                            Log.i("TradePulseNativeScreen", String.format(Locale.US,
-                                "Outcome resolved: Bands=%d. Trade candle (closed) isGreen=%b (G:%d, R:%d). New candle (forming) isGreen=%b (G:%d, R:%d). TargetDir=%s",
-                                bands.size(), tradeCandle.isGreen, tradeCandle.greenCount, tradeCandle.redCount,
-                                newestCandle.isGreen, newestCandle.greenCount, newestCandle.redCount, targetDirection));
+                            CandleBand rightmost = bands.get(bands.size() - 1);
+                            CandleBand penultimate = bands.get(bands.size() - 2);
+
+                            int rightTotal = rightmost.greenCount + rightmost.redCount;
+                            int penTotal = penultimate.greenCount + penultimate.redCount;
+                            int rightWidth = rightmost.endX - rightmost.startX + 1;
+
+                            // If rightmost is very thin (<= 3px) or has very few pixels (< 25px or < 25% of penultimate),
+                            // then rightmost is clearly the newly opening baby candle (1-2 seconds old).
+                            // The completed 60-second trade candle is the penultimate candle!
+                            boolean isRightmostBaby = (rightWidth <= 3 || rightTotal < 25 || rightTotal < penTotal * 0.25f);
+
+                            if (isRightmostBaby) {
+                                tradeCandle = penultimate;
+                                Log.i("TradePulseNativeScreen", String.format(Locale.US,
+                                    "Outcome: Rightmost is baby candle (total=%d, w=%d). Evaluating penultimate as trade candle: isGreen=%b (G:%d, R:%d)",
+                                    rightTotal, rightWidth, penultimate.isGreen, penultimate.greenCount, penultimate.redCount));
+                            } else {
+                                // Rightmost is fully developed (wide and has full pixel mass).
+                                // That means the broker has NOT spawned a separate new candle yet; the rightmost IS the completed trade candle!
+                                tradeCandle = rightmost;
+                                Log.i("TradePulseNativeScreen", String.format(Locale.US,
+                                    "Outcome: Rightmost is fully developed (total=%d, w=%d). Evaluating rightmost as trade candle: isGreen=%b (G:%d, R:%d)",
+                                    rightTotal, rightWidth, rightmost.isGreen, rightmost.greenCount, rightmost.redCount));
+                            }
                         } else {
                             tradeCandle = bands.get(0);
                         }
@@ -1430,21 +1444,27 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         final boolean isWin;
         if (hasVerifiedFrame && targetDirection != null) {
-            if ("UP".equalsIgnoreCase(targetDirection)) {
+            boolean isCallDirection = "UP".equalsIgnoreCase(targetDirection) || "CALL".equalsIgnoreCase(targetDirection);
+            boolean isPutDirection = "DOWN".equalsIgnoreCase(targetDirection) || "PUT".equalsIgnoreCase(targetDirection);
+            if (isCallDirection) {
                 isWin = isCandleGreen;
-            } else {
+            } else if (isPutDirection) {
                 isWin = !isCandleGreen;
+            } else {
+                isWin = false;
             }
         } else {
-            isWin = true;
+            isWin = false;
         }
 
         final String resultOutcome = isWin ? "WIN" : "LOSS";
         final int outcomeColor = isWin ? 0xFF10B981 : 0xFFEF4444;
         final String outcomeBadge = isWin ? "🎉 WIN! লাভ (+৮৫%)" : "⚠️ LOSS (ভুল/লস)";
-        final String outcomeDetail = isWin
-                ? "সফল সিগন্যাল! ক্লোজড ক্যান্ডেল ছিল " + candleColorName + " • ফলাফল হিস্ট্রিতে রেকর্ড হয়েছে"
-                : "বিপরীত ক্যান্ডেল ক্লোজ হয়েছে (ক্লোজড ক্যান্ডেল ছিল " + candleColorName + ") • ফলাফল হিস্ট্রিতে সংরক্ষিত";
+        final String outcomeDetail = hasVerifiedFrame
+                ? (isWin
+                    ? "সফল সিগন্যাল! ক্লোজড ক্যান্ডেল ছিল " + candleColorName + " • ফলাফল হিস্ট্রিতে রেকর্ড হয়েছে"
+                    : "বিপরীত ক্যান্ডেল ক্লোজ হয়েছে (ক্লোজড ক্যান্ডেল ছিল " + candleColorName + ") • ফলাফল হিস্ট্রিতে সংরক্ষিত")
+                : "ফলাফল নিশ্চিত করা যায়নি (স্ক্রিন ফ্রেম মেলেনি)";
 
         if (getActivity() != null) {
             getActivity().runOnUiThread(new Runnable() {
