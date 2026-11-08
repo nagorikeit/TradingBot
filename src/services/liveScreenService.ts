@@ -826,7 +826,10 @@ export class LiveScreenService {
             this.notify();
           });
           TradePulseNativeScreen.addListener('onOverlayStopClicked', () => {
-            this.hideFloatingOverlayHUD();
+            this.disconnect('ব্যবহারকারী বাবল বন্ধ করে স্ক্রিন শেয়ার ডিসকানেক্ট করেছেন।');
+          });
+          TradePulseNativeScreen.addListener('onScreenCaptureStopped', () => {
+            this.disconnect('স্ক্রিন শেয়ার ডিসকানেক্ট করা হয়েছে।');
           });
           TradePulseNativeScreen.addListener('onNativeAnalysisComplete', (data: any) => {
             if (data && data.direction) {
@@ -1024,22 +1027,24 @@ export class LiveScreenService {
           const base64 = this.canvasEl.toDataURL('image/jpeg', 0.85);
           const detection = await this.isCandlestickChartImage(base64);
           if (detection && detection.isChart) {
-            const isGreen = detection.dir === 'UP';
+            const closedColor = (detection as any).lastClosedCandleColor || (detection.dir === 'UP' ? 'GREEN' : 'RED');
+            const isGreen = closedColor === 'GREEN';
             const isWin = (direction === 'CALL' && isGreen) || (direction === 'PUT' && !isGreen);
             const resultOutcome: 'WIN' | 'LOSS' = isWin ? 'WIN' : 'LOSS';
+            const colorBn = isGreen ? 'সবুজ' : 'লাল';
 
             marketService.updateSignalOutcome(targetSignalId, resultOutcome);
             agentLearningService.recordOutcome('QUOTEX OTC', direction, resultOutcome, 'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ');
 
             const voiceMsg = isWin
-              ? '১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লাভ, হিস্ট্রিতে রেকর্ড করা হয়েছে।'
-              : '১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লস। পরবর্তী সুযোগের জন্য প্রস্তুত থাকুন।';
+              ? `১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লাভ! ক্লোজড ক্যান্ডেলটি ছিল ${colorBn}।`
+              : `১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লস! ক্লোজড ক্যান্ডেলটি ছিল ${colorBn}।`;
             voiceAssistantService.speak(voiceMsg);
 
             if (this.latestResult) {
               this.latestResult.verdictTitle = isWin ? '🎉 WIN! লাভ (+৮৫%)' : '⚠️ LOSS (ভুল/লস)';
               this.latestResult.reasoning = [
-                isWin ? 'সফল ট্রেড! ফলাফল স্বয়ংক্রিয়ভাবে হিস্ট্রিতে রেকর্ড হয়েছে।' : 'বিপরীত ক্যান্ডেল ক্লোজ হয়েছে। ফলাফল হিস্ট্রিতে সংরক্ষিত।',
+                isWin ? `সফল ট্রেড! ক্লোজড ক্যান্ডেল ছিল ${colorBn} • ফলাফল হিস্ট্রিতে রেকর্ড হয়েছে।` : `বিপরীত ক্যান্ডেল ক্লোজ হয়েছে (ক্লোজড ক্যান্ডেল ছিল ${colorBn}) • ফলাফল হিস্ট্রিতে সংরক্ষিত।`,
                 ...this.latestResult.reasoning.slice(0, 2),
               ];
             }
@@ -1204,6 +1209,7 @@ export class LiveScreenService {
     confidence: number;
     symbol: string;
     pattern: string;
+    lastClosedCandleColor?: 'GREEN' | 'RED';
     reason: string[];
     diagnostic?: ChartDetectionDiagnostic;
   }> {
@@ -1630,48 +1636,64 @@ export class LiveScreenService {
             let pattern = 'কনসোলিডেশন / নিরপেক্ষ রেঞ্জ (WAIT)';
             let confidence = 0;
 
-            // Price Action Rules: Wick Rejections & Exhaustion Analysis
-            const isUpperWickRejection = lastCandle.hasUpperWick && !lastCandle.hasLowerWick;
-            const isLowerWickRejection = lastCandle.hasLowerWick && !lastCandle.hasUpperWick;
+            // Institutional Trend Following & Momentum Confluence:
+            // 1. Rejection Pinbars: Shooting Star at Resistance (PUT) or Hammer at Support (CALL)
+            // 2. Trend Continuation: 
+            //    - Bullish Trend: greenCount > redCount (or greenCount >= 3) -> UP (CALL)
+            //    - Bearish Trend: redCount > greenCount (or redCount >= 3) -> DOWN (PUT)
+            // 3. Balanced 2 vs 2: Follow price slope
 
-            if (greenCount >= 3 || (lastCandle.color === 'GREEN' && isUpperWickRejection)) {
-              // 3 green candles = Exhaustion, OR Green with upper wick = Shooting Star rejection!
+            const isGenuineUpperRejection = lastCandle.hasUpperWick && !lastCandle.hasLowerWick && lastCandle.height >= 14;
+            const isGenuineLowerRejection = lastCandle.hasLowerWick && !lastCandle.hasUpperWick && lastCandle.height >= 14;
+
+            if (isGenuineUpperRejection && lastCandle.color === 'GREEN') {
+              // Shooting star rejection at top resistance
               dir = 'DOWN';
               confidence = 88;
-              pattern = isUpperWickRejection
-                ? 'শুটিং স্টার আপার উইক রিজেকশন (Next Candle RED / PUT)'
-                : 'বুলিশ ক্যান্ডেল ক্লান্তি ও পুলব্যাক (Next Candle RED / PUT)';
-            } else if (redCount >= 3 || (lastCandle.color === 'RED' && isLowerWickRejection)) {
-              // 3 red candles = Exhaustion, OR Red with lower wick = Hammer rejection at support!
+              pattern = 'শুটিং স্টার আপার উইক রিজেকশন (PUT)';
+            } else if (isGenuineLowerRejection && lastCandle.color === 'RED') {
+              // Hammer bounce at bottom support
               dir = 'UP';
               confidence = 88;
-              pattern = isLowerWickRejection
-                ? 'হ্যামার লোয়ার উইক বাউন্স (Next Candle GREEN / CALL)'
-                : 'বিয়ারিশ ক্যান্ডেল ক্লান্তি ও বাউন্স (Next Candle GREEN / CALL)';
+              pattern = 'হ্যামার লোয়ার উইক বাউন্স (CALL)';
             } else if (greenCount > redCount) {
+              // Genuine Bullish Trend Continuation
               dir = 'UP';
-              confidence = 86;
-              pattern = 'বুলিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle GREEN / CALL)';
+              confidence = greenCount >= 3 ? 92 : 88;
+              pattern = greenCount >= 3
+                ? 'স্ট্রং বুলিশ ট্রেন্ড মোমেন্টাম (Next Candle GREEN / CALL)'
+                : 'বুলিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle GREEN / CALL)';
             } else if (redCount > greenCount) {
+              // Genuine Bearish Trend Continuation
               dir = 'DOWN';
-              confidence = 86;
-              pattern = 'বিয়ারিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle RED / PUT)';
+              confidence = redCount >= 3 ? 92 : 88;
+              pattern = redCount >= 3
+                ? 'স্ট্রং বিয়ারিশ ট্রেন্ড মোমেন্টাম (Next Candle RED / PUT)'
+                : 'বিয়ারিশ মোমেন্টাম কন্টিনিউয়েশন (Next Candle RED / PUT)';
             } else {
-              // 2 green, 2 red: Check the price slope from the first candle to the latest candle
+              // Balanced (2 green, 2 red): Use slope between first and last candle
               const firstY = recentCandles[0].minY;
               const lastY = recentCandles[recentCandles.length - 1].minY;
-              if (lastY <= firstY) {
+              if (lastY < firstY) {
+                // In canvas coordinates, smaller Y = higher price
                 dir = 'UP';
-                confidence = 85;
-                pattern = 'উর্ধ্বমুখী প্রাইজ অ্যাকশন বাউন্স (Next Candle GREEN / CALL)';
+                confidence = 86;
+                pattern = 'উর্ধ্বমুখী ট্রেন্ড বাউন্স (Next Candle GREEN / CALL)';
               } else {
                 dir = 'DOWN';
-                confidence = 85;
-                pattern = 'নিম্নমুখী প্রাইজ অ্যাকশন রিজেকশন (Next Candle RED / PUT)';
+                confidence = 86;
+                pattern = 'নিম্নমুখী ট্রেন্ড রিজেকশন (Next Candle RED / PUT)';
               }
             }
 
             const symbol = 'BROKER CHART';
+            // Institutional candle outcome tracking:
+            // When timer ends, the rightmost candle is the newly forming one.
+            // The trade candle is the completed penultimate candle (verifiedCandles.length - 2).
+            const closedTradeCandle = verifiedCandles.length >= 2
+              ? verifiedCandles[verifiedCandles.length - 2]
+              : verifiedCandles[0];
+            const lastClosedCandleColor: 'GREEN' | 'RED' = closedTradeCandle ? closedTradeCandle.color : (dir === 'UP' ? 'GREEN' : 'RED');
 
             return resolve({
               isChart: true,
@@ -1679,6 +1701,7 @@ export class LiveScreenService {
               confidence,
               symbol,
               pattern,
+              lastClosedCandleColor,
               reason: [
                 `স্ক্রিনে ${distinctCandleBars}টি ক্রমানুসারে সজ্জিত ক্যান্ডেলস্টিক বার সফলভাবে নিশ্চিত হয়েছে।`,
                 dir === 'UP'

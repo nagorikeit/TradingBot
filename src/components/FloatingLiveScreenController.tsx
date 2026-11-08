@@ -109,7 +109,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
 
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
-    liveScreenService.hideFloatingOverlayHUD();
+    liveScreenService.disconnect('ব্যবহারকারী বাবল বন্ধ করে স্ক্রিন শেয়ার ডিসকানেক্ট করেছেন।');
   };
 
   const handleToggleVoice = (e: React.MouseEvent) => {

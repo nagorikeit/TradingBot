@@ -129,6 +129,14 @@ export interface TradePulseNativeScreenPlugin {
   ): Promise<{ remove: () => void }>;
 
   /**
+   * Subscribes to Screen capture stop event
+   */
+  addListener(
+    eventName: 'onScreenCaptureStopped',
+    listenerFunc: () => void
+  ): Promise<{ remove: () => void }>;
+
+  /**
    * Subscribes to analysis results computed natively in background
    */
   addListener(
