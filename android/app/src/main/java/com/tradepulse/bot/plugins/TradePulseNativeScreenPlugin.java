@@ -490,8 +490,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
 
         // STRICT TRADE LOCK GUARD:
-        // When a trade is currently locked and active (timer running), DO NOT re-analyze or mutate the locked signal!
-        if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+        // Do not allow background auto-scans to mutate a running locked trade, unless user explicitly clicked scan
+        if (isTradeActiveAndLocked && overlaySecondsRemaining > 0 && !isOneClickScanPending) {
             return;
         }
 
@@ -536,7 +536,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void analyzeFrameLocallyNative(final String frameBase64) {
         try {
-            if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+            if (isTradeActiveAndLocked && overlaySecondsRemaining > 0 && !isOneClickScanPending) {
                 return;
             }
 
@@ -1324,6 +1324,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         isScanningActive = false;
         stopNativeScanningLoop();
 
+        if (overlayView != null) {
+            TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+            if (toggleBtn != null) {
+                int mins = overlaySecondsRemaining / 60;
+                int secs = overlaySecondsRemaining % 60;
+                String timeStr = String.format(Locale.US, "%02d:%02d", mins, secs);
+                toggleBtn.setText("⚡ রি-স্ক্যান (" + timeStr + ")");
+            }
+        }
+
         overlayCountdownRunnable = new Runnable() {
             @Override
             public void run() {
@@ -1331,11 +1341,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 overlaySecondsRemaining--;
                 TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
                 TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
+                TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
 
                 if (overlaySecondsRemaining > 0) {
                     int mins = overlaySecondsRemaining / 60;
                     int secs = overlaySecondsRemaining % 60;
                     String timeStr = String.format(Locale.US, "%02d:%02d", mins, secs);
+
+                    if (toggleBtn != null) {
+                        toggleBtn.setText("⚡ রি-স্ক্যান (" + timeStr + ")");
+                    }
 
                     if (isPreparationPhase) {
                         if (dirView != null) {
@@ -1373,6 +1388,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         if (detView != null) {
                             detView.setText("১-মিনিট ট্রেড ওপেন করুন • এক্সপায়ারি ৬০ সেকেন্ড");
                         }
+                        if (toggleBtn != null) {
+                            toggleBtn.setText("⚡ রি-স্ক্যান (01:00)");
+                        }
                         if (isTtsInitialized && textToSpeech != null) {
                             textToSpeech.speak("এখনই ট্রেড ওপেন করুন", TextToSpeech.QUEUE_FLUSH, null, "TP_GO_" + System.currentTimeMillis());
                         }
@@ -1383,6 +1401,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     } else {
                         // Active 1-minute trade is officially complete!
                         // Post delay 2200ms so the broker chart firmly updates the closed candle and spawns the new candle at the right
+                        if (toggleBtn != null) {
+                            updateScanButtonVisual(toggleBtn, false, false);
+                        }
                         if (captureHandler != null) {
                             captureHandler.postDelayed(new Runnable() {
                                 @Override
@@ -1709,6 +1730,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             captureHandler.removeCallbacks(overlayCountdownRunnable);
             overlayCountdownRunnable = null;
         }
+        isTradeActiveAndLocked = false;
+        overlaySecondsRemaining = 0;
+        activeSignaledDirection = null;
+        if (overlayView != null) {
+            TextView toggleBtn = (TextView) overlayView.findViewWithTag("scanToggleBtn");
+            if (toggleBtn != null && !isOneClickScanPending) {
+                updateScanButtonVisual(toggleBtn, false, false);
+            }
+        }
     }
 
     private void startNativeScanningLoop() {
@@ -1999,14 +2029,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         scanToggleBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // If trade is currently active and waiting for candle to close, notify user to wait for candle close!
-                if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
-                    if (isTtsInitialized && textToSpeech != null) {
-                        textToSpeech.speak("ট্রেড চলমান। ক্যান্ডেল শেষ হওয়া পর্যন্ত অপেক্ষা করুন।", TextToSpeech.QUEUE_FLUSH, null, "TP_WAIT_" + System.currentTimeMillis());
-                    }
-                    return;
-                }
                 // One-Click, One-Scan triggered directly from the Floating Bubble!
+                // Instantly re-scans screen on demand
                 performOneClickScanNative();
             }
         });
@@ -2072,6 +2096,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         cancelPendingScanProgress();
         stopOverlayCountdown();
+        isTradeActiveAndLocked = false;
+        overlaySecondsRemaining = 0;
+        activeSignaledDirection = null;
+        isScanningActive = false;
+        stopNativeScanningLoop();
 
         // ১/৫: Chart Verification চলছে (চার্ট, Asset, Timeframe ও ডেটা যাচাই)
         if (dirView != null) {
