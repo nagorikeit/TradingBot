@@ -1618,7 +1618,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
                     bitmap.recycle();
                 }
-            }
         } catch (Exception ex) {
             Log.e("TradePulseNativeScreen", "Outcome verification exception: " + ex.getMessage());
         }
