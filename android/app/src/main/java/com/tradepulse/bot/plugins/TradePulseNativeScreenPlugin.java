@@ -489,6 +489,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             return;
         }
 
+        // STRICT TRADE LOCK GUARD:
+        // When a trade is currently locked and active (timer running), DO NOT re-analyze or mutate the locked signal!
+        if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+            return;
+        }
+
         if (!isAnalyzingNativeFrame.compareAndSet(false, true)) {
             return; // Analysis already running
         }
@@ -530,6 +536,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void analyzeFrameLocallyNative(final String frameBase64) {
         try {
+            if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+                return;
+            }
+
             if (frameBase64 == null || frameBase64.trim().isEmpty()) {
                 showAnalysisErrorOnOverlay("স্ক্রিন ফ্রেম লোড হয়নি — আবার চাপুন");
                 return;
@@ -1310,9 +1320,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             overlaySecondsRemaining = remainingInCurrentCandle;
         }
 
-        // Keep frame buffer actively refreshed during 60-second trade
-        isScanningActive = true;
-        startNativeScanningLoop();
+        // Trade signal is now locked! Halt recurring scanning loops so the signal never mutates, repeats, or flickers
+        isScanningActive = false;
+        stopNativeScanningLoop();
 
         overlayCountdownRunnable = new Runnable() {
             @Override
@@ -2192,6 +2202,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
     private void updateOverlayContent(PluginCall call) {
         if (overlayView == null) return;
+
+        // If an active trade is currently locked and counting down, ignore external idle/wait updates
+        if (isTradeActiveAndLocked && overlaySecondsRemaining > 0) {
+            String err = call.getString("errorReason", "");
+            if (err == null || err.trim().isEmpty()) {
+                return;
+            }
+        }
 
         String customUrl = call.getString("backendUrl", "");
         if (customUrl != null && !customUrl.trim().isEmpty()) {
