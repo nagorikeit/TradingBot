@@ -332,22 +332,22 @@ export const WhatsAppAlertConfigPanel: React.FC = () => {
                 {/* Direct 1-Click WhatsApp Buttons */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <a
-                    href="https://wa.me/34623789595?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+                    href="https://wa.me/34623786449?text=I%20allow%20callmebot%20to%20send%20me%20messages"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-between px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95"
                   >
-                    <span>📲 ১-ক্লিকে বট ১ চ্যাট খুলুন (+34 623 78 95 95)</span>
+                    <span>📲 সক্রিয় বট ১ চ্যাট খুলুন (+34 623 78 64 49)</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
 
                   <a
-                    href="https://wa.me/34644263377?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+                    href="https://wa.me/34644957356?text=I%20allow%20callmebot%20to%20send%20me%20messages"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-between px-3 py-2 bg-teal-700 hover:bg-teal-600 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95"
                   >
-                    <span>📲 বিকল্প বট ২ চ্যাট খুলুন (+34 644 26 33 77)</span>
+                    <span>📲 বিকল্প সক্রিয় বট ২ খুলুন (+34 644 95 73 56)</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>

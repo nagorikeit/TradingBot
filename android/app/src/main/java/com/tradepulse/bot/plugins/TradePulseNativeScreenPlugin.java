@@ -552,25 +552,28 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int height = bitmap.getHeight();
 
             // 1. Adaptive Chart Canvas ROI (Region of Interest)
-            // Top ~18% is browser address bar & deposit/bonus header (has green bonus/deposit buttons)
+            // Top ~22% is browser address bar, deposit header & floating HUD overlay
             // Bottom ~28% is trade panel (Investment %, Timer, and huge green Buy / red Sell buttons)
-            // Central ~18% to 70% is the true candlestick chart canvas
-            // Right edge (from 82% to 100%) has the vertical price scale & current price badge
-            int startY = (int) (height * 0.18f);
+            // Central ~22% to 70% is the true candlestick chart canvas
+            // Right edge (from 85% to 100%) has the vertical price scale & current price badge
+            int startY = (int) (height * 0.22f);
             int endY = (int) (height * 0.70f);
             int startX = (int) (width * 0.08f); // Starts past left sidebar/briefcase icon to prevent false red bias
-            int endX = (int) (width * 0.82f); // Strictly stops before right vertical price scale!
+            int endX = (int) (width * 0.85f); // Extended to include full rightmost active candle before price scale
 
             // Determine Floating Overlay's exact on-screen position so we can MASK IT OUT!
-            // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button from ever being mistaken for a candle!
+            // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button and border from contaminating candles!
             int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
             if (overlayView != null) {
                 int[] loc = new int[2];
                 overlayView.getLocationOnScreen(loc);
-                ovLeft = loc[0];
-                ovTop = loc[1];
-                ovRight = ovLeft + overlayView.getWidth();
-                ovBottom = ovTop + overlayView.getHeight();
+                DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+                float sX = (float) width / (float) (dm.widthPixels > 0 ? dm.widthPixels : width);
+                float sY = (float) height / (float) (dm.heightPixels > 0 ? dm.heightPixels : height);
+                ovLeft = (int) (loc[0] * sX);
+                ovTop = (int) (loc[1] * sY);
+                ovRight = (int) ((loc[0] + overlayView.getWidth()) * sX);
+                ovBottom = (int) ((loc[1] + overlayView.getHeight()) * sY);
             }
 
             int greenPixels = 0;
@@ -659,6 +662,38 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
+            // Broker Signature Diagnostics:
+            // Check for broker trading controls (Green Buy + Red Sell buttons at bottom panel)
+            int bottomGreen = 0;
+            int bottomRed = 0;
+            int bStart = (int) (height * 0.74f);
+            int bEnd = (int) (height * 0.94f);
+            for (int y = bStart; y < bEnd; y += 4) {
+                for (int x = 0; x < width; x += 4) {
+                    int p = bitmap.getPixel(x, y);
+                    int pr = (p >> 16) & 0xff;
+                    int pg = (p >> 8) & 0xff;
+                    int pb = p & 0xff;
+                    if (pg >= 120 && pg > pr + 30 && pg > pb + 20) bottomGreen++;
+                    if (pr >= 150 && pr > pg + 40 && pr > pb + 40) bottomRed++;
+                }
+            }
+
+            // Check for right-edge vertical price axis and active price badge
+            int rightAxisDigits = 0;
+            int rXStart = (int) (width * 0.82f);
+            for (int y = startY; y < endY; y += 4) {
+                for (int x = rXStart; x < width; x += 4) {
+                    int p = bitmap.getPixel(x, y);
+                    int pr = (p >> 16) & 0xff;
+                    int pg = (p >> 8) & 0xff;
+                    int pb = p & 0xff;
+                    if ((pb > 150 && pb > pr + 20) || (pr > 200 && pg > 200 && pb > 200)) {
+                        rightAxisDigits++;
+                    }
+                }
+            }
+
             float blackRatio = (float) pureBlackPixels / (float) Math.max(1, totalBgSampled);
             int totalCandlePixels = greenPixels + redPixels;
 
@@ -714,7 +749,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         if (emptyCols >= 3 || x == endX - 1) {
                             inBand = false;
                             int bandWidth = (x - emptyCols) - bandStart + 1;
-                            if (bandWidth >= 2 && bandWidth <= 90) {
+                            if (bandWidth >= 2 && bandWidth <= 150) {
                                 CandleBand cb = new CandleBand();
                                 cb.startX = bandStart;
                                 cb.endX = x - emptyCols;
@@ -773,21 +808,92 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            // Resilient Fallback: If candles are overlapping or close, synthesize from pixel segments
-            if (bands.size() < 2 && totalCandlePixels >= 20) {
-                CandleBand prev = new CandleBand();
-                prev.isGreen = greenPixels > redPixels;
-                prev.greenCount = greenPixels / 2;
-                prev.redCount = redPixels / 2;
-                prev.height = Math.max(prev.greenCount, prev.redCount);
-                bands.add(prev);
+            // Close trailing in-progress band at the right edge if present
+            if (inBand) {
+                int bandWidth = (endX - emptyCols) - bandStart;
+                if (bandWidth >= 2 && bandWidth <= 150) {
+                    CandleBand cb = new CandleBand();
+                    cb.startX = bandStart;
+                    cb.endX = endX - 1 - emptyCols;
+                    cb.centerX = (cb.startX + cb.endX) / 2;
+                    cb.isGreen = bandGreen >= bandRed;
+                    cb.greenCount = bandGreen;
+                    cb.redCount = bandRed;
 
-                CandleBand cur = new CandleBand();
-                cur.isGreen = greenPixels >= redPixels;
-                cur.greenCount = greenPixels / 2;
-                cur.redCount = redPixels / 2;
-                cur.height = Math.max(cur.greenCount, cur.redCount);
-                bands.add(cur);
+                    int bMinY = 9999;
+                    int bMaxY = 0;
+                    int maxColCount = 0;
+                    for (int bx = cb.startX; bx <= cb.endX; bx++) {
+                        int colCount = colGreen[bx] + colRed[bx];
+                        if (colCount > 0) {
+                            if (colMinY[bx] < bMinY) bMinY = colMinY[bx];
+                            if (colMaxY[bx] > bMaxY) bMaxY = colMaxY[bx];
+                            if (colCount > maxColCount) maxColCount = colCount;
+                        }
+                    }
+                    cb.minY = bMinY;
+                    cb.maxY = bMaxY;
+                    cb.height = Math.max(0, bMaxY - bMinY + 1);
+
+                    int bodyTop = bMaxY;
+                    int bodyBottom = bMinY;
+                    int thresh = Math.max(3, (int)(maxColCount * 0.40f));
+                    for (int bx = cb.startX; bx <= cb.endX; bx++) {
+                        int count = colGreen[bx] + colRed[bx];
+                        if (count >= thresh) {
+                            if (colMinY[bx] < bodyTop) bodyTop = colMinY[bx];
+                            if (colMaxY[bx] > bodyBottom) bodyBottom = colMaxY[bx];
+                        }
+                    }
+                    if (bodyBottom < bodyTop) {
+                        bodyTop = bMinY;
+                        bodyBottom = bMaxY;
+                    }
+                    cb.upperWickPx = Math.max(0, bodyTop - bMinY);
+                    cb.lowerWickPx = Math.max(0, bMaxY - bodyBottom);
+                    cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+
+                    float body = (float) cb.bodyHeight;
+                    float upWick = (float) cb.upperWickPx;
+                    float downWick = (float) cb.lowerWickPx;
+                    cb.isHammer = (downWick >= body * 1.5f && upWick <= body * 0.5f && downWick >= 6);
+                    cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
+                    cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
+
+                    bands.add(cb);
+                }
+            }
+
+            // =========================================================================
+            // STRICT ANTI-NON-CHART FILTER:
+            // Must have genuine broker background canvas AND at least 3 distinct candlestick bars,
+            // PLUS confirmation of broker trading controls (Buy/Sell) or price scale!
+            // When user taps scan on Home Screen, WhatsApp, YouTube, Settings, or Chrome, REJECT!
+            // =========================================================================
+            boolean hasBrokerControls = (bottomGreen >= 60 && bottomRed >= 60) || bottomGreen >= 180 || bottomRed >= 180;
+            boolean hasPriceScale = rightAxisDigits >= 30;
+            boolean hasCandleWicks = false;
+            for (CandleBand b : bands) {
+                if (b.upperWickPx > 0 || b.lowerWickPx > 0) {
+                    hasCandleWicks = true;
+                    break;
+                }
+            }
+
+            boolean isAuthenticChart = (hasBrokerControls || (hasPriceScale && hasCandleWicks))
+                    && (bgNavyDark + bgWhiteLight) >= (int)(totalBgSampled * 0.15f)
+                    && bands.size() >= 3;
+
+            if (!isAuthenticChart) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "📱 ক্যান্ডেল চার্ট মেলেনি",
+                        "ব্রোকার চার্ট (Quotex/Pocket Option) স্ক্রিনে রেখে স্ক্যান করুন",
+                        "NO_CHART"
+                );
+                bitmap.recycle();
+                return;
             }
 
             // =========================================================================
@@ -796,7 +902,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer যাচাই)
             // ধাপ ৩: Multi-Timeframe Analysis (১৫M + ৫M + ১M Trend Alignment)
             // ধাপ ৪: Market Condition Filter (Trend, Sideways, Volatility ও Spike)
-            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score / Threshold 6.0+)
+            // ধাপ ৫: Signal Scoring (Indicator ও Price Action মিলিয়ে Score / Threshold 7.5+)
             // =========================================================================
 
             int candleCount = bands.size();
@@ -961,12 +1067,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             String verdictTitle = "WAIT";
             String finalReason = "";
 
-            // FINAL VERDICT: Must pass Market Filter AND achieve Score >= 6.0 (High Precision Call/Put)
-            if (isSideways || isSpikeOrVolatility) {
+            // FINAL VERDICT: Must pass Market Filter AND achieve Institutional Threshold Score >= 7.5
+            boolean hasHighConfidenceSignal = compositeScore >= 7.5f && !"WAIT".equals(proposedDirection);
+            if (isSideways || isSpikeOrVolatility || !hasHighConfidenceSignal) {
                 direction = "WAIT";
                 confidence = 0;
                 verdictTitle = "⏸ ফিল্টার্ড (WAIT)";
-                finalReason = filterRejectMessage != null ? filterRejectMessage : "চপি মার্কেট — পরবর্তী ক্যান্ডেলের জন্য অপেক্ষা";
+                if (isSideways || isSpikeOrVolatility) {
+                    finalReason = filterRejectMessage != null ? filterRejectMessage : "চপি মার্কেট — পরবর্তী ক্যান্ডেলের জন্য অপেক্ষা";
+                } else {
+                    finalReason = String.format(Locale.US, "পর্যাপ্ত কনফার্মেশন নেই (স্কোর: %.1f/১০) — পরবর্তী ক্যান্ডেল পর্যবেক্ষণ করুন", compositeScore);
+                }
             } else {
                 direction = proposedDirection;
                 confidence = Math.min(94, Math.max(86, 80 + (int)(compositeScore * 1.5f)));
@@ -1199,6 +1310,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             overlaySecondsRemaining = remainingInCurrentCandle;
         }
 
+        // Keep frame buffer actively refreshed during 60-second trade
+        isScanningActive = true;
+        startNativeScanningLoop();
+
         overlayCountdownRunnable = new Runnable() {
             @Override
             public void run() {
@@ -1283,120 +1398,186 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         isTradeActiveAndLocked = false;
         activeSignaledDirection = null;
+        stopNativeScanningLoop();
+        isScanningActive = false;
 
         boolean isCandleGreen = false;
         boolean hasVerifiedFrame = false;
         String candleColorName = "অনির্ধারিত";
 
+        Bitmap bitmap = null;
         try {
-            if (latestFrameBase64 != null) {
+            // Priority 1: Acquire freshest live image directly from imageReader
+            if (imageReader != null) {
+                Image liveImg = null;
+                try {
+                    liveImg = imageReader.acquireLatestImage();
+                    if (liveImg != null) {
+                        Image.Plane[] planes = liveImg.getPlanes();
+                        ByteBuffer buffer = planes[0].getBuffer();
+                        int pixelStride = planes[0].getPixelStride();
+                        int rowStride = planes[0].getRowStride();
+                        int w = liveImg.getWidth();
+                        int h = liveImg.getHeight();
+                        int rowPadding = rowStride - pixelStride * w;
+                        int safeWidth = (pixelStride > 0) ? (w + rowPadding / pixelStride) : w;
+                        int requiredBytes = safeWidth * h * 4;
+
+                        Bitmap b = Bitmap.createBitmap(safeWidth, h, Bitmap.Config.ARGB_8888);
+                        if (buffer.remaining() >= requiredBytes) {
+                            b.copyPixelsFromBuffer(buffer);
+                        } else {
+                            ByteBuffer padded = ByteBuffer.allocateDirect(requiredBytes);
+                            buffer.rewind();
+                            padded.put(buffer);
+                            padded.rewind();
+                            b.copyPixelsFromBuffer(padded);
+                        }
+                        bitmap = (safeWidth == w) ? b : Bitmap.createBitmap(b, 0, 0, w, h);
+                        if (bitmap != b) {
+                            b.recycle();
+                        }
+                        Log.i("TradePulseNativeScreen", "Verified trade outcome with FRESH direct camera frame!");
+                    }
+                } catch (Exception ex) {
+                    Log.w("TradePulseNativeScreen", "Direct imageReader acquisition fallback: " + ex.getMessage());
+                } finally {
+                    if (liveImg != null) {
+                        liveImg.close();
+                    }
+                }
+            }
+
+            // Priority 2: Fall back to latestFrameBase64 cache if direct buffer was empty
+            if (bitmap == null && latestFrameBase64 != null) {
                 String cleanB64 = latestFrameBase64;
                 int commaIdx = cleanB64.indexOf(",");
                 if (commaIdx != -1) {
                     cleanB64 = cleanB64.substring(commaIdx + 1);
                 }
                 byte[] decoded = Base64.decode(cleanB64, Base64.DEFAULT);
-                Bitmap bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
-                if (bitmap != null) {
-                    int width = bitmap.getWidth();
-                    int height = bitmap.getHeight();
-                    int startY = (int) (height * 0.18f);
-                    int endY = (int) (height * 0.70f);
-                    int startX = (int) (width * 0.08f);
-                    int endX = (int) (width * 0.82f);
+                bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+            }
 
-                    int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
-                    if (overlayView != null) {
-                        int[] loc = new int[2];
-                        overlayView.getLocationOnScreen(loc);
-                        ovLeft = loc[0];
-                        ovTop = loc[1];
-                        ovRight = ovLeft + overlayView.getWidth();
-                        ovBottom = ovTop + overlayView.getHeight();
-                    }
+            if (bitmap != null) {
+                int width = bitmap.getWidth();
+                int height = bitmap.getHeight();
+                int startY = (int) (height * 0.22f);
+                int endY = (int) (height * 0.70f);
+                int startX = (int) (width * 0.08f);
+                int endX = (int) (width * 0.85f); // Extended to include full rightmost active candle before price scale
 
-                    int[] colGreen = new int[width];
-                    int[] colRed = new int[width];
+                int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
+                if (overlayView != null) {
+                    int[] loc = new int[2];
+                    overlayView.getLocationOnScreen(loc);
+                    DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+                    float sX = (float) width / (float) (dm.widthPixels > 0 ? dm.widthPixels : width);
+                    float sY = (float) height / (float) (dm.heightPixels > 0 ? dm.heightPixels : height);
+                    ovLeft = (int) (loc[0] * sX);
+                    ovTop = (int) (loc[1] * sY);
+                    ovRight = (int) ((loc[0] + overlayView.getWidth()) * sX);
+                    ovBottom = (int) ((loc[1] + overlayView.getHeight()) * sY);
+                }
 
-                    for (int y = startY; y < endY; y += 2) {
-                        for (int x = startX; x < endX; x++) {
-                            if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
-                                continue;
-                            }
+                int[] colGreen = new int[width];
+                int[] colRed = new int[width];
 
-                            int pixel = bitmap.getPixel(x, y);
-                            int r = (pixel >> 16) & 0xff;
-                            int g = (pixel >> 8) & 0xff;
-                            int b = pixel & 0xff;
-
-                            int max = Math.max(r, Math.max(g, b));
-                            int min = Math.min(r, Math.min(g, b));
-                            int delta = max - min;
-                            if (delta < 14 || max < 50) continue;
-
-                            float hue;
-                            if (max == r) {
-                                hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
-                            } else if (max == g) {
-                                hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
-                            } else {
-                                hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
-                            }
-                            float sat = (float) delta / (float) max;
-
-                            boolean isGreen = (g >= 48 && g > r + 8 && g >= b - 18 && hue >= 100f && hue <= 195f && sat >= 0.12f);
-                            boolean isRed = (r >= 55 && r > g + 16 && r > b + 12 && (hue >= 335f || hue <= 25f) && sat >= 0.14f);
-
-                            if (isGreen) {
-                                colGreen[x]++;
-                            } else if (isRed) {
-                                colRed[x]++;
-                            }
-                        }
-                    }
-
-                    // Candlestick Band Segmentation across X axis
-                    java.util.List<CandleBand> bands = new java.util.ArrayList<>();
-                    boolean inBand = false;
-                    int bandStart = 0;
-                    int bandGreen = 0;
-                    int bandRed = 0;
-                    int emptyCols = 0;
-
+                for (int y = startY; y < endY; y += 2) {
                     for (int x = startX; x < endX; x++) {
-                        int colTotal = colGreen[x] + colRed[x];
-                        if (colTotal >= 2) {
-                            if (!inBand) {
-                                inBand = true;
-                                bandStart = x;
-                                bandGreen = 0;
-                                bandRed = 0;
-                            }
-                            bandGreen += colGreen[x];
-                            bandRed += colRed[x];
-                            emptyCols = 0;
+                        if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
+                            continue;
+                        }
+
+                        int pixel = bitmap.getPixel(x, y);
+                        int r = (pixel >> 16) & 0xff;
+                        int g = (pixel >> 8) & 0xff;
+                        int b = pixel & 0xff;
+
+                        int max = Math.max(r, Math.max(g, b));
+                        int min = Math.min(r, Math.min(g, b));
+                        int delta = max - min;
+                        if (delta < 14 || max < 50) continue;
+
+                        float hue;
+                        if (max == r) {
+                            hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
+                        } else if (max == g) {
+                            hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
                         } else {
-                            if (inBand) {
-                                emptyCols++;
-                                if (emptyCols >= 3 || x == endX - 1) {
-                                    inBand = false;
-                                    int bandWidth = (x - emptyCols) - bandStart + 1;
-                                    if (bandWidth >= 2 && bandWidth <= 90) {
-                                        CandleBand cb = new CandleBand();
-                                        cb.startX = bandStart;
-                                        cb.endX = x - emptyCols;
-                                        cb.centerX = (cb.startX + cb.endX) / 2;
-                                        cb.isGreen = bandGreen >= bandRed;
-                                        cb.greenCount = bandGreen;
-                                        cb.redCount = bandRed;
-                                        cb.height = Math.max(bandGreen, bandRed);
-                                        bands.add(cb);
-                                    }
-                                    emptyCols = 0;
+                            hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
+                        }
+                        float sat = (float) delta / (float) max;
+
+                        boolean isGreen = (g >= 48 && g > r + 8 && g >= b - 18 && hue >= 100f && hue <= 195f && sat >= 0.12f);
+                        boolean isRed = (r >= 55 && r > g + 16 && r > b + 12 && (hue >= 335f || hue <= 25f) && sat >= 0.14f);
+
+                        if (isGreen) {
+                            colGreen[x]++;
+                        } else if (isRed) {
+                            colRed[x]++;
+                        }
+                    }
+                }
+
+                // Candlestick Band Segmentation across X axis
+                java.util.List<CandleBand> bands = new java.util.ArrayList<>();
+                boolean inBand = false;
+                int bandStart = 0;
+                int bandGreen = 0;
+                int bandRed = 0;
+                int emptyCols = 0;
+
+                for (int x = startX; x < endX; x++) {
+                    int colTotal = colGreen[x] + colRed[x];
+                    if (colTotal >= 2) {
+                        if (!inBand) {
+                            inBand = true;
+                            bandStart = x;
+                            bandGreen = 0;
+                            bandRed = 0;
+                        }
+                        bandGreen += colGreen[x];
+                        bandRed += colRed[x];
+                        emptyCols = 0;
+                    } else {
+                        if (inBand) {
+                            emptyCols++;
+                            if (emptyCols >= 3 || x == endX - 1) {
+                                inBand = false;
+                                int bandWidth = (x - emptyCols) - bandStart + 1;
+                                if (bandWidth >= 2 && bandWidth <= 150) {
+                                    CandleBand cb = new CandleBand();
+                                    cb.startX = bandStart;
+                                    cb.endX = x - emptyCols;
+                                    cb.centerX = (cb.startX + cb.endX) / 2;
+                                    cb.isGreen = bandGreen >= bandRed;
+                                    cb.greenCount = bandGreen;
+                                    cb.redCount = bandRed;
+                                    cb.height = Math.max(bandGreen, bandRed);
+                                    bands.add(cb);
                                 }
+                                emptyCols = 0;
                             }
                         }
                     }
+                }
+
+                // Close trailing in-progress band at the right edge if present
+                if (inBand) {
+                    int bandWidth = (endX - emptyCols) - bandStart;
+                    if (bandWidth >= 2 && bandWidth <= 150) {
+                        CandleBand cb = new CandleBand();
+                        cb.startX = bandStart;
+                        cb.endX = endX - 1 - emptyCols;
+                        cb.centerX = (cb.startX + cb.endX) / 2;
+                        cb.isGreen = bandGreen >= bandRed;
+                        cb.greenCount = bandGreen;
+                        cb.redCount = bandRed;
+                        cb.height = Math.max(bandGreen, bandRed);
+                        bands.add(cb);
+                    }
+                }
 
                     if (!bands.isEmpty()) {
                         CandleBand tradeCandle;
