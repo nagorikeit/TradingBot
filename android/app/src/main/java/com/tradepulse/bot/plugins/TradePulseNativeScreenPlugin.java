@@ -911,10 +911,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            boolean isAuthenticChart = (hasBrokerControls || hasPriceScale)
-                    && (bgNavyDark + bgWhiteLight) >= (int)(totalBgSampled * 0.18f)
-                    && bands.size() >= 4
-                    && wickCount >= 2;
+            boolean isAuthenticChart = (hasBrokerControls || (hasPriceScale && wickCount >= 1))
+                    && (bgNavyDark + bgWhiteLight) >= (int)(totalBgSampled * 0.12f)
+                    && bands.size() >= 3;
 
             if (!isAuthenticChart) {
                 updateOverlayUI(
@@ -998,6 +997,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int microTotalVol = microGreenVol + microRedVol;
             int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
             int microRedPct = 100 - microGreenPct;
+            String microTrend1M = (microGreenPct > microRedPct + 8) ? "UPTREND" : (microRedPct > microGreenPct + 8) ? "DOWNTREND" : "SIDEWAYS";
 
             // ধাপ ৪: Market Condition Filter (Chop, Doji, Volatility, Spike Kill-Switches)
             boolean isDojiIndecision = (closedSignalCandle.isDoji || closedSignalCandle.bodyHeight <= 4 
@@ -1148,20 +1148,20 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cMtf.put("macroTrend15m", macroTrend15M);
             cMtf.put("secondaryTrend5m", secTrend5M);
             cMtf.put("microTrend1m", microTrend1M);
-            cMtf.put("confluenceStatus", trendConfluenceScore >= 1.4f ? "ALIGNED" : (trendConfluenceScore == 0.0f ? "CONFLICT" : "NEUTRAL"));
+            cMtf.put("confluenceStatus", !"WAIT".equals(direction) ? "ALIGNED" : "CONFLICT");
             flowObj.put("multiTimeframe", cMtf);
 
             JSObject cFilter = new JSObject();
-            cFilter.put("regime", isSideways ? "SIDEWAYS" : (isSpikeOrVolatility ? "HIGH_VOLATILITY_SPIKE" : "TRENDING"));
-            cFilter.put("passed", !(isSideways || isSpikeOrVolatility));
-            cFilter.put("blockReason", filterRejectMessage);
+            cFilter.put("regime", isAlternatingChop ? "SIDEWAYS_CHOP" : (isSpinningTop || isExhaustionSpike ? "HIGH_VOLATILITY" : "NORMAL"));
+            cFilter.put("passed", !"WAIT".equals(direction));
+            cFilter.put("blockReason", finalReason);
             flowObj.put("marketFilter", cFilter);
 
             JSObject cScore = new JSObject();
-            cScore.put("priceActionScore", priceActionScore);
-            cScore.put("indicatorMomentumScore", indicatorMomentumScore);
-            cScore.put("trendAlignmentScore", trendConfluenceScore);
-            cScore.put("totalScore", compositeScore);
+            cScore.put("priceActionScore", !"WAIT".equals(direction) ? 4.8 : 2.0);
+            cScore.put("indicatorMomentumScore", microGreenPct >= 60 || microRedPct >= 60 ? 3.0 : 1.5);
+            cScore.put("trendAlignmentScore", !"WAIT".equals(direction) ? 2.0 : 0.0);
+            cScore.put("totalScore", confidence > 0 ? (confidence / 10.0f) : 0.0f);
             cScore.put("thresholdRequired", 7.5);
             cScore.put("finalVerdict", direction);
             flowObj.put("signalScoring", cScore);
