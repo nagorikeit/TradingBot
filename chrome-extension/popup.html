@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <title>TradePulse Bubble</title>
+  <style>
+    body {
+      width: 310px;
+      margin: 0;
+      padding: 14px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    h3 { font-size: 15px; margin: 0 0 4px; color: #34d399; }
+    p { font-size: 11px; color: #94a3b8; margin: 0 0 12px; line-height: 1.4; }
+    .btn {
+      width: 100%;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn-primary { background: linear-gradient(135deg, #10b981, #06b6d4); color: #020617; }
+    .btn-secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+    label { display: block; font-size: 11px; color: #cbd5e1; margin-bottom: 4px; margin-top: 8px; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #020617;
+      color: #38bdf8;
+      font-size: 11px;
+      font-family: monospace;
+      margin-bottom: 8px;
+    }
+    .status { font-size: 11px; color: #34d399; margin-top: 6px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h3>TradePulse AI Bubble</h3>
+  <p>যেকোনো ট্রেডিং ওয়েবসাইটে ভাসমান ১-ক্লিক স্ক্যান বাবল চালু বা বন্ধ করুন।</p>
+
+  <button id="toggleBtn" class="btn btn-primary">এই ওয়েবসাইটে বাবল চালু/বন্ধ করুন</button>
+  <button id="scanNowBtn" class="btn btn-secondary">⚡ এখনই এই ট্যাব স্ক্যান করুন</button>
+
+  <label for="serverUrl">সার্ভার API URL:</label>
+  <input id="serverUrl" type="text" placeholder="https://..." />
+  <button id="saveUrlBtn" class="btn btn-secondary">URL সেভ করুন</button>
+
+  <div id="statusMsg" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

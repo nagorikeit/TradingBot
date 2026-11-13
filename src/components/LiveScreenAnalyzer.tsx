@@ -32,8 +32,11 @@ import {
   ArrowRight,
   BookOpen,
   Terminal,
+  Download,
+  Puzzle,
 } from 'lucide-react';
 import { liveScreenService } from '../services/liveScreenService';
+import { desktopPipService } from '../services/desktopPipService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { agentLearningService } from '../services/agentLearningService';
 import {
@@ -43,6 +46,7 @@ import {
   ScreenTransitionRecord,
 } from '../types/screenTypes';
 import {
+  getApiUrl,
   getCustomApiUrl,
   setCustomApiUrl,
   checkBackendHealth,
@@ -76,6 +80,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [lastDetectedAppName, setLastDetectedAppName] = useState<string>(liveScreenService.getLastDetectedAppName());
   const [lastDetectedSummaryBn, setLastDetectedSummaryBn] = useState<string>(liveScreenService.getLastDetectedSummaryBn());
   const [isPiPActive, setIsPiPActive] = useState<boolean>(liveScreenService.isPictureInPictureActive());
+  const [isDesktopPipActive, setIsDesktopPipActive] = useState<boolean>(desktopPipService.isActive());
+  const [desktopPipError, setDesktopPipError] = useState<string | null>(null);
   const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
   const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
 
@@ -148,7 +154,13 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setIsPiPActive(liveScreenService.isPictureInPictureActive());
       setIsOverlayActive(liveScreenService.isOverlayActive());
     });
-    return unsub;
+    const unsubPip = desktopPipService.subscribe((active) => {
+      setIsDesktopPipActive(active);
+    });
+    return () => {
+      unsub();
+      unsubPip();
+    };
   }, []);
 
   useEffect(() => {
@@ -211,6 +223,14 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const handleTogglePiP = async () => {
     const active = await liveScreenService.togglePictureInPicture();
     setIsPiPActive(active);
+  };
+
+  const handleToggleDesktopPip = async () => {
+    setDesktopPipError(null);
+    const res = await desktopPipService.openInteractiveBubble();
+    if (!res.ok && res.message) {
+      setDesktopPipError(res.message);
+    }
   };
 
   const handleScreenSwitchTest = async (
@@ -491,6 +511,106 @@ export const LiveScreenAnalyzer: React.FC = () => {
             <span className="text-[11px]">
               Privacy Protected: Account balance and login credentials are automatically shielded.
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 1.5 PC Desktop Floating Bubble & Chrome Extension Control Panel */}
+      <div className="bg-slate-900/95 border border-emerald-500/30 rounded-xl p-5 shadow-lg space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>কম্পিউটারে ট্রেডিং ওয়েবসাইটের উপরে বাবল সিস্টেম (Desktop Dual-Mode)</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              ট্যাব পরিবর্তন না করে সরাসরি Quotex / PocketOption / Binomo সাইটে থেকেই ১-ক্লিক স্ক্যান করুন:
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Method 1: Always-on-Top Interactive Browser Bubble */}
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-cyan-500/30 flex flex-col justify-between gap-3">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Tv className="w-4 h-4" />
+                  <span>পদ্ধতি ১: Always-on-Top ফ্লোটিং বাবল (Browser PiP)</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  তাৎক্ষণিক
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Chrome বা Edge ব্রাউজারে একটি ভাসমান মিনি উইন্ডো খুলবে যা অন্য ট্যাবে (ট্রেডিং সাইটে) গেলেও সবসময় স্ক্রিনের উপরে ভেসে থাকবে। এখান থেকেই সরাসরি স্ক্যান ও সিগন্যাল দেখা যাবে।
+              </p>
+            </div>
+
+            {desktopPipError && (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] space-y-2">
+                <p>{desktopPipError}</p>
+                {isInsideIframe && (
+                  <a
+                    href={typeof window !== 'undefined' ? window.location.href : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold text-[11px] hover:bg-amber-400"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>নতুন ট্যাবে মূল অ্যাপ খুলুন</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={handleToggleDesktopPip}
+              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                isDesktopPipActive
+                  ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
+                  : 'bg-cyan-600/25 hover:bg-cyan-600/40 text-cyan-200 border border-cyan-500/40'
+              }`}
+            >
+              <Tv className="w-4 h-4" />
+              <span>
+                {isDesktopPipActive
+                  ? '✅ পিসি ফ্লোটিং বাবল চালু আছে (বন্ধ করতে ক্লিক করুন)'
+                  : '🖥️ পিসি Always-on-Top বাবল চালু করুন'}
+              </span>
+            </button>
+          </div>
+
+          {/* Method 2: Chrome Extension Download */}
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-emerald-500/30 flex flex-col justify-between gap-3">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                  <Puzzle className="w-4 h-4" />
+                  <span>পদ্ধতি ২: Chrome এক্সটেনশন (সরাসরি ট্রেডিং সাইটে বাবল)</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  ১০০% অটো
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
+                এক্সটেনশনটি ব্রাউজারে যুক্ত করলে Quotex, PocketOption বা যেকোনো ট্রেডিং ওয়েবসাইটের ভেতরেই সরাসরি ড্র্যাগযোগ্য বাবল ভেসে উঠবে এবং ১-ক্লিকে ওই ট্যাব স্ক্যান করে সিগন্যাল দেখাবে।
+              </p>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300 space-y-1">
+                <div>১. নিচের বাটনে ক্লিক করে <code className="text-emerald-300">.zip</code> ফাইলটি ডাউনলোড ও আনজিপ (Extract) করুন।</div>
+                <div>২. Chrome-এ <code className="text-cyan-300">chrome://extensions</code> খুলে ডানে <b>Developer mode</b> চালু করুন।</div>
+                <div>৩. <b>Load unpacked</b> ক্লিক করে আনজিপ করা ফোল্ডারটি সিলেক্ট করুন।</div>
+              </div>
+            </div>
+
+            <a
+              href={getApiUrl('/api/extension/download')}
+              download="TradePulse-Chrome-Extension.zip"
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20"
+            >
+              <Download className="w-4 h-4" />
+              <span>🧩 Chrome এক্সটেনশন ডাউনলোড (.zip)</span>
+            </a>
           </div>
         </div>
       </div>

@@ -1,0 +1,376 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered TradePulse user profile and subscription state",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"]
+        },
+        "accountStatus": {
+          "type": "string",
+          "enum": ["active", "suspended", "banned"]
+        },
+        "subscriptionStatus": {
+          "type": "string",
+          "enum": ["ACTIVE", "PENDING", "EXPIRED", "NONE"]
+        },
+        "planId": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "planName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["bkash", "nagad", "rocket", "binance", ""]
+        },
+        "senderNumber": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "trxId": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "type": "number"
+        },
+        "requestedAt": {
+          "type": "number"
+        },
+        "approvedAt": {
+          "type": "number"
+        },
+        "approvedBy": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "name",
+        "email",
+        "role",
+        "accountStatus",
+        "subscriptionStatus",
+        "expiresAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SubscriptionRequest": {
+      "title": "SubscriptionRequest",
+      "description": "User payment submission awaiting admin verification",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "userEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "userPhone": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "planId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "planName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "durationDays": {
+          "type": "number"
+        },
+        "priceBdt": {
+          "type": "number"
+        },
+        "priceUsdt": {
+          "type": "number"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["bkash", "nagad", "rocket", "binance"]
+        },
+        "senderNumber": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 80
+        },
+        "trxId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 100
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "REJECTED"]
+        },
+        "reviewedBy": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "userName",
+        "userEmail",
+        "planId",
+        "planName",
+        "durationDays",
+        "priceBdt",
+        "priceUsdt",
+        "paymentMethod",
+        "senderNumber",
+        "trxId",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PaymentGatewaysConfig": {
+      "title": "PaymentGatewaysConfig",
+      "description": "Admin-managed payment receiving accounts and instructions",
+      "type": "object",
+      "properties": {
+        "bkashNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "bkashType": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "nagadNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "nagadType": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "rocketNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "binanceUsdtAddress": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "binanceNetwork": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "instructionBn": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "bkashNumber",
+        "bkashType",
+        "nagadNumber",
+        "nagadType",
+        "rocketNumber",
+        "binanceUsdtAddress",
+        "binanceNetwork",
+        "instructionBn",
+        "updatedAt"
+      ]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Marker document designating elevated admin UID",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "ApiEndpointConfig": {
+      "title": "ApiEndpointConfig",
+      "description": "Editable API endpoint configuration and connection state",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "enum": ["MARKET_DATA", "BACKEND_AI", "AUTH_CLOUD", "NOTIFICATIONS", "CUSTOM"]
+        },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "DELETE", "CLOUD"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "baseUrl": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "number"
+        },
+        "sampleBody": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "isCustom": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "name",
+        "category",
+        "method",
+        "url",
+        "enabled",
+        "timeoutMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile and subscription status"
+    },
+    "/subscriptionRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/SubscriptionRequest" },
+      "description": "Subscription TrxID verification requests"
+    },
+    "/paymentConfig/{configId}": {
+      "schema": { "$ref": "#/entities/PaymentGatewaysConfig" },
+      "description": "Payment accounts configured by admin"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Admin role registry"
+    },
+    "/apiEndpoints/{endpointId}": {
+      "schema": { "$ref": "#/entities/ApiEndpointConfig" },
+      "description": "User and admin editable API configurations"
+    }
+  }
+}

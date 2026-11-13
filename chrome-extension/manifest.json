@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "TradePulse AI - Trading Bubble",
+  "version": "1.0.0",
+  "description": "ট্রেডিং ওয়েবসাইটের (Quotex, PocketOption, Binomo, OlympTrade) উপরে সরাসরি ভাসমান ১-ক্লিক স্ক্যান বাবল ও লাইভ সিগন্যাল দেখায়।",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TradePulse Bubble Control"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

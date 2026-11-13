@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { agentRouter } from './server/routes/agent';
+import { authRouter } from './server/routes/auth';
+import { extensionRouter } from './server/routes/extension';
 
 dotenv.config();
 
@@ -26,6 +28,12 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Chrome Extension ZIP Package Download
+app.use('/api/extension', extensionRouter);
+
+// Auth & Subscription API
+app.use('/api', authRouter);
 
 // Phase 0A: Internal Secure Backend API Boundary (/api/agent/*)
 app.use('/api/agent', agentRouter);

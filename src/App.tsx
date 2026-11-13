@@ -22,10 +22,19 @@ import { AgentCommandCenter } from './components/AgentCommandCenter';
 import { LiveScreenAnalyzer } from './components/LiveScreenAnalyzer';
 import { FloatingLiveScreenController } from './components/FloatingLiveScreenController';
 import { BengaliKnowledgeHub } from './components/BengaliKnowledgeHub';
+import { AdminPanel } from './components/AdminPanel';
+import { ApiHubView } from './components/ApiHubView';
+import { AuthGatewayModal } from './components/AuthGatewayModal';
+import { SubscriptionModal } from './components/SubscriptionModal';
+import { authService } from './services/authService';
+import { User } from './types/authTypes';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge'>('terminal');
+  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin'>('terminal');
+  const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getUser());
+  const [hasSubscription, setHasSubscription] = useState<boolean>(() => authService.hasActiveSubscription());
+  const [daysRemaining, setDaysRemaining] = useState<number>(() => authService.getDaysRemaining());
   const [symbol, setSymbol] = useState<string>(() => marketService.getSymbol());
   const [timeframe, setTimeframe] = useState<TimeframeKey>(() => marketService.getTimeframe());
   const [providerMode, setProviderMode] = useState<MarketDataSourceMode>(() => marketService.getProviderMode());
@@ -51,18 +60,29 @@ export default function App() {
       setScannerSignalCount(scannerService.getQualifiedSignals().length);
     };
 
+    const updateAuth = (u: User | null) => {
+      setCurrentUser(u);
+      setHasSubscription(authService.hasActiveSubscription());
+      setDaysRemaining(authService.getDaysRemaining());
+      if (u?.role !== 'admin' && currentTab === 'admin') {
+        setCurrentTab('terminal');
+      }
+    };
+
     updateState();
     updateScanner();
 
     const unsubscribeMarket = marketService.subscribe(updateState);
     const unsubscribeScanner = scannerService.subscribe(updateScanner);
+    const unsubscribeAuth = authService.subscribe(updateAuth);
 
     return () => {
       unsubscribeMarket();
       unsubscribeScanner();
+      unsubscribeAuth();
       marketService.stopLiveFeed();
     };
-  }, []);
+  }, [currentTab]);
 
   const handleSelectSymbol = (newSymbol: string) => {
     marketService.setSymbol(newSymbol);
@@ -112,7 +132,23 @@ export default function App() {
         onManualScan={handleManualScan}
         isScanning={currentTab === 'scanner' ? isScannerBusy : isScanning}
         scannerSignalCount={scannerSignalCount}
+        currentUser={currentUser}
+        daysRemaining={daysRemaining}
+        onLogout={() => authService.logout()}
       />
+
+      {/* Mandatory Login Gateway: Render AuthGatewayModal when user is not logged in */}
+      {!currentUser && (
+        <AuthGatewayModal onSuccess={() => {}} />
+      )}
+
+      {/* Subscription Gateway: When logged in as regular user without active subscription */}
+      {currentUser && currentUser.role === 'user' && !hasSubscription && (
+        <SubscriptionModal
+          user={currentUser}
+          onLogout={() => authService.logout()}
+        />
+      )}
 
       {/* 3. Asset and Timeframe Bar */}
       <AssetSelectorBar
@@ -128,6 +164,10 @@ export default function App() {
 
       {/* 4. Main Body Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+        {currentTab === 'admin' && currentUser?.role === 'admin' && (
+          <AdminPanel onClose={() => setCurrentTab('terminal')} />
+        )}
+
         {currentTab === 'terminal' && (
           <div className="space-y-6">
             {/* Top Grid: Signal Hero Card & Candlestick Chart */}
@@ -199,6 +239,10 @@ export default function App() {
 
         {currentTab === 'knowledge' && (
           <BengaliKnowledgeHub />
+        )}
+
+        {currentTab === 'api-hub' && (
+          <ApiHubView />
         )}
       </main>
 

@@ -1,14 +1,18 @@
 import React from 'react';
-import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen } from 'lucide-react';
+import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown, PlugZap } from 'lucide-react';
 import { TimeframeKey } from '../types';
+import { User } from '../types/authTypes';
 
 interface HeaderProps {
-  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge';
-  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge') => void;
+  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin';
+  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin') => void;
   onAdvanceCandle: () => void;
   onManualScan: () => void;
   isScanning: boolean;
   scannerSignalCount?: number;
+  currentUser?: User | null;
+  daysRemaining?: number;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +22,9 @@ export const Header: React.FC<HeaderProps> = ({
   onManualScan,
   isScanning,
   scannerSignalCount = 0,
+  currentUser,
+  daysRemaining = 0,
+  onLogout,
 }) => {
   return (
     <header className="border-b border-slate-800 bg-[#0f172a]/95 sticky top-0 z-40 backdrop-blur-md">
@@ -140,10 +147,48 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Live Screen</span>
             <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/20 text-cyan-300 font-mono">VISION</span>
           </button>
+
+          <button
+            onClick={() => onSelectTab('api-hub')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+              currentTab === 'api-hub'
+                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm border-emerald-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            }`}
+          >
+            <PlugZap className="w-3.5 h-3.5 text-emerald-400" />
+            <span>API হাব</span>
+          </button>
+
+          {/* Admin Control Tab (Shown only to Admin) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={() => onSelectTab('admin')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border ${
+                currentTab === 'admin'
+                  ? 'bg-amber-500/20 text-amber-300 font-bold border-amber-500/50 shadow-sm'
+                  : 'text-amber-400/90 border-amber-500/30 hover:bg-amber-500/10'
+              }`}
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>এডমিন প্যানেল</span>
+            </button>
+          )}
         </nav>
 
-        {/* Zone 3: Quick Action Buttons */}
+        {/* Zone 3: User status & Quick Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* User Profile Badge */}
+          {currentUser && (
+            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+              <span className={`w-2 h-2 rounded-full ${currentUser.role === 'admin' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+              <span className="text-slate-200 font-medium truncate max-w-[100px]">{currentUser.name}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-slate-800 text-slate-300">
+                {currentUser.role === 'admin' ? 'ADMIN' : `${daysRemaining}d`}
+              </span>
+            </div>
+          )}
+
           <button
             onClick={onAdvanceCandle}
             title="Advance 1 full candle to test signal progression"
@@ -162,6 +207,16 @@ export const Header: React.FC<HeaderProps> = ({
             <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
             <span>Scan</span>
           </button>
+
+          {onLogout && currentUser && (
+            <button
+              onClick={onLogout}
+              title="লগআউট"
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md transition-colors shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </header>
