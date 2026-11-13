@@ -11,6 +11,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import { getApiUrl, getApiBaseUrl, DEFAULT_HOSTED_BACKEND_URL } from './apiConfig';
 import { agentLearningService } from './agentLearningService';
+import { authService } from './authService';
 
 export class LiveScreenService {
   private static instance: LiveScreenService;
@@ -722,6 +723,14 @@ export class LiveScreenService {
       return 'স্ক্রিন শেয়ার সংযুক্ত নেই। অনুগ্রহ করে প্রথমে "Connect Live Screen" দিয়ে স্ক্রিন শেয়ার চালু করুন।';
     }
 
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      const msg = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.errorMessage = msg;
+      this.notify();
+      return msg;
+    }
+
     try {
       const video = this.videoEl;
       const canvas = this.canvasEl;
@@ -749,6 +758,7 @@ export class LiveScreenService {
         if (data && data.ok && data.result) {
           const resObj: ScreenAnalysisFinalResult = data.result;
           this.processResult(resObj, 150);
+          await authService.recordCompletedScan('screen_qa');
           return (
             resObj.visionData?.customPromptAnswer ||
             resObj.visionData?.screenSummaryBn ||
@@ -1127,6 +1137,13 @@ export class LiveScreenService {
       return;
     }
 
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      this.errorMessage = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.haltRecurringScanKeepResult(this.errorMessage);
+      return;
+    }
+
     this.latestProcessedSequenceId = frame.sequenceId;
     this.latestFrameCount = frame.sequenceId;
     this.latestFrameTimestamp = frame.timestamp;
@@ -1185,6 +1202,11 @@ export class LiveScreenService {
         this.errorMessage = null;
         this.processResult(localResult, latencyMs);
       }
+
+      const deductRes = await authService.recordCompletedScan('native_screen');
+      if (deductRes.exhaustedAfter) {
+        this.haltRecurringScanKeepResult('নির্ধারিত স্ক্যান লিমিট পূর্ণ হয়েছে।');
+      }
     } catch (err: any) {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
@@ -1194,6 +1216,10 @@ export class LiveScreenService {
       this.lastErrorReason = null;
       this.errorMessage = null;
       this.processResult(localResult, latencyMs);
+      const deductRes = await authService.recordCompletedScan('native_screen_local');
+      if (deductRes.exhaustedAfter) {
+        this.haltRecurringScanKeepResult('নির্ধারিত স্ক্যান লিমিট পূর্ণ হয়েছে।');
+      }
     } finally {
       this.isProcessingFrame = false;
       this.notify();
@@ -2335,7 +2361,27 @@ export class LiveScreenService {
    * Performs immediate frame analysis and runs recurring analysis every 3.5s.
    * Does NOT disconnect.
    */
+  private haltRecurringScanKeepResult(noticeMsg?: string): void {
+    this.isScanningActive = false;
+    this.aiState = 'IDLE';
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = null;
+    }
+    if (noticeMsg) {
+      this.errorMessage = noticeMsg;
+    }
+    this.notify();
+  }
+
   public async startScanning(): Promise<void> {
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      this.errorMessage = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.notify();
+      return;
+    }
+
     if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
       if (!ok) return;
@@ -2366,6 +2412,11 @@ export class LiveScreenService {
     if (this.scanTimer) clearInterval(this.scanTimer);
     this.scanTimer = setInterval(() => {
       if (this.isScanningActive && this.state === 'STREAMING') {
+        const loopCheck = authService.checkScanAllowance();
+        if (!loopCheck.allowed) {
+          this.haltRecurringScanKeepResult(loopCheck.reasonBn);
+          return;
+        }
         this.captureAndAnalyzeCurrentFrame();
       }
     }, this.scanIntervalMs);
@@ -2424,6 +2475,24 @@ export class LiveScreenService {
    * Cancels any recurring interval timers so the signal never flickers or auto-changes!
    */
   public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      const msg = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.errorMessage = msg;
+      this.updateFloatingOverlayHUD({
+        direction: 'WAIT',
+        confidence: 0,
+        durationText: '🔒',
+        verdictTitle: '⚠️ স্ক্যান লিমিট শেষ',
+        reasonText: msg,
+        latencyMs: 0,
+        aiState: 'IDLE',
+        isScanning: false,
+      });
+      this.notify();
+      return null;
+    }
+
     if (this.state !== 'STREAMING') {
       const ok = await this.connectScreen();
       if (!ok) return null;
@@ -2540,6 +2609,12 @@ export class LiveScreenService {
 
     // 1. Android Native capture via MediaProjection Surface
     if (Capacitor.isNativePlatform() && this.isNativeCaptureActive) {
+      const allowance = authService.checkScanAllowance();
+      if (!allowance.allowed) {
+        this.errorMessage = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+        this.haltRecurringScanKeepResult(this.errorMessage);
+        return;
+      }
       try {
         const frameRes = await TradePulseNativeScreen.captureSingleFrame();
         if (frameRes && frameRes.imageBase64 && (this.isScanningActive || this.isSingleScanInProgress)) {
@@ -2562,6 +2637,13 @@ export class LiveScreenService {
 
     const video = this.videoEl;
     if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      this.errorMessage = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.haltRecurringScanKeepResult(this.errorMessage);
+      return;
+    }
 
     this.isProcessingFrame = true;
     this.notify();
@@ -2620,11 +2702,20 @@ export class LiveScreenService {
         const localResult = await this.analyzeFrameLocally(imageBase64, frameCapturedAt);
         this.processResult(localResult, latencyMs);
       }
+
+      const deductRes = await authService.recordCompletedScan('live_screen');
+      if (deductRes.exhaustedAfter) {
+        this.haltRecurringScanKeepResult('আপনার নির্ধারিত স্ক্যান লিমিট পূর্ণ হয়েছে।');
+      }
     } catch (err: any) {
       clearTimeout(timeout);
       const latencyMs = Date.now() - startTime;
       const localResult = await this.analyzeFrameLocally(imageBase64, frameCapturedAt);
       this.processResult(localResult, latencyMs);
+      const deductRes = await authService.recordCompletedScan('live_screen_local');
+      if (deductRes.exhaustedAfter) {
+        this.haltRecurringScanKeepResult('আপনার নির্ধারিত স্ক্যান লিমিট পূর্ণ হয়েছে।');
+      }
     } finally {
       this.isProcessingFrame = false;
       this.notify();
@@ -2636,6 +2727,13 @@ export class LiveScreenService {
    */
   public async analyzeImageDirectly(imageBase64: string): Promise<boolean> {
     if (this.isProcessingFrame) return false;
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) {
+      this.errorMessage = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
+      this.notify();
+      return false;
+    }
+
     this.isProcessingFrame = true;
     this.errorMessage = null;
     voiceAssistantService.announceImageUploaded();
@@ -2670,6 +2768,7 @@ export class LiveScreenService {
           this.state = 'STREAMING';
           this.startCountdownTicker();
           this.processResult(result, latencyMs);
+          await authService.recordCompletedScan('image_upload');
           return true;
         } else {
           this.errorMessage = data?.error || 'Analysis failed.';

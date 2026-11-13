@@ -78,6 +78,28 @@
           "type": "string",
           "maxLength": 200
         },
+        "freeScansLimit": {
+          "type": "number"
+        },
+        "freeScansUsed": {
+          "type": "number"
+        },
+        "dailyScansUsed": {
+          "type": "number"
+        },
+        "lastScanDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "totalScansUsed": {
+          "type": "number"
+        },
+        "dailyScanLimit": {
+          "type": "number"
+        },
+        "customDailyScanLimit": {
+          "type": "number"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -141,6 +163,9 @@
           "maxLength": 120
         },
         "durationDays": {
+          "type": "number"
+        },
+        "dailyScanLimit": {
           "type": "number"
         },
         "priceBdt": {
@@ -349,12 +374,65 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "PlanSettingsConfig": {
+      "title": "PlanSettingsConfig",
+      "description": "Admin-configurable free starter scan limit and subscription tier daily scan quotas",
+      "type": "object",
+      "properties": {
+        "freeTrialScans": { "type": "number" },
+        "trial7dName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "trial7dDays": { "type": "number" },
+        "trial7dDailyLimit": { "type": "number" },
+        "trial7dPriceBdt": { "type": "number" },
+        "trial7dPriceUsdt": { "type": "number" },
+        "monthly1mName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "monthly1mDays": { "type": "number" },
+        "monthly1mDailyLimit": { "type": "number" },
+        "monthly1mPriceBdt": { "type": "number" },
+        "monthly1mPriceUsdt": { "type": "number" },
+        "vip6mName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "vip6mDays": { "type": "number" },
+        "vip6mDailyLimit": { "type": "number" },
+        "vip6mPriceBdt": { "type": "number" },
+        "vip6mPriceUsdt": { "type": "number" },
+        "lifetimeName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "lifetimeDays": { "type": "number" },
+        "lifetimeDailyLimit": { "type": "number" },
+        "lifetimePriceBdt": { "type": "number" },
+        "lifetimePriceUsdt": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "freeTrialScans",
+        "trial7dName",
+        "trial7dDays",
+        "trial7dDailyLimit",
+        "trial7dPriceBdt",
+        "trial7dPriceUsdt",
+        "monthly1mName",
+        "monthly1mDays",
+        "monthly1mDailyLimit",
+        "monthly1mPriceBdt",
+        "monthly1mPriceUsdt",
+        "vip6mName",
+        "vip6mDays",
+        "vip6mDailyLimit",
+        "vip6mPriceBdt",
+        "vip6mPriceUsdt",
+        "lifetimeName",
+        "lifetimeDays",
+        "lifetimeDailyLimit",
+        "lifetimePriceBdt",
+        "lifetimePriceUsdt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
-      "description": "Private user profile and subscription status"
+      "description": "Private user profile, subscription status, and scan usage quotas"
     },
     "/subscriptionRequests/{requestId}": {
       "schema": { "$ref": "#/entities/SubscriptionRequest" },
@@ -363,6 +441,10 @@
     "/paymentConfig/{configId}": {
       "schema": { "$ref": "#/entities/PaymentGatewaysConfig" },
       "description": "Payment accounts configured by admin"
+    },
+    "/planSettings/{configId}": {
+      "schema": { "$ref": "#/entities/PlanSettingsConfig" },
+      "description": "Admin-editable free trial scan count and subscription tier daily scan limits"
     },
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminMarker" },

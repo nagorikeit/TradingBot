@@ -49,6 +49,8 @@ service cloud.firestore {
           'uid', 'name', 'email', 'phone', 'photoURL', 'role', 'accountStatus',
           'subscriptionStatus', 'planId', 'planName', 'paymentMethod', 'senderNumber',
           'trxId', 'startDate', 'expiresAt', 'requestedAt', 'approvedAt', 'approvedBy',
+          'freeScansLimit', 'freeScansUsed', 'dailyScansUsed', 'lastScanDate',
+          'totalScansUsed', 'dailyScanLimit', 'customDailyScanLimit',
           'createdAt', 'updatedAt'
         ])
         && isValidId(data.uid)
@@ -70,8 +72,53 @@ service cloud.firestore {
         && (!('requestedAt' in data) || data.requestedAt is number)
         && (!('approvedAt' in data) || data.approvedAt is number)
         && (!('approvedBy' in data) || (data.approvedBy is string && data.approvedBy.size() <= 200))
+        && (!('freeScansLimit' in data) || (data.freeScansLimit is number && data.freeScansLimit >= 0 && data.freeScansLimit <= 10000))
+        && (!('freeScansUsed' in data) || (data.freeScansUsed is number && data.freeScansUsed >= 0 && data.freeScansUsed <= 100000))
+        && (!('dailyScansUsed' in data) || (data.dailyScansUsed is number && data.dailyScansUsed >= 0 && data.dailyScansUsed <= 100000))
+        && (!('lastScanDate' in data) || (data.lastScanDate is string && data.lastScanDate.size() <= 20))
+        && (!('totalScansUsed' in data) || (data.totalScansUsed is number && data.totalScansUsed >= 0))
+        && (!('dailyScanLimit' in data) || (data.dailyScanLimit is number && data.dailyScanLimit >= 0 && data.dailyScanLimit <= 100000))
+        && (!('customDailyScanLimit' in data) || (data.customDailyScanLimit is number && data.customDailyScanLimit >= -1 && data.customDailyScanLimit <= 100000))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isValidUserScanIncrement() {
+      let prevTotal = ('totalScansUsed' in existing()) ? existing().totalScansUsed : 0;
+      let prevFreeUsed = ('freeScansUsed' in existing()) ? existing().freeScansUsed : 0;
+      let prevFreeLimit = ('freeScansLimit' in existing()) ? existing().freeScansLimit : 5;
+      let prevDailyUsed = ('dailyScansUsed' in existing()) ? existing().dailyScansUsed : 0;
+      let prevDate = ('lastScanDate' in existing()) ? existing().lastScanDate : '';
+      let customLimit = ('customDailyScanLimit' in existing()) ? existing().customDailyScanLimit : -1;
+      let planLimit = ('dailyScanLimit' in existing()) ? existing().dailyScanLimit : 0;
+      let effectiveDailyLimit = customLimit >= 0 ? customLimit : planLimit;
+      let isPaidActive = existing().subscriptionStatus == 'ACTIVE' && existing().expiresAt > request.time.toMillis();
+
+      return existing().accountStatus == 'active'
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'freeScansUsed', 'dailyScansUsed', 'lastScanDate', 'totalScansUsed', 'updatedAt'
+        ])
+        && incoming().totalScansUsed == prevTotal + 1
+        && incoming().lastScanDate is string
+        && incoming().lastScanDate.size() >= 8
+        && incoming().lastScanDate.size() <= 20
+        && (
+          (
+            isPaidActive
+            && incoming().freeScansUsed == prevFreeUsed
+            && (
+              (incoming().lastScanDate != prevDate && incoming().dailyScansUsed == 1) ||
+              (incoming().lastScanDate == prevDate && incoming().dailyScansUsed == prevDailyUsed + 1)
+            )
+            && (effectiveDailyLimit == 0 || incoming().dailyScansUsed <= effectiveDailyLimit)
+          ) ||
+          (
+            !isPaidActive
+            && prevFreeUsed < prevFreeLimit
+            && incoming().freeScansUsed == prevFreeUsed + 1
+            && incoming().dailyScansUsed == prevDailyUsed
+          )
+        );
     }
 
     function isValidSubscriptionRequest(data, requestId) {
@@ -82,8 +129,8 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'id', 'userId', 'userName', 'userEmail', 'userPhone', 'planId', 'planName',
-          'durationDays', 'priceBdt', 'priceUsdt', 'paymentMethod', 'senderNumber', 'trxId',
-          'status', 'reviewedBy', 'notes', 'createdAt', 'updatedAt'
+          'durationDays', 'dailyScanLimit', 'priceBdt', 'priceUsdt', 'paymentMethod',
+          'senderNumber', 'trxId', 'status', 'reviewedBy', 'notes', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.id == requestId
@@ -94,6 +141,7 @@ service cloud.firestore {
         && data.planId is string && data.planId.size() >= 1 && data.planId.size() <= 50
         && data.planName is string && data.planName.size() >= 1 && data.planName.size() <= 120
         && data.durationDays is number && data.durationDays > 0 && data.durationDays <= 36500
+        && (!('dailyScanLimit' in data) || (data.dailyScanLimit is number && data.dailyScanLimit >= 0 && data.dailyScanLimit <= 100000))
         && data.priceBdt is number && data.priceBdt >= 0
         && data.priceUsdt is number && data.priceUsdt >= 0
         && data.paymentMethod in ['bkash', 'nagad', 'rocket', 'binance']
@@ -123,6 +171,47 @@ service cloud.firestore {
         && data.binanceUsdtAddress is string && data.binanceUsdtAddress.size() <= 150
         && data.binanceNetwork is string && data.binanceNetwork.size() <= 80
         && data.instructionBn is string && data.instructionBn.size() <= 500
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPlanSettings(data) {
+      return data.keys().hasAll([
+          'freeTrialScans',
+          'trial7dName', 'trial7dDays', 'trial7dDailyLimit', 'trial7dPriceBdt', 'trial7dPriceUsdt',
+          'monthly1mName', 'monthly1mDays', 'monthly1mDailyLimit', 'monthly1mPriceBdt', 'monthly1mPriceUsdt',
+          'vip6mName', 'vip6mDays', 'vip6mDailyLimit', 'vip6mPriceBdt', 'vip6mPriceUsdt',
+          'lifetimeName', 'lifetimeDays', 'lifetimeDailyLimit', 'lifetimePriceBdt', 'lifetimePriceUsdt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'freeTrialScans',
+          'trial7dName', 'trial7dDays', 'trial7dDailyLimit', 'trial7dPriceBdt', 'trial7dPriceUsdt',
+          'monthly1mName', 'monthly1mDays', 'monthly1mDailyLimit', 'monthly1mPriceBdt', 'monthly1mPriceUsdt',
+          'vip6mName', 'vip6mDays', 'vip6mDailyLimit', 'vip6mPriceBdt', 'vip6mPriceUsdt',
+          'lifetimeName', 'lifetimeDays', 'lifetimeDailyLimit', 'lifetimePriceBdt', 'lifetimePriceUsdt',
+          'updatedAt'
+        ])
+        && data.freeTrialScans is number && data.freeTrialScans >= 0 && data.freeTrialScans <= 1000
+        && data.trial7dName is string && data.trial7dName.size() >= 1 && data.trial7dName.size() <= 120
+        && data.trial7dDays is number && data.trial7dDays >= 1 && data.trial7dDays <= 36500
+        && data.trial7dDailyLimit is number && data.trial7dDailyLimit >= 0 && data.trial7dDailyLimit <= 100000
+        && data.trial7dPriceBdt is number && data.trial7dPriceBdt >= 0
+        && data.trial7dPriceUsdt is number && data.trial7dPriceUsdt >= 0
+        && data.monthly1mName is string && data.monthly1mName.size() >= 1 && data.monthly1mName.size() <= 120
+        && data.monthly1mDays is number && data.monthly1mDays >= 1 && data.monthly1mDays <= 36500
+        && data.monthly1mDailyLimit is number && data.monthly1mDailyLimit >= 0 && data.monthly1mDailyLimit <= 100000
+        && data.monthly1mPriceBdt is number && data.monthly1mPriceBdt >= 0
+        && data.monthly1mPriceUsdt is number && data.monthly1mPriceUsdt >= 0
+        && data.vip6mName is string && data.vip6mName.size() >= 1 && data.vip6mName.size() <= 120
+        && data.vip6mDays is number && data.vip6mDays >= 1 && data.vip6mDays <= 36500
+        && data.vip6mDailyLimit is number && data.vip6mDailyLimit >= 0 && data.vip6mDailyLimit <= 100000
+        && data.vip6mPriceBdt is number && data.vip6mPriceBdt >= 0
+        && data.vip6mPriceUsdt is number && data.vip6mPriceUsdt >= 0
+        && data.lifetimeName is string && data.lifetimeName.size() >= 1 && data.lifetimeName.size() <= 120
+        && data.lifetimeDays is number && data.lifetimeDays >= 1 && data.lifetimeDays <= 36500
+        && data.lifetimeDailyLimit is number && data.lifetimeDailyLimit >= 0 && data.lifetimeDailyLimit <= 100000
+        && data.lifetimePriceBdt is number && data.lifetimePriceBdt >= 0
+        && data.lifetimePriceUsdt is number && data.lifetimePriceUsdt >= 0
         && data.updatedAt is timestamp;
     }
 
@@ -180,6 +269,14 @@ service cloud.firestore {
             && incoming().accountStatus == 'active'
             && incoming().subscriptionStatus == 'NONE'
             && incoming().expiresAt == 0
+            && (!('freeScansUsed' in incoming()) || incoming().freeScansUsed == 0)
+            && (!('dailyScansUsed' in incoming()) || incoming().dailyScansUsed == 0)
+            && (!('totalScansUsed' in incoming()) || incoming().totalScansUsed == 0)
+            && (!('freeScansLimit' in incoming()) || (
+              exists(/databases/$(database)/documents/planSettings/default)
+                ? incoming().freeScansLimit == get(/databases/$(database)/documents/planSettings/default).data.freeTrialScans
+                : (incoming().freeScansLimit >= 0 && incoming().freeScansLimit <= 5)
+            ))
           )
         );
 
@@ -196,6 +293,9 @@ service cloud.firestore {
             && incoming().role == existing().role
             && incoming().accountStatus == existing().accountStatus
             && incoming().expiresAt == existing().expiresAt
+            && ((!('freeScansLimit' in incoming()) && !('freeScansLimit' in existing())) || (('freeScansLimit' in incoming()) && ('freeScansLimit' in existing()) && incoming().freeScansLimit == existing().freeScansLimit))
+            && ((!('customDailyScanLimit' in incoming()) && !('customDailyScanLimit' in existing())) || (('customDailyScanLimit' in incoming()) && ('customDailyScanLimit' in existing()) && incoming().customDailyScanLimit == existing().customDailyScanLimit))
+            && ((!('dailyScanLimit' in incoming()) && !('dailyScanLimit' in existing())) || (('dailyScanLimit' in incoming()) && ('dailyScanLimit' in existing()) && incoming().dailyScanLimit == existing().dailyScanLimit))
             && (
               incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'photoURL', 'updatedAt']) ||
               (
@@ -204,7 +304,8 @@ service cloud.firestore {
                   'subscriptionStatus', 'planId', 'planName', 'paymentMethod',
                   'senderNumber', 'trxId', 'requestedAt', 'updatedAt'
                 ])
-              )
+              ) ||
+              isValidUserScanIncrement()
             )
           )
         );
@@ -251,6 +352,24 @@ service cloud.firestore {
       allow update: if isAdmin()
         && isValidId(configId)
         && isValidPaymentConfig(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // Plan & Scan Quota Config collection
+    match /planSettings/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if false;
+
+      allow create: if isAdmin()
+        && isValidId(configId)
+        && isValidPlanSettings(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow update: if isAdmin()
+        && isValidId(configId)
+        && isValidPlanSettings(incoming())
         && incoming().updatedAt == request.time;
 
       allow delete: if false;

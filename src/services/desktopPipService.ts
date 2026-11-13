@@ -1,5 +1,6 @@
 import { liveScreenService } from './liveScreenService';
 import { voiceAssistantService } from './voiceAssistantService';
+import { authService } from './authService';
 
 interface DocumentPictureInPictureApi {
   requestWindow: (options?: { width?: number; height?: number }) => Promise<Window>;
@@ -9,6 +10,7 @@ interface DocumentPictureInPictureApi {
 class DesktopPipService {
   private pipWindow: Window | null = null;
   private unsubLive: (() => void) | null = null;
+  private unsubAuth: (() => void) | null = null;
   private listeners: Set<(active: boolean) => void> = new Set();
 
   public isSupported(): boolean {
@@ -34,6 +36,10 @@ class DesktopPipService {
     if (this.unsubLive) {
       this.unsubLive();
       this.unsubLive = null;
+    }
+    if (this.unsubAuth) {
+      this.unsubAuth();
+      this.unsubAuth = null;
     }
     if (this.pipWindow && !this.pipWindow.closed) {
       try {
@@ -82,12 +88,20 @@ class DesktopPipService {
           this.unsubLive();
           this.unsubLive = null;
         }
+        if (this.unsubAuth) {
+          this.unsubAuth();
+          this.unsubAuth = null;
+        }
         this.pipWindow = null;
         this.notify();
       });
 
       if (this.unsubLive) this.unsubLive();
+      if (this.unsubAuth) this.unsubAuth();
       this.unsubLive = liveScreenService.subscribe(() => {
+        this.renderPipContent();
+      });
+      this.unsubAuth = authService.subscribe(() => {
         this.renderPipContent();
       });
       this.renderPipContent();
@@ -272,6 +286,12 @@ class DesktopPipService {
     const closeBtn = doc.getElementById('pip-close');
 
     scanBtn?.addEventListener('click', async () => {
+      const quota = authService.getScanQuotaStatus();
+      if (!quota.canScan) {
+        authService.requestUpgradeModal(quota.blockReasonBn);
+        this.renderPipContent();
+        return;
+      }
       const state = liveScreenService.getState();
       if (state !== 'STREAMING' && state !== 'PAUSED') {
         await liveScreenService.connectScreen();
@@ -300,6 +320,18 @@ class DesktopPipService {
     const scanStep = liveScreenService.getCurrentScanStep();
     const expirySec = liveScreenService.getExpirySecondsLeft();
     const isVoiceOn = voiceAssistantService.isVoiceEnabled();
+    const quota = authService.getScanQuotaStatus();
+
+    const quotaBadge =
+      quota.mode === 'ADMIN'
+        ? 'ADMIN · ∞'
+        : quota.mode === 'FREE_TRIAL'
+        ? `ফ্রি বাকি: ${quota.freeRemaining}/${quota.freeLimit}`
+        : quota.mode === 'PAID'
+        ? quota.dailyLimit === 0
+          ? `VIP (${quota.daysRemaining}d) · ∞`
+          : `আজ বাকি: ${quota.dailyRemaining}/${quota.dailyLimit}`
+        : '🔒 লিমিট শেষ';
 
     const dotEl = doc.getElementById('pip-dot');
     const heroEl = doc.getElementById('pip-hero');
@@ -317,15 +349,18 @@ class DesktopPipService {
     }
 
     if (scanBtn) {
-      if (state !== 'STREAMING' && state !== 'PAUSED') {
+      if (!quota.canScan) {
         scanBtn.disabled = false;
-        scanBtn.textContent = '🖥️ স্ক্রিন কানেক্ট করুন';
+        scanBtn.textContent = '🔒 লিমিট শেষ — মূল অ্যাপে আপগ্রেড করুন';
+      } else if (state !== 'STREAMING' && state !== 'PAUSED') {
+        scanBtn.disabled = false;
+        scanBtn.textContent = `🖥️ স্ক্রিন কানেক্ট করুন (${quotaBadge})`;
       } else if (isBusy) {
         scanBtn.disabled = true;
         scanBtn.textContent = scanStep ? `⏳ ধাপ ${scanStep.step}/5: ${scanStep.title}` : '⏳ স্ক্যান চলছে...';
       } else {
         scanBtn.disabled = false;
-        scanBtn.textContent = '⚡ ১-ক্লিক স্ক্যান (Scan Now)';
+        scanBtn.textContent = `⚡ ১-ক্লিক স্ক্যান (${quotaBadge})`;
       }
     }
 
@@ -342,11 +377,20 @@ class DesktopPipService {
     }
 
     if (heroEl && dirEl && metaEl && reasonEl) {
+      if (!quota.canScan) {
+        heroEl.className = 'hero wait';
+        dirEl.className = 'dir wait';
+        dirEl.textContent = '🔒 স্ক্যান লিমিট শেষ';
+        metaEl.textContent = quotaBadge;
+        reasonEl.textContent = quota.blockReasonBn || 'অনুগ্রহ করে মূল ট্যাবে গিয়ে ভিআইপি প্ল্যান আপগ্রেড করুন।';
+        return;
+      }
+
       if (state !== 'STREAMING' && state !== 'PAUSED') {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
         dirEl.textContent = 'স্ক্রিন সংযুক্ত নয়';
-        metaEl.textContent = 'নিচের বাটনে ক্লিক করে ট্রেডিং ট্যাব সিলেক্ট করুন';
+        metaEl.textContent = `${quotaBadge} · ট্রেডিং ট্যাব সিলেক্ট করুন`;
         reasonEl.textContent = 'একবার সংযোগ করলে অন্য যেকোনো ট্রেডিং ওয়েবসাইটের উপরেও এই বাবল ভেসে থাকবে।';
         return;
       }
@@ -380,13 +424,13 @@ class DesktopPipService {
           dirEl.textContent = '⏸ অপেক্ষা করুন (WAIT)';
         }
 
-        metaEl.textContent = `${sym}${countdown}`;
+        metaEl.textContent = `${sym}${countdown} · ${quotaBadge}`;
         reasonEl.textContent = result.reasoning?.[0] || result.verdictTitle || '';
       } else {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
         dirEl.textContent = 'স্ক্যান করতে প্রস্তুত';
-        metaEl.textContent = 'ট্রেডিং ওয়েবসাইটে গিয়ে নিচের বাটনে ক্লিক করুন';
+        metaEl.textContent = `${quotaBadge} · ট্রেডিং সাইটে গিয়ে স্ক্যান করুন`;
         reasonEl.textContent = '';
       }
     }

@@ -8,11 +8,60 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   durationDays: number;
+  dailyScanLimit: number; // 0 = Unlimited
   priceBdt: number;
   priceUsdt: number;
   badge?: string;
   description: string;
   features: string[];
+}
+
+export interface PlanSettingsConfig {
+  freeTrialScans: number;
+  trial7dName: string;
+  trial7dDays: number;
+  trial7dDailyLimit: number;
+  trial7dPriceBdt: number;
+  trial7dPriceUsdt: number;
+  monthly1mName: string;
+  monthly1mDays: number;
+  monthly1mDailyLimit: number;
+  monthly1mPriceBdt: number;
+  monthly1mPriceUsdt: number;
+  vip6mName: string;
+  vip6mDays: number;
+  vip6mDailyLimit: number;
+  vip6mPriceBdt: number;
+  vip6mPriceUsdt: number;
+  lifetimeName: string;
+  lifetimeDays: number;
+  lifetimeDailyLimit: number;
+  lifetimePriceBdt: number;
+  lifetimePriceUsdt: number;
+}
+
+export interface UserScanQuota {
+  freeScansLimit: number;
+  freeScansUsed: number;
+  dailyScansUsed: number;
+  lastScanDate: string; // YYYY-MM-DD in Asia/Dhaka
+  totalScansUsed: number;
+  dailyScanLimit: number; // 0 = Unlimited (from active plan)
+  customDailyScanLimit: number; // -1 = use plan default, 0 = unlimited, >0 = custom override
+}
+
+export interface EffectiveScanQuotaStatus {
+  mode: 'ADMIN' | 'PAID' | 'FREE_TRIAL' | 'EXHAUSTED';
+  canScan: boolean;
+  freeLimit: number;
+  freeUsed: number;
+  freeRemaining: number;
+  dailyLimit: number; // 0 = unlimited
+  dailyUsed: number;
+  dailyRemaining: number | null; // null = unlimited
+  totalScansUsed: number;
+  daysRemaining: number;
+  blockReasonBn?: string;
 }
 
 export interface UserSubscription {
@@ -21,6 +70,7 @@ export interface UserSubscription {
   planName?: string;
   startDate?: number;
   expiresAt?: number;
+  dailyScanLimit?: number;
   paymentMethod?: PaymentMethodType;
   senderNumber?: string;
   trxId?: string;
@@ -37,6 +87,7 @@ export interface User {
   role: UserRole;
   status: 'active' | 'suspended' | 'banned';
   subscription: UserSubscription;
+  scanQuota?: UserScanQuota;
   createdAt: number;
   lastLoginAt: number;
 }
@@ -50,6 +101,7 @@ export interface SubscriptionRequest {
   planId: string;
   planName: string;
   durationDays: number;
+  dailyScanLimit?: number;
   priceBdt: number;
   priceUsdt: number;
   paymentMethod: PaymentMethodType;

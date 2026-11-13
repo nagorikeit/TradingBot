@@ -27,14 +27,17 @@ import { ApiHubView } from './components/ApiHubView';
 import { AuthGatewayModal } from './components/AuthGatewayModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { authService } from './services/authService';
-import { User } from './types/authTypes';
+import { User, EffectiveScanQuotaStatus } from './types/authTypes';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin'>('terminal');
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getUser());
-  const [hasSubscription, setHasSubscription] = useState<boolean>(() => authService.hasActiveSubscription());
   const [daysRemaining, setDaysRemaining] = useState<number>(() => authService.getDaysRemaining());
+  const [scanQuota, setScanQuota] = useState<EffectiveScanQuotaStatus>(() => authService.getScanQuotaStatus());
+  const [canEnterTerminal, setCanEnterTerminal] = useState<boolean>(() => authService.canEnterTerminal());
+  const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(false);
+  const [upgradePromptReason, setUpgradePromptReason] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string>(() => marketService.getSymbol());
   const [timeframe, setTimeframe] = useState<TimeframeKey>(() => marketService.getTimeframe());
   const [providerMode, setProviderMode] = useState<MarketDataSourceMode>(() => marketService.getProviderMode());
@@ -62,8 +65,13 @@ export default function App() {
 
     const updateAuth = (u: User | null) => {
       setCurrentUser(u);
-      setHasSubscription(authService.hasActiveSubscription());
       setDaysRemaining(authService.getDaysRemaining());
+      setScanQuota(authService.getScanQuotaStatus());
+      setCanEnterTerminal(authService.canEnterTerminal());
+      if (authService.hasActiveSubscription() || u?.role === 'admin') {
+        setShowUpgradeModal(false);
+        setUpgradePromptReason(null);
+      }
       if (u?.role !== 'admin' && currentTab === 'admin') {
         setCurrentTab('terminal');
       }
@@ -75,11 +83,22 @@ export default function App() {
     const unsubscribeMarket = marketService.subscribe(updateState);
     const unsubscribeScanner = scannerService.subscribe(updateScanner);
     const unsubscribeAuth = authService.subscribe(updateAuth);
+    const unsubscribePlans = authService.subscribePlans(() => {
+      setScanQuota(authService.getScanQuotaStatus());
+      setCanEnterTerminal(authService.canEnterTerminal());
+    });
+    const unsubscribeUpgrade = authService.subscribeUpgradePrompt((reason) => {
+      setUpgradePromptReason(reason || null);
+      setCanEnterTerminal(authService.canEnterTerminal());
+      setShowUpgradeModal(true);
+    });
 
     return () => {
       unsubscribeMarket();
       unsubscribeScanner();
       unsubscribeAuth();
+      unsubscribePlans();
+      unsubscribeUpgrade();
       marketService.stopLiveFeed();
     };
   }, [currentTab]);
@@ -102,12 +121,20 @@ export default function App() {
   };
 
   const handleManualScan = async () => {
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) return;
+
     if (currentTab === 'scanner') {
       setIsScannerBusy(true);
-      await scannerService.reconcileAllWorkers();
-      setIsScannerBusy(false);
+      try {
+        await scannerService.reconcileAllWorkers();
+        await authService.recordCompletedScan('header_scanner_scan');
+      } finally {
+        setIsScannerBusy(false);
+      }
     } else {
       marketService.triggerManualScan();
+      await authService.recordCompletedScan('header_terminal_scan');
     }
   };
 
@@ -134,6 +161,11 @@ export default function App() {
         scannerSignalCount={scannerSignalCount}
         currentUser={currentUser}
         daysRemaining={daysRemaining}
+        scanQuota={scanQuota}
+        onOpenUpgrade={() => {
+          setUpgradePromptReason(null);
+          setShowUpgradeModal(true);
+        }}
         onLogout={() => authService.logout()}
       />
 
@@ -142,10 +174,17 @@ export default function App() {
         <AuthGatewayModal onSuccess={() => {}} />
       )}
 
-      {/* Subscription Gateway: When logged in as regular user without active subscription */}
-      {currentUser && currentUser.role === 'user' && !hasSubscription && (
+      {/* Hybrid Subscription Gateway: Opens when free starter scans are exhausted OR user triggers Upgrade */}
+      {currentUser && currentUser.role === 'user' && (!canEnterTerminal || showUpgradeModal) && (
         <SubscriptionModal
           user={currentUser}
+          quotaStatus={scanQuota}
+          canClose={canEnterTerminal}
+          blockReason={upgradePromptReason}
+          onClose={() => {
+            setShowUpgradeModal(false);
+            setUpgradePromptReason(null);
+          }}
           onLogout={() => authService.logout()}
         />
       )}

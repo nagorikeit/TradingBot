@@ -1,7 +1,7 @@
 import React from 'react';
 import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown, PlugZap } from 'lucide-react';
 import { TimeframeKey } from '../types';
-import { User } from '../types/authTypes';
+import { User, EffectiveScanQuotaStatus } from '../types/authTypes';
 
 interface HeaderProps {
   currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin';
@@ -12,6 +12,8 @@ interface HeaderProps {
   scannerSignalCount?: number;
   currentUser?: User | null;
   daysRemaining?: number;
+  scanQuota?: EffectiveScanQuotaStatus;
+  onOpenUpgrade?: () => void;
   onLogout?: () => void;
 }
 
@@ -24,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   scannerSignalCount = 0,
   currentUser,
   daysRemaining = 0,
+  scanQuota,
+  onOpenUpgrade,
   onLogout,
 }) => {
   return (
@@ -178,14 +182,42 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: User status & Quick Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* User Profile Badge */}
+          {/* User Profile & Live Scan Quota Badge */}
           {currentUser && (
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs">
-              <span className={`w-2 h-2 rounded-full ${currentUser.role === 'admin' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-              <span className="text-slate-200 font-medium truncate max-w-[100px]">{currentUser.name}</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-slate-800 text-slate-300">
-                {currentUser.role === 'admin' ? 'ADMIN' : `${daysRemaining}d`}
-              </span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+              <span className={`w-2 h-2 rounded-full ${currentUser.role === 'admin' ? 'bg-amber-400' : scanQuota?.canScan === false ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+              <span className="hidden md:inline text-slate-200 font-medium truncate max-w-[90px]">{currentUser.name}</span>
+              {currentUser.role === 'admin' ? (
+                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  ADMIN · ∞
+                </span>
+              ) : scanQuota?.mode === 'FREE_TRIAL' ? (
+                <button
+                  type="button"
+                  onClick={onOpenUpgrade}
+                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-colors"
+                  title="ভিআইপি প্ল্যান আপগ্রেড করুন"
+                >
+                  ফ্রি: {scanQuota.freeRemaining}/{scanQuota.freeLimit} · আপগ্রেড
+                </button>
+              ) : scanQuota?.mode === 'PAID' ? (
+                <button
+                  type="button"
+                  onClick={onOpenUpgrade}
+                  className="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                  title="মেয়াদ ও দৈনিক স্ক্যান ব্যালেন্স"
+                >
+                  {daysRemaining}d · {scanQuota.dailyLimit === 0 ? '∞/দিন' : `${scanQuota.dailyRemaining}/${scanQuota.dailyLimit}`}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenUpgrade}
+                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 animate-pulse"
+                >
+                  লিমিট শেষ · আপগ্রেড
+                </button>
+              )}
             </div>
           )}
 

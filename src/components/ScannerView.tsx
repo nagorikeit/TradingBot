@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ScannerSignal, MonitoredPairStatus, TimeframeKey } from '../types';
 import { scannerService } from '../services/scannerService';
+import { authService } from '../services/authService';
 import { getAssetInfo } from '../data/marketDataProvider';
 import { formatPrice, formatTime } from '../utils/formatters';
 import {
@@ -76,9 +77,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   };
 
   const handleSyncScan = async () => {
+    const allowance = authService.checkScanAllowance();
+    if (!allowance.allowed) return;
     setIsReconciling(true);
     try {
       await scannerService.reconcileAllWorkers();
+      await authService.recordCompletedScan('scanner_rescan');
     } finally {
       setIsReconciling(false);
     }

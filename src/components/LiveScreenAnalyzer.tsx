@@ -39,6 +39,8 @@ import { liveScreenService } from '../services/liveScreenService';
 import { desktopPipService } from '../services/desktopPipService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
 import { agentLearningService } from '../services/agentLearningService';
+import { authService } from '../services/authService';
+import { EffectiveScanQuotaStatus } from '../types/authTypes';
 import {
   LiveStreamState,
   ScreenAnalysisFinalResult,
@@ -84,6 +86,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [desktopPipError, setDesktopPipError] = useState<string | null>(null);
   const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
   const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
+  const [scanQuota, setScanQuota] = useState<EffectiveScanQuotaStatus>(() => authService.getScanQuotaStatus());
 
   const previewVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -157,9 +160,17 @@ export const LiveScreenAnalyzer: React.FC = () => {
     const unsubPip = desktopPipService.subscribe((active) => {
       setIsDesktopPipActive(active);
     });
+    const unsubAuth = authService.subscribe(() => {
+      setScanQuota(authService.getScanQuotaStatus());
+    });
+    const unsubPlans = authService.subscribePlans(() => {
+      setScanQuota(authService.getScanQuotaStatus());
+    });
     return () => {
       unsub();
       unsubPip();
+      unsubAuth();
+      unsubPlans();
     };
   }, []);
 
@@ -512,6 +523,42 @@ export const LiveScreenAnalyzer: React.FC = () => {
               Privacy Protected: Account balance and login credentials are automatically shielded.
             </span>
           </div>
+        </div>
+
+        {/* Live Scan Quota & Subscription Status Strip */}
+        <div
+          className={`mt-3 p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+            scanQuota.mode === 'EXHAUSTED'
+              ? 'bg-rose-950/35 border-rose-500/40 text-rose-200'
+              : scanQuota.mode === 'FREE_TRIAL'
+              ? 'bg-cyan-950/35 border-cyan-500/40 text-cyan-200'
+              : 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold">
+              {scanQuota.mode === 'ADMIN'
+                ? '👑 মাস্টার অ্যাডমিন আনলিমিটেড অ্যাক্সেস'
+                : scanQuota.mode === 'FREE_TRIAL'
+                ? `🎁 ফ্রি স্টার্টার ট্রায়াল: বাকি ${scanQuota.freeRemaining}/${scanQuota.freeLimit}টি স্ক্যান`
+                : scanQuota.mode === 'PAID'
+                ? `⚡ ভিআইপি মেম্বারশিপ (${scanQuota.daysRemaining} দিন বাকি) · আজকের স্ক্যান: ${scanQuota.dailyUsed}/${scanQuota.dailyLimit === 0 ? 'আনলিমিটেড' : scanQuota.dailyLimit}`
+                : `🔒 স্ক্যান লিমিট শেষ`}
+            </span>
+            <span className="text-[11px] opacity-80">
+              • মোট ব্যবহৃত স্ক্যান: {scanQuota.totalScansUsed}টি
+            </span>
+          </div>
+
+          {scanQuota.mode !== 'ADMIN' && (
+            <button
+              type="button"
+              onClick={() => authService.requestUpgradeModal(scanQuota.blockReasonBn)}
+              className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] shrink-0 transition-colors"
+            >
+              {scanQuota.mode === 'EXHAUSTED' ? 'প্ল্যান কিনুন / আপগ্রেড' : 'ভিআইপি আপগ্রেড'}
+            </button>
+          )}
         </div>
       </div>
 
