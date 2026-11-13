@@ -1,0 +1,38 @@
+[
+  {
+    "id": "usr_master_admin_001",
+    "name": "Master Admin (TradePulse)",
+    "email": "admin@tradepulse.io",
+    "password": "admin123456",
+    "phone": "+8801700000000",
+    "role": "admin",
+    "status": "active",
+    "subscription": {
+      "status": "ACTIVE",
+      "planId": "lifetime_vip",
+      "planName": "Master Admin Access",
+      "startDate": 1794590864737,
+      "expiresAt": 2109950864737
+    },
+    "createdAt": 1794590864737,
+    "lastLoginAt": 1794590864737
+  },
+  {
+    "id": "usr_owner_admin_002",
+    "name": "Nagorik IT Admin",
+    "email": "nagorikeitsheba@gmail.com",
+    "password": "admin123456",
+    "phone": "+8801800000000",
+    "role": "admin",
+    "status": "active",
+    "subscription": {
+      "status": "ACTIVE",
+      "planId": "lifetime_vip",
+      "planName": "Owner Admin VIP",
+      "startDate": 1794590864737,
+      "expiresAt": 2109950864737
+    },
+    "createdAt": 1794590864737,
+    "lastLoginAt": 1794590864737
+  }
+]

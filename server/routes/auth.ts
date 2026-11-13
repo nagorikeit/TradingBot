@@ -11,7 +11,14 @@ const USERS_FILE = path.join(STORAGE_DIR, 'users_db.json');
 const SUBSCRIPTIONS_FILE = path.join(STORAGE_DIR, 'subscriptions_db.json');
 const CONFIG_FILE = path.join(STORAGE_DIR, 'payment_config.json');
 
-// Ensure storage files exist with pre-seeded master admin and demo user
+const PLANS_LOOKUP: Record<string, { name: string; durationDays: number; priceBdt: number; priceUsdt: number }> = {
+  trial_7d: { name: '৭ দিনের ট্রায়াল প্যাক (7 Days Trial)', durationDays: 7, priceBdt: 499, priceUsdt: 5 },
+  monthly_1m: { name: '১ মাসের প্রো ভিআইপি (1 Month VIP)', durationDays: 30, priceBdt: 1499, priceUsdt: 15 },
+  vip_6m: { name: '৬ মাসের এলিট ভিআইপি (6 Months Elite)', durationDays: 180, priceBdt: 5999, priceUsdt: 55 },
+  lifetime_vip: { name: 'লাইফটাইম ভিআইপি অ্যাক্সেস (Lifetime VIP)', durationDays: 3650, priceBdt: 9999, priceUsdt: 90 },
+};
+
+// Ensure storage files exist with master admin account
 function initStorage() {
   if (!fs.existsSync(STORAGE_DIR)) {
     fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -20,29 +27,11 @@ function initStorage() {
   if (!fs.existsSync(USERS_FILE)) {
     const initialUsers = [
       {
-        id: 'usr_master_admin_001',
-        name: 'Master Admin (TradePulse)',
-        email: 'admin@tradepulse.io',
-        password: 'admin123456',
-        phone: '+8801700000000',
-        role: 'admin',
-        status: 'active',
-        subscription: {
-          status: 'ACTIVE',
-          planId: 'lifetime_vip',
-          planName: 'Master Admin Access',
-          startDate: Date.now(),
-          expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 10, // 10 years
-        },
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-      },
-      {
-        id: 'usr_owner_admin_002',
+        id: 'usr_owner_admin_001',
         name: 'Nagorik IT Admin',
         email: 'nagorikeitsheba@gmail.com',
         password: 'admin123456',
-        phone: '+8801800000000',
+        phone: '+8801886888494',
         role: 'admin',
         status: 'active',
         subscription: {
@@ -51,24 +40,6 @@ function initStorage() {
           planName: 'Owner Admin VIP',
           startDate: Date.now(),
           expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 10,
-        },
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-      },
-      {
-        id: 'usr_demo_vip_003',
-        name: 'VIP Trader Demo',
-        email: 'user@tradepulse.io',
-        password: 'user123456',
-        phone: '+8801900000000',
-        role: 'user',
-        status: 'active',
-        subscription: {
-          status: 'ACTIVE',
-          planId: 'monthly_1m',
-          planName: '১ মাস প্রিমিয়াম অ্যাক্সেস',
-          startDate: Date.now(),
-          expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30, // 30 days
         },
         createdAt: Date.now(),
         lastLoginAt: Date.now(),
@@ -83,14 +54,15 @@ function initStorage() {
 
   if (!fs.existsSync(CONFIG_FILE)) {
     const defaultConfig = {
-      bkashNumber: '01700-000000',
+      bkashNumber: '01886888494',
       bkashType: 'Personal (Send Money)',
-      nagadNumber: '01800-000000',
+      nagadNumber: '01886888494',
       nagadType: 'Personal (Send Money)',
-      rocketNumber: '01900-000000',
-      binanceUsdtAddress: 'TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-      binanceNetwork: 'USDT (TRC-20 / BEP-20)',
-      instructionBn: 'বিকাশ বা নগদে সেন্ড মানি করে নিচের বক্সে আপনার প্রেরক নম্বর ও TrxID দিন। এডমিন ভেরিফাই করে ৫-১৫ মিনিটের মধ্যে অ্যাক্সেস চালু করে দেবে।',
+      rocketNumber: '018868884947',
+      binanceUsdtAddress: 'TCZt7w9V2WvL9wLpYpQwerTyUiopASdfGh',
+      binanceNetwork: 'TRC-20 (Tron Network)',
+      instructionBn:
+        'বিকাশ, নগদ, রকেট বা বাইন্যান্সের মাধ্যমে টাকা পাঠিয়ে নিচের বক্সে প্রেরক নম্বর ও TrxID দিন। অ্যাডমিন ভেরিফাই করে ৫-১৫ মিনিটের মধ্যে অ্যাক্সেস চালু করে দেবে।',
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaultConfig, null, 2), 'utf8');
   }
@@ -136,31 +108,56 @@ function savePaymentConfig(cfg: any) {
 
 export const authRouter = Router();
 
-// 1. User / Admin Registration
-authRouter.post('/register', (req: Request, res: Response) => {
+// 1. User Registration
+const handleRegister = (req: Request, res: Response) => {
   const { name, email, password, phone } = req.body;
   if (!name || !email || !password) {
-    return res.status(400).json({ success: false, message: 'নাম, ইমেইল এবং পাসওয়ার্ড আবশ্যক' });
+    return res.status(400).json({
+      success: false,
+      error: 'নাম, ইমেইল এবং পাসওয়ার্ড আবশ্যক',
+      message: 'নাম, ইমেইল এবং পাসওয়ার্ড আবশ্যক',
+    });
+  }
+
+  if (String(password).trim().length < 6) {
+    return res.status(400).json({
+      success: false,
+      error: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে',
+      message: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে',
+    });
   }
 
   const users = getUsers();
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = String(email).trim().toLowerCase();
   const exists = users.find((u) => u.email.toLowerCase() === normalizedEmail);
   if (exists) {
-    return res.status(400).json({ success: false, message: 'এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে' });
+    return res.status(400).json({
+      success: false,
+      error: 'এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে',
+      message: 'এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে',
+    });
   }
 
+  const isAdmin = normalizedEmail === 'nagorikeitsheba@gmail.com';
   const newUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    name: name.trim(),
+    name: String(name).trim(),
     email: normalizedEmail,
-    password: password.trim(),
-    phone: phone ? phone.trim() : '',
-    role: 'user', // Default role is user
+    password: String(password).trim(),
+    phone: phone ? String(phone).trim() : '',
+    role: isAdmin ? 'admin' : 'user',
     status: 'active',
-    subscription: {
-      status: 'NONE', // Regular users must subscribe to unlock access
-    },
+    subscription: isAdmin
+      ? {
+          status: 'ACTIVE',
+          planId: 'lifetime_vip',
+          planName: 'Owner Admin VIP',
+          startDate: Date.now(),
+          expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 10,
+        }
+      : {
+          status: 'NONE',
+        },
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
   };
@@ -168,31 +165,50 @@ authRouter.post('/register', (req: Request, res: Response) => {
   users.push(newUser);
   saveUsers(users);
 
-  // Exclude password from response
   const { password: _, ...userWithoutPass } = newUser;
-  return res.json({ success: true, user: userWithoutPass, message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে!' });
-});
+  const token = `tkn_${newUser.id}_${Date.now()}`;
+  return res.json({
+    success: true,
+    user: userWithoutPass,
+    token,
+    message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে!',
+  });
+};
+
+authRouter.post('/register', handleRegister);
+authRouter.post('/auth/register', handleRegister);
 
 // 2. User / Admin Login
-authRouter.post('/login', (req: Request, res: Response) => {
+const handleLogin = (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ success: false, message: 'ইমেইল ও পাসওয়ার্ড প্রদান করুন' });
+    return res.status(400).json({
+      success: false,
+      error: 'ইমেইল ও পাসওয়ার্ড প্রদান করুন',
+      message: 'ইমেইল ও পাসওয়ার্ড প্রদান করুন',
+    });
   }
 
   const users = getUsers();
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = String(email).trim().toLowerCase();
   const user = users.find((u) => u.email.toLowerCase() === normalizedEmail);
 
-  if (!user || user.password !== password.trim()) {
-    return res.status(401).json({ success: false, message: 'ভুল ইমেইল অথবা পাসওয়ার্ড!' });
+  if (!user || user.password !== String(password).trim()) {
+    return res.status(401).json({
+      success: false,
+      error: 'ভুল ইমেইল অথবা পাসওয়ার্ড!',
+      message: 'ভুল ইমেইল অথবা পাসওয়ার্ড!',
+    });
   }
 
   if (user.status === 'banned' || user.status === 'suspended') {
-    return res.status(403).json({ success: false, message: 'আপনার অ্যাকাউন্টটি স্থগিত বা ব্লক করা হয়েছে। এডমিনের সাথে যোগাযোগ করুন।' });
+    return res.status(403).json({
+      success: false,
+      error: 'আপনার অ্যাকাউন্টটি স্থগিত বা ব্লক করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।',
+      message: 'আপনার অ্যাকাউন্টটি স্থগিত বা ব্লক করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।',
+    });
   }
 
-  // Update lastLoginAt
   user.lastLoginAt = Date.now();
   saveUsers(users);
 
@@ -201,23 +217,55 @@ authRouter.post('/login', (req: Request, res: Response) => {
     success: true,
     user: userWithoutPass,
     token: `tkn_${user.id}_${Date.now()}`,
-    message: user.role === 'admin' ? 'এডমিন হিসেবে লগইন সফল হয়েছে' : 'লগইন সফল হয়েছে',
+    message: user.role === 'admin' ? 'অ্যাডমিন হিসেবে লগইন সফল হয়েছে' : 'লগইন সফল হয়েছে',
   });
+};
+
+authRouter.post('/login', handleLogin);
+authRouter.post('/auth/login', handleLogin);
+
+// 2.5 Fetch current user profile
+authRouter.get('/auth/me', (req: Request, res: Response) => {
+  const userId = String(req.query.userId || '');
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'Missing userId' });
+  }
+  const users = getUsers();
+  const user = users.find((u) => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+  const { password: _, ...userWithoutPass } = user;
+  return res.json({ success: true, user: userWithoutPass });
 });
 
 // 3. User Submits Subscription Payment Request
-authRouter.post('/subscribe', (req: Request, res: Response) => {
+const handleSubscribe = (req: Request, res: Response) => {
   const { userId, planId, planName, durationDays, priceBdt, priceUsdt, paymentMethod, senderNumber, trxId } = req.body;
 
   if (!userId || !planId || !paymentMethod || !trxId) {
-    return res.status(400).json({ success: false, message: 'প্ল্যান, পেমেন্ট মাধ্যম ও ট্রানজেকশন আইডি প্রদান করুন' });
+    return res.status(400).json({
+      success: false,
+      error: 'প্ল্যান, পেমেন্ট মাধ্যম ও ট্রানজেকশন আইডি প্রদান করুন',
+      message: 'প্ল্যান, পেমেন্ট মাধ্যম ও ট্রানজেকশন আইডি প্রদান করুন',
+    });
   }
 
   const users = getUsers();
   const user = users.find((u) => u.id === userId);
   if (!user) {
-    return res.status(404).json({ success: false, message: 'ব্যবহারকারী খুঁজে পাওয়া যায়নি' });
+    return res.status(404).json({
+      success: false,
+      error: 'ব্যবহারকারী খুঁজে পাওয়া যায়নি',
+      message: 'ব্যবহারকারী খুঁজে পাওয়া যায়নি',
+    });
   }
+
+  const planMeta = PLANS_LOOKUP[planId];
+  const resolvedPlanName = planName || planMeta?.name || planId;
+  const resolvedDays = Number(durationDays) || planMeta?.durationDays || 30;
+  const resolvedBdt = Number(priceBdt) || planMeta?.priceBdt || 0;
+  const resolvedUsdt = Number(priceUsdt) || planMeta?.priceUsdt || 0;
 
   const subReqs = getSubscriptions();
   const newReq = {
@@ -227,13 +275,13 @@ authRouter.post('/subscribe', (req: Request, res: Response) => {
     userEmail: user.email,
     userPhone: user.phone || '',
     planId,
-    planName: planName || planId,
-    durationDays: Number(durationDays) || 30,
-    priceBdt: Number(priceBdt) || 0,
-    priceUsdt: Number(priceUsdt) || 0,
+    planName: resolvedPlanName,
+    durationDays: resolvedDays,
+    priceBdt: resolvedBdt,
+    priceUsdt: resolvedUsdt,
     paymentMethod,
     senderNumber: senderNumber || '',
-    trxId: trxId.trim(),
+    trxId: String(trxId).trim(),
     status: 'PENDING',
     createdAt: Date.now(),
   };
@@ -241,14 +289,13 @@ authRouter.post('/subscribe', (req: Request, res: Response) => {
   subReqs.unshift(newReq);
   saveSubscriptions(subReqs);
 
-  // Update user subscription state to PENDING
   user.subscription = {
     status: 'PENDING',
     planId,
-    planName: planName || planId,
+    planName: resolvedPlanName,
     paymentMethod,
-    senderNumber,
-    trxId: trxId.trim(),
+    senderNumber: senderNumber || '',
+    trxId: String(trxId).trim(),
     requestedAt: Date.now(),
   };
   saveUsers(users);
@@ -256,26 +303,32 @@ authRouter.post('/subscribe', (req: Request, res: Response) => {
   const { password: _, ...userWithoutPass } = user;
   return res.json({
     success: true,
-    message: 'আপনার সাবস্ক্রিপশন আবেদনটি জমা হয়েছে! এডমিন ভেরিফাই করে ৫-১৫ মিনিটের মধ্যে অ্যাক্টিভ করে দেবে।',
+    message: 'আপনার সাবস্ক্রিপশন আবেদনটি জমা হয়েছে! অ্যাডমিন ভেরিফাই করে ৫-১৫ মিনিটের মধ্যে অ্যাক্টিভ করে দেবে।',
     user: userWithoutPass,
+    subscription: user.subscription,
     request: newReq,
   });
-});
+};
+
+authRouter.post('/subscribe', handleSubscribe);
+authRouter.post('/subscription/request', handleSubscribe);
 
 // 4. Admin API: Get All Users
 authRouter.get('/admin/users', (_req: Request, res: Response) => {
-  const users = getUsers().map(({ password, ...u }) => u);
+  const users = getUsers().map(({ password: _, ...u }) => u);
   return res.json({ success: true, users });
 });
 
 // 5. Admin API: Update User Role, Status or Grant Days
-authRouter.post('/admin/users/update', (req: Request, res: Response) => {
-  const { userId, role, status, addDays, setPlanName, makeLifetime } = req.body;
+const handleAdminUpdateUser = (req: Request, res: Response) => {
+  const targetId = req.body.userId || req.body.targetUserId;
+  const { role, status, setPlanName, makeLifetime, adminEmail } = req.body;
+  const days = req.body.addDays ?? req.body.days;
 
   const users = getUsers();
-  const user = users.find((u) => u.id === userId);
+  const user = users.find((u) => u.id === targetId);
   if (!user) {
-    return res.status(404).json({ success: false, message: 'ব্যবহারকারী পাওয়া যায়নি' });
+    return res.status(404).json({ success: false, error: 'ব্যবহারকারী পাওয়া যায়নি' });
   }
 
   if (role) user.role = role;
@@ -289,57 +342,71 @@ authRouter.post('/admin/users/update', (req: Request, res: Response) => {
       startDate: Date.now(),
       expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 365 * 10,
       approvedAt: Date.now(),
+      approvedBy: adminEmail || 'Admin',
     };
-  } else if (addDays) {
-    const currentExpiry = (user.subscription && user.subscription.expiresAt && user.subscription.expiresAt > Date.now())
-      ? user.subscription.expiresAt
-      : Date.now();
-    const newExpiry = currentExpiry + Number(addDays) * 24 * 60 * 60 * 1000;
+  } else if (days) {
+    const currentExpiry =
+      user.subscription && user.subscription.expiresAt && user.subscription.expiresAt > Date.now()
+        ? user.subscription.expiresAt
+        : Date.now();
+    const newExpiry = currentExpiry + Number(days) * 24 * 60 * 60 * 1000;
     user.subscription = {
       ...user.subscription,
       status: 'ACTIVE',
-      planName: setPlanName || user.subscription?.planName || `${addDays} দিনের অ্যাক্সেস`,
+      planName: setPlanName || user.subscription?.planName || `${days} দিনের অ্যাক্সেস`,
       expiresAt: newExpiry,
       approvedAt: Date.now(),
+      approvedBy: adminEmail || 'Admin',
     };
   }
 
   saveUsers(users);
   const { password: _, ...userWithoutPass } = user;
-  return res.json({ success: true, user: userWithoutPass, message: 'ইউজার সফলভাবে আপডেট হয়েছে' });
-});
+  return res.json({ success: true, user: userWithoutPass, message: 'ইউজার সফলভাবে আপডেট হয়েছে' });
+};
+
+authRouter.post('/admin/users/update', handleAdminUpdateUser);
+authRouter.post('/admin/grant-access', handleAdminUpdateUser);
 
 // 6. Admin API: Get Subscription Requests
-authRouter.get('/admin/subscription-requests', (_req: Request, res: Response) => {
+const handleGetRequests = (_req: Request, res: Response) => {
   const requests = getSubscriptions();
   return res.json({ success: true, requests });
-});
+};
+
+authRouter.get('/admin/subscription-requests', handleGetRequests);
+authRouter.get('/admin/requests', handleGetRequests);
 
 // 7. Admin API: Review Subscription Request (Approve / Reject)
-authRouter.post('/admin/subscription-requests/review', (req: Request, res: Response) => {
-  const { requestId, action, notes, adminName } = req.body; // action: 'approve' | 'reject'
+const handleReviewRequest = (req: Request, res: Response) => {
+  const { requestId, action, notes, adminName, adminEmail } = req.body;
 
   const subReqs = getSubscriptions();
   const targetReq = subReqs.find((r) => r.id === requestId);
   if (!targetReq) {
-    return res.status(404).json({ success: false, message: 'রিকোয়েস্ট পাওয়া যায়নি' });
+    return res.status(404).json({ success: false, error: 'রিকোয়েস্ট পাওয়া যায়নি' });
   }
 
+  const reviewer = adminEmail || adminName || 'Admin';
   const users = getUsers();
   const user = users.find((u) => u.id === targetReq.userId);
 
   if (action === 'approve') {
     targetReq.status = 'APPROVED';
     targetReq.reviewedAt = Date.now();
-    targetReq.reviewedBy = adminName || 'Admin';
+    targetReq.reviewedBy = reviewer;
     targetReq.notes = notes || 'পেমেন্ট ভেরিফাইড ও অ্যাক্টিভেটেড';
 
     if (user) {
       const days = targetReq.durationDays || 30;
       const isLifetime = targetReq.planId === 'lifetime_vip' || days >= 365 * 5;
+      const baseTime =
+        user.subscription?.expiresAt && user.subscription.expiresAt > Date.now()
+          ? user.subscription.expiresAt
+          : Date.now();
       const expiresAt = isLifetime
         ? Date.now() + 1000 * 60 * 60 * 24 * 365 * 10
-        : Date.now() + days * 24 * 60 * 60 * 1000;
+        : baseTime + days * 24 * 60 * 60 * 1000;
 
       user.subscription = {
         status: 'ACTIVE',
@@ -351,13 +418,13 @@ authRouter.post('/admin/subscription-requests/review', (req: Request, res: Respo
         senderNumber: targetReq.senderNumber,
         trxId: targetReq.trxId,
         approvedAt: Date.now(),
-        approvedBy: adminName || 'Admin',
+        approvedBy: reviewer,
       };
     }
   } else {
     targetReq.status = 'REJECTED';
     targetReq.reviewedAt = Date.now();
-    targetReq.reviewedBy = adminName || 'Admin';
+    targetReq.reviewedBy = reviewer;
     targetReq.notes = notes || 'পেমেন্ট ট্রানজেকশন মেলেনি';
 
     if (user && user.subscription?.status === 'PENDING') {
@@ -370,12 +437,19 @@ authRouter.post('/admin/subscription-requests/review', (req: Request, res: Respo
 
   return res.json({
     success: true,
-    message: action === 'approve' ? 'সাবস্ক্রিপশন সফলভাবে অনুমোদন করা হয়েছে!' : 'সাবস্ক্রিপশন বাতিল করা হয়েছে।',
+    message: action === 'approve' ? 'সাবস্ক্রিপশন সফলভাবে অনুমোদন করা হয়েছে!' : 'সাবস্ক্রিপশন বাতিল করা হয়েছে।',
     request: targetReq,
   });
-});
+};
+
+authRouter.post('/admin/subscription-requests/review', handleReviewRequest);
+authRouter.post('/admin/review-request', handleReviewRequest);
 
 // 8. Payment Config API
+authRouter.get('/payment/config', (_req: Request, res: Response) => {
+  return res.json(getPaymentConfig());
+});
+
 authRouter.get('/admin/payment-config', (_req: Request, res: Response) => {
   return res.json({ success: true, config: getPaymentConfig() });
 });
@@ -383,5 +457,5 @@ authRouter.get('/admin/payment-config', (_req: Request, res: Response) => {
 authRouter.post('/admin/payment-config', (req: Request, res: Response) => {
   const newConfig = req.body;
   savePaymentConfig(newConfig);
-  return res.json({ success: true, config: newConfig, message: 'পেমেন্ট নম্বরসমূহ আপডেট হয়েছে' });
+  return res.json({ success: true, config: newConfig, message: 'পেমেন্ট নম্বরসমূহ আপডেট হয়েছে' });
 });

@@ -28,6 +28,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
+import { getApiUrl } from './apiConfig';
 
 export const ADMIN_EMAILS = ['nagorikeitsheba@gmail.com', 'admin@tradepulse.io'];
 
@@ -347,11 +348,11 @@ class AuthService {
     }
   }
 
-  // --- LEGACY EMAIL / PASSWORD API CALLS WITH OFFLINE FALLBACK ---
+  // --- REAL EMAIL / PASSWORD AUTHENTICATION API CALLS ---
 
   public async login(email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -359,13 +360,16 @@ class AuthService {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        return { success: false, error: data.error || 'লগইন ব্যর্থ হয়েছে।' };
+        return { success: false, error: data.error || data.message || 'লগইন ব্যর্থ হয়েছে।' };
       }
 
       this.setCurrentUserSession(data.user, data.token);
       return { success: true, user: data.user };
     } catch {
-      return this.localFallbackLogin(email, password);
+      return {
+        success: false,
+        error: 'সার্ভারের সাথে সংযোগ করা যাচ্ছে না। অনুগ্রহ করে ইন্টারনেট সংযোগ পরীক্ষা করুন অথবা জিমেইল দিয়ে লগইন করুন।',
+      };
     }
   }
 
@@ -376,7 +380,7 @@ class AuthService {
     phone?: string
   ): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, phone }),
@@ -384,13 +388,16 @@ class AuthService {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        return { success: false, error: data.error || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে।' };
+        return { success: false, error: data.error || data.message || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে।' };
       }
 
       this.setCurrentUserSession(data.user, data.token);
       return { success: true, user: data.user };
     } catch {
-      return this.localFallbackRegister(name, email, password, phone);
+      return {
+        success: false,
+        error: 'সার্ভারের সাথে সংযোগ করা যাচ্ছে না। অনুগ্রহ করে ইন্টারনেট সংযোগ পরীক্ষা করুন অথবা জিমেইল দিয়ে রেজিস্ট্রেশন করুন।',
+      };
     }
   }
 
@@ -413,7 +420,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch(`/api/auth/me?userId=${this.currentUser.id}`, {
+      const res = await fetch(getApiUrl(`/api/auth/me?userId=${encodeURIComponent(this.currentUser.id)}`), {
         headers: {
           Authorization: `Bearer ${this.token || ''}`,
         },
@@ -428,7 +435,7 @@ class AuthService {
         }
       }
     } catch {
-      // offline
+      // ignore transient network check
     }
     return this.currentUser;
   }
@@ -496,7 +503,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/subscription/request', {
+      const res = await fetch(getApiUrl('/api/subscription/request'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -510,7 +517,7 @@ class AuthService {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        return { success: false, error: data.error || 'রিকোয়েস্ট সাবমিট ব্যর্থ হয়েছে।' };
+        return { success: false, error: data.error || data.message || 'রিকোয়েস্ট সাবমিট ব্যর্থ হয়েছে।' };
       }
 
       if (data.subscription) {
@@ -520,18 +527,10 @@ class AuthService {
       }
       return { success: true };
     } catch {
-      this.currentUser.subscription = {
-        status: 'PENDING',
-        planId,
-        planName: plan?.name || planId,
-        paymentMethod,
-        senderNumber,
-        trxId,
-        requestedAt: Date.now(),
+      return {
+        success: false,
+        error: 'সার্ভারের সাথে সংযোগ করা যাচ্ছে না। অনুগ্রহ করে পরে আবার চেষ্টা করুন।',
       };
-      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(this.currentUser));
-      this.notify();
-      return { success: true };
     }
   }
 
@@ -559,13 +558,13 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/payment/config');
+      const res = await fetch(getApiUrl('/api/payment/config'));
       if (res.ok) {
         const data = await res.json();
         return data;
       }
     } catch {
-      // fallback
+      // fallback to default payment numbers
     }
 
     return DEFAULT_PAYMENT_CONFIG;
@@ -585,7 +584,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(getApiUrl('/api/admin/users'), {
         headers: { Authorization: `Bearer ${this.token || ''}` },
       });
       if (res.ok) {
@@ -593,7 +592,7 @@ class AuthService {
         return data.users || [];
       }
     } catch {
-      // offline
+      // ignore error
     }
     return this.currentUser ? [this.currentUser] : [];
   }
@@ -633,7 +632,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/admin/requests', {
+      const res = await fetch(getApiUrl('/api/admin/requests'), {
         headers: { Authorization: `Bearer ${this.token || ''}` },
       });
       if (res.ok) {
@@ -641,7 +640,7 @@ class AuthService {
         return data.requests || [];
       }
     } catch {
-      // offline
+      // ignore error
     }
     return [];
   }
@@ -706,7 +705,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/admin/review-request', {
+      const res = await fetch(getApiUrl('/api/admin/review-request'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -750,7 +749,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/admin/grant-access', {
+      const res = await fetch(getApiUrl('/api/admin/grant-access'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -787,7 +786,7 @@ class AuthService {
     }
 
     try {
-      const res = await fetch('/api/admin/payment-config', {
+      const res = await fetch(getApiUrl('/api/admin/payment-config'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -827,77 +826,6 @@ class AuthService {
     localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
     localStorage.setItem(STORAGE_KEY_TOKEN, token);
     this.notify();
-  }
-
-  // --- LOCAL FALLBACK LOGIC ---
-  private localFallbackLogin(email: string, pass: string): { success: boolean; error?: string; user?: User } {
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail === 'admin@tradepulse.io' || cleanEmail === 'nagorikeitsheba@gmail.com') {
-      if (pass === 'admin123456') {
-        const adminUser: User = {
-          id: 'admin_local',
-          name: 'Master Admin',
-          email: cleanEmail,
-          role: 'admin',
-          status: 'active',
-          subscription: {
-            status: 'ACTIVE',
-            planName: 'Lifetime Master Access',
-            expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 3650,
-          },
-          createdAt: Date.now(),
-          lastLoginAt: Date.now(),
-        };
-        this.setCurrentUserSession(adminUser, 'local_admin_token');
-        return { success: true, user: adminUser };
-      }
-      return { success: false, error: 'ভুল এডমিন পাসওয়ার্ড।' };
-    }
-
-    if (cleanEmail === 'user@tradepulse.io' && pass === 'user123456') {
-      const demoUser: User = {
-        id: 'demo_user_local',
-        name: 'VIP Demo Trader',
-        email: cleanEmail,
-        role: 'user',
-        status: 'active',
-        subscription: {
-          status: 'ACTIVE',
-          planId: 'monthly_1m',
-          planName: '১ মাসের প্রো ভিআইপি',
-          expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30,
-        },
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-      };
-      this.setCurrentUserSession(demoUser, 'local_demo_token');
-      return { success: true, user: demoUser };
-    }
-
-    return { success: false, error: 'ইউজার পাওয়া যায়নি অথবা পাসওয়ার্ড ভুল।' };
-  }
-
-  private localFallbackRegister(
-    name: string,
-    email: string,
-    _pass: string,
-    phone?: string
-  ): { success: boolean; error?: string; user?: User } {
-    const newUser: User = {
-      id: 'usr_' + Date.now(),
-      name,
-      email: email.trim().toLowerCase(),
-      phone,
-      role: 'user',
-      status: 'active',
-      subscription: {
-        status: 'NONE',
-      },
-      createdAt: Date.now(),
-      lastLoginAt: Date.now(),
-    };
-    this.setCurrentUserSession(newUser, 'local_token_' + Date.now());
-    return { success: true, user: newUser };
   }
 }
 

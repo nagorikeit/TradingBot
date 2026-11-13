@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { authService } from '../services/authService';
-import { Shield, Lock, Mail, User as UserIcon, Phone, CheckCircle2, ArrowRight, Zap, Sparkles } from 'lucide-react';
+import { Shield, Lock, Mail, User as UserIcon, Phone, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
 interface AuthGatewayModalProps {
   onSuccess?: () => void;
@@ -65,18 +65,6 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
     } else {
       setError(res.error || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে');
     }
-  };
-
-  const fillQuickDemo = (role: 'admin' | 'user') => {
-    setTab('login');
-    if (role === 'admin') {
-      setEmail('admin@tradepulse.io');
-      setPassword('admin123456');
-    } else {
-      setEmail('user@tradepulse.io');
-      setPassword('user123456');
-    }
-    setError(null);
   };
 
   return (
@@ -147,31 +135,6 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
             অথবা ইমেইল ও পাসওয়ার্ড দিয়ে
           </span>
           <div className="border-t border-zinc-800 w-full" />
-        </div>
-
-        {/* 1-Click Quick Demo Buttons for Instant Evaluation */}
-        <div className="mb-5 p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-medium text-zinc-400 flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-amber-400" /> ১-ক্লিক ইনস্ট্যান্ট টেস্ট অ্যাক্সেস:
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => fillQuickDemo('admin')}
-              className="py-1.5 px-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              👑 এডমিন ডেমো
-            </button>
-            <button
-              type="button"
-              onClick={() => fillQuickDemo('user')}
-              className="py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              👤 ভিআইপি ডেমো
-            </button>
-          </div>
         </div>
 
         {/* Tab switcher */}
