@@ -6,14 +6,9 @@ import {
   AlertTriangle,
   RefreshCw,
   Search,
-  Sliders,
-  TrendingUp,
   Download,
-  Plus,
-  HelpCircle,
-  FileText,
-  ShieldCheck,
   Zap,
+  Lock,
 } from 'lucide-react';
 import {
   LearnedStrategyRule,
@@ -22,42 +17,71 @@ import {
   LearningHubStats,
 } from '../types/learningTypes';
 import { agentLearningService } from '../services/agentLearningService';
+import { TRADING_PROFILE_LIST, TradingProfileId, getTradingProfile } from '../strategy/tradingProfiles';
+import { tradingProfileService } from '../services/tradingProfileService';
 
 export const BengaliKnowledgeHub: React.FC = () => {
-  const [rules, setRules] = useState<LearnedStrategyRule[]>(() => agentLearningService.getRules());
-  const [reflections, setReflections] = useState<TradeMistakeReflection[]>(() =>
-    agentLearningService.getReflections()
+  const [selectedProfile, setSelectedProfile] = useState<TradingProfileId | 'ALL'>(() =>
+    tradingProfileService.getActiveProfileId()
   );
-  const [stats, setStats] = useState<LearningHubStats>(() => agentLearningService.getStats());
+  const [rules, setRules] = useState<LearnedStrategyRule[]>(() =>
+    agentLearningService.getRules(
+      selectedProfile === 'ALL' ? undefined : selectedProfile
+    )
+  );
+  const [reflections, setReflections] = useState<TradeMistakeReflection[]>(() =>
+    agentLearningService.getReflections(
+      selectedProfile === 'ALL' ? undefined : selectedProfile
+    )
+  );
+  const [stats, setStats] = useState<LearningHubStats>(() =>
+    agentLearningService.getStats(
+      selectedProfile === 'ALL' ? undefined : selectedProfile
+    )
+  );
   const [activeTab, setActiveTab] = useState<'rules' | 'reflections' | 'simulate'>('rules');
   const [selectedCategory, setSelectedCategory] = useState<LearningCategory | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [simulatedSymbol, setSimulatedSymbol] = useState<string>('EUR/USD OTC');
   const [simulatedDirection, setSimulatedDirection] = useState<'CALL' | 'PUT'>('CALL');
+  const [simulatedProfile, setSimulatedProfile] = useState<TradingProfileId>(() =>
+    tradingProfileService.getActiveProfileId()
+  );
   const [simulatedNote, setSimulatedNote] = useState<string>('');
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    const profileFilter = selectedProfile === 'ALL' ? undefined : selectedProfile;
+    setRules(agentLearningService.getRules(profileFilter));
+    setReflections(agentLearningService.getReflections(profileFilter));
+    setStats(agentLearningService.getStats(profileFilter));
+
     const unsub = agentLearningService.subscribe(() => {
-      setRules(agentLearningService.getRules());
-      setReflections(agentLearningService.getReflections());
-      setStats(agentLearningService.getStats());
+      const pf = selectedProfile === 'ALL' ? undefined : selectedProfile;
+      setRules(agentLearningService.getRules(pf));
+      setReflections(agentLearningService.getReflections(pf));
+      setStats(agentLearningService.getStats(pf));
     });
     return unsub;
-  }, []);
+  }, [selectedProfile]);
 
   const handleSimulateLoss = (ruleId?: string) => {
     const rule = ruleId ? agentLearningService.getRuleById(ruleId) : undefined;
+    const targetProfile = rule?.profileId || simulatedProfile;
     const res = agentLearningService.recordOutcome(
       simulatedSymbol,
       simulatedDirection,
       'LOSS',
       rule?.titleBn,
-      simulatedNote || undefined
+      simulatedNote || undefined,
+      targetProfile,
+      'KNOWLEDGE_LAB'
     );
 
     setNotificationMsg(
-      `⚠️ ভুল রেকর্ড করা হয়েছে! এআই কৌশলটি পর্যালোচনা করে সতর্কতা নোট যুক্ত করেছে এবং কনফিডেন্স ৫% হ্রাস করেছে।`
+      res.cohortAudit
+        ? res.cohortAudit.summaryBn
+        : `সিগন্যালটি [${getTradingProfile(targetProfile).shortLabel}] লগে সংরক্ষিত হয়েছে — ১টি ক্যান্ডেলে মূল রুল বদলানো হয়নি (কোহর্ট সাইকেলে পর্যালোচিত হবে)।`
     );
     setTimeout(() => setNotificationMsg(null), 6000);
     setActiveTab('reflections');
@@ -65,14 +89,22 @@ export const BengaliKnowledgeHub: React.FC = () => {
 
   const handleSimulateWin = (ruleId?: string) => {
     const rule = ruleId ? agentLearningService.getRuleById(ruleId) : undefined;
-    agentLearningService.recordOutcome(
+    const targetProfile = rule?.profileId || simulatedProfile;
+    const res = agentLearningService.recordOutcome(
       simulatedSymbol,
       simulatedDirection,
       'WIN',
-      rule?.titleBn
+      rule?.titleBn,
+      undefined,
+      targetProfile,
+      'KNOWLEDGE_LAB'
     );
 
-    setNotificationMsg(`✅ ট্রেডটি সফল (WIN) হিসেবে যাচাই হয়েছে! কনফিডেন্স স্কোর বৃদ্ধি পেয়েছে।`);
+    setNotificationMsg(
+      res.cohortAudit
+        ? res.cohortAudit.summaryBn
+        : `ট্রেড সফল (WIN) হিসেবে [${getTradingProfile(targetProfile).shortLabel}] কোহর্ট লগে যুক্ত হয়েছে।`
+    );
     setTimeout(() => setNotificationMsg(null), 5000);
   };
 
@@ -107,16 +139,16 @@ export const BengaliKnowledgeHub: React.FC = () => {
               <Brain className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold text-white tracking-tight">
-                  AI Knowledge Hub & Self-Learning Playbook
+                  AI Knowledge Hub & Isolated Playbook
                 </h1>
                 <span className="text-xs text-cyan-400 font-mono bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">
-                  বাংলা ডায়েরি
+                  ৭/৩০-দিন রুল লক
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                এআই এজেন্ট এখানে তার সমস্ত টেকনিক্যাল কৌশল, চার্ট পড়ার নিয়মাবলি এবং অতীতের ভুল থেকে শেখা অভিজ্ঞতা বাংলায় সংরক্ষণ করে।
+                প্রতিটি মার্কেটের রুল সম্পূর্ণ আলাদা। প্রতিটি সিগন্যাল থেকে ডেটা জমা হয়, কিন্তু ১টি ক্যান্ডেল বিপরীত হলেই মূল রুল পরিবর্তন হয় না।
               </p>
             </div>
           </div>
@@ -131,7 +163,11 @@ export const BengaliKnowledgeHub: React.FC = () => {
               <span>ডাউনলোড (JSON)</span>
             </button>
             <button
-              onClick={() => agentLearningService.resetToDefaults()}
+              onClick={() =>
+                agentLearningService.resetToDefaults(
+                  selectedProfile === 'ALL' ? undefined : selectedProfile
+                )
+              }
               className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/60 rounded-lg flex items-center gap-1.5 transition-colors"
               title="ডিফল্ট নিয়মে রিসেট করুন"
             >
@@ -141,8 +177,40 @@ export const BengaliKnowledgeHub: React.FC = () => {
           </div>
         </div>
 
-        {/* Global Statistics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-slate-800/80">
+        {/* Platform Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-800/80">
+          <button
+            type="button"
+            onClick={() => setSelectedProfile('ALL')}
+            className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+              selectedProfile === 'ALL'
+                ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 font-semibold'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            সকল প্রোফাইল
+          </button>
+          {TRADING_PROFILE_LIST.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setSelectedProfile(p.id);
+                setSimulatedProfile(p.id);
+              }}
+              className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                selectedProfile === p.id
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-semibold'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {p.shortLabel}
+            </button>
+          ))}
+        </div>
+
+        {/* Statistics Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80">
           <div className="bg-slate-950/50 border border-slate-800/80 p-3 rounded-lg">
             <span className="text-[11px] text-slate-400 block">সংরক্ষিত কৌশল</span>
             <span className="text-base font-bold text-white font-mono tabular-nums">
@@ -158,14 +226,14 @@ export const BengaliKnowledgeHub: React.FC = () => {
           </div>
 
           <div className="bg-slate-950/50 border border-slate-800/80 p-3 rounded-lg">
-            <span className="text-[11px] text-slate-400 block">ভুল থেকে অর্জিত শিক্ষা</span>
+            <span className="text-[11px] text-slate-400 block">লগড সিগন্যাল / লার্নিং</span>
             <span className="text-base font-bold text-amber-400 font-mono tabular-nums">
-              {stats.totalReflections} বার
+              {stats.totalLoggedSignals} / {stats.totalReflections}
             </span>
           </div>
 
           <div className="bg-slate-950/50 border border-slate-800/80 p-3 rounded-lg">
-            <span className="text-[11px] text-slate-400 block">সংশোধিত কৌশল</span>
+            <span className="text-[11px] text-slate-400 block">কোহর্ট সংশোধিত রুল</span>
             <span className="text-base font-bold text-cyan-400 font-mono tabular-nums">
               {stats.revisedRules} টি
             </span>
@@ -188,10 +256,10 @@ export const BengaliKnowledgeHub: React.FC = () => {
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg overflow-x-auto">
           <button
             onClick={() => setActiveTab('rules')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'rules'
                 ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
@@ -203,19 +271,19 @@ export const BengaliKnowledgeHub: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('reflections')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'reflections'
                 ? 'bg-slate-800 text-amber-400 font-semibold shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5" />
-            <span>ভুল বিশ্লেষণ ও পোস্ট-মর্টেম ({reflections.length})</span>
+            <span>সিগন্যাল পর্যবেক্ষণ লগ ({reflections.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('simulate')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'simulate'
                 ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
@@ -230,7 +298,6 @@ export const BengaliKnowledgeHub: React.FC = () => {
       {/* TAB 1: RULES & STRATEGIES */}
       {activeTab === 'rules' && (
         <div className="space-y-4">
-          {/* Filter Bar & Search */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
               {(
@@ -239,6 +306,7 @@ export const BengaliKnowledgeHub: React.FC = () => {
                   { id: 'CANDLESTICK', label: 'ক্যান্ডেলস্টিক' },
                   { id: 'INDICATOR', label: 'ইন্ডিকেটর' },
                   { id: 'SUPPORT_RESISTANCE', label: 'সাপোর্ট/রেজিস্ট্যান্স' },
+                  { id: 'PRICE_ACTION', label: 'প্রাইস অ্যাকশন' },
                   { id: 'OTC_TRAP', label: 'ওটিসি ট্র্যাপ ফিল্টার' },
                 ] as const
               ).map((cat) => (
@@ -268,7 +336,6 @@ export const BengaliKnowledgeHub: React.FC = () => {
             </div>
           </div>
 
-          {/* Rules Cards List */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredRules.map((rule) => (
               <div
@@ -276,16 +343,11 @@ export const BengaliKnowledgeHub: React.FC = () => {
                 className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md flex flex-col justify-between space-y-4 hover:border-slate-700 transition-colors"
               >
                 <div>
-                  {/* Top Bar with Category, Direction & Confidence */}
                   <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-cyan-400">
-                        {rule.category === 'CANDLESTICK' && 'ক্যান্ডেলস্টিক'}
-                        {rule.category === 'INDICATOR' && 'ইন্ডিকেটর'}
-                        {rule.category === 'SUPPORT_RESISTANCE' && 'সাপোর্ট/রেজিস্ট্যান্স'}
-                        {rule.category === 'OTC_TRAP' && 'ওটিসি স্পেশাল'}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 font-mono text-[11px] font-semibold">
+                        {getTradingProfile(rule.profileId).shortLabel}
                       </span>
-                      <span aria-hidden="true">·</span>
                       <span
                         className={`font-mono font-bold ${
                           rule.recommendedDirection === 'CALL'
@@ -295,25 +357,23 @@ export const BengaliKnowledgeHub: React.FC = () => {
                             : 'text-amber-400'
                         }`}
                       >
-                        {rule.recommendedDirection === 'CALL' && 'CALL (UP)'}
-                        {rule.recommendedDirection === 'PUT' && 'PUT (DOWN)'}
+                        {rule.recommendedDirection === 'CALL' && 'CALL / BUY'}
+                        {rule.recommendedDirection === 'PUT' && 'PUT / SELL'}
                         {rule.recommendedDirection === 'WAIT' && 'WAIT (অপেক্ষা)'}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-400">কনফিডেন্স:</span>
+                    <div className="flex items-center gap-1.5">
+                      <Lock className="w-3 h-3 text-cyan-400" />
                       <span className="font-mono text-cyan-300 font-bold tabular-nums">
                         {Math.round(rule.confidenceWeight * 100)}%
                       </span>
                     </div>
                   </div>
 
-                  {/* Title & Summary */}
                   <h3 className="text-sm font-bold text-white mt-2 leading-snug">{rule.titleBn}</h3>
                   <p className="text-xs text-slate-400 mt-1 leading-relaxed">{rule.summaryBn}</p>
 
-                  {/* Step-by-Step Conditions */}
                   <div className="mt-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800/80 space-y-1.5">
                     <span className="text-[11px] font-semibold text-slate-300 block">
                       প্রবেশের শর্তাবলি (Entry Conditions):
@@ -328,12 +388,11 @@ export const BengaliKnowledgeHub: React.FC = () => {
                     </ul>
                   </div>
 
-                  {/* Cautionary Notes / Mistakes Learned */}
                   {rule.cautionaryNotesBn.length > 0 && (
                     <div className="mt-3 bg-amber-950/20 border border-amber-500/30 p-2.5 rounded-lg space-y-1">
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
                         <AlertTriangle className="w-3 h-3 text-amber-400" />
-                        <span>ভুল থেকে শেখা সতর্কতা (Lessons Learned):</span>
+                        <span>সতর্কতা ফিল্টার:</span>
                       </div>
                       <ul className="text-[11px] text-amber-200/80 space-y-0.5">
                         {rule.cautionaryNotesBn.map((note, nIdx) => (
@@ -344,35 +403,27 @@ export const BengaliKnowledgeHub: React.FC = () => {
                   )}
                 </div>
 
-                {/* Footer with Performance Stats & Learning Action */}
                 <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 text-slate-400 font-mono text-[11px]">
                     <span>ট্রেড: {rule.totalTrades}</span>
                     <span aria-hidden="true">·</span>
                     <span className="text-emerald-400">উইন: {rule.winRate}%</span>
-                    {rule.learnedFromFailureCount > 0 && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="text-amber-400">সংশোধিত: {rule.learnedFromFailureCount} বার</span>
-                      </>
-                    )}
                   </div>
 
-                  {/* Interactive Quick Feedback Buttons */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => handleSimulateWin(rule.ruleId)}
                       className="px-2 py-1 text-[11px] bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-600/40 text-emerald-300 rounded transition-colors"
-                      title="এই কৌশলে জয় হয়েছে চিহ্নিত করুন"
+                      title="সফল সিগন্যাল হিসেবে লগ করুন"
                     >
                       + Win
                     </button>
                     <button
                       onClick={() => handleSimulateLoss(rule.ruleId)}
                       className="px-2 py-1 text-[11px] bg-rose-950/40 hover:bg-rose-900/60 border border-rose-600/40 text-rose-300 rounded transition-colors"
-                      title="এই কৌশলে ভুল হয়েছে চিহ্নিত করে সেলফ-লার্নিং সক্রিয় করুন"
+                      title="লস পর্যবেক্ষণ কোহর্ট লগে যুক্ত করুন"
                     >
-                      - Loss (শিক্ষা)
+                      - Loss (লগ)
                     </button>
                   </div>
                 </div>
@@ -395,10 +446,10 @@ export const BengaliKnowledgeHub: React.FC = () => {
           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Brain className="w-4 h-4 text-cyan-400" />
-              <span>এআই সেলফ-লার্নিং হিস্ট্রি ও ভুল সংশোধন ডায়েরি</span>
+              <span>প্রতিটি সিগন্যাল পর্যবেক্ষণ ও কোহর্ট কিউ লগ</span>
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              যখনই কোনো লাইভ ট্রেড বা সিগন্যাল প্রত্যাশা অনুযায়ী কাজ করেনি, এআই নিজে সেই ভুলটির কারণ বিশ্লেষণ করেছে এবং পরবর্তীতে একই ভুল না করার জন্য কৌশল সংশোধন করেছে।
+              কোনো একটি ক্যান্ডেল বিপরীত হলেই মূল রুল পরিবর্তন করা হয় না—প্রতিটি ফলাফল এখানে সংরক্ষিত থাকে এবং ৭ বা ৩০ দিনের কোহর্ট বিশ্লেষণ শেষে নিশ্চিত প্যাটার্নের ওপর ভিত্তি করে রুল আপডেট হয়।
             </p>
           </div>
 
@@ -410,6 +461,9 @@ export const BengaliKnowledgeHub: React.FC = () => {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 font-mono text-[11px]">
+                      {getTradingProfile(ref.profileId).shortLabel}
+                    </span>
                     <span className="font-bold text-white font-mono">{ref.symbol}</span>
                     <span aria-hidden="true">·</span>
                     <span
@@ -419,13 +473,11 @@ export const BengaliKnowledgeHub: React.FC = () => {
                     >
                       {ref.direction} ({ref.suggestedExpiry})
                     </span>
-                    <span aria-hidden="true">·</span>
-                    <span className="text-slate-400">{ref.expectedPatternBn}</span>
                   </div>
 
                   <div className="flex items-center gap-2 font-mono text-[11px] text-slate-400">
                     <span className="text-rose-400 bg-rose-950/40 border border-rose-800/40 px-1.5 py-0.5 rounded">
-                      ফলাফল: লস (ভুল)
+                      লস পর্যবেক্ষণ
                     </span>
                     <span>{new Date(ref.timestamp).toLocaleTimeString('bn-BD')}</span>
                   </div>
@@ -434,22 +486,16 @@ export const BengaliKnowledgeHub: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div className="bg-rose-950/20 border border-rose-800/30 p-3 rounded-lg">
                     <span className="font-semibold text-rose-300 block mb-1">
-                      ভুলের কারণ (Why it failed):
+                      পর্যবেক্ষণ (Why it failed):
                     </span>
                     <p className="text-slate-300 leading-relaxed">{ref.failureReasonBn}</p>
-                    <span className="text-[10px] text-slate-500 mt-2 block font-mono">
-                      মার্কেট অবস্থা: {ref.marketConditionBn}
-                    </span>
                   </div>
 
                   <div className="bg-cyan-950/20 border border-cyan-800/30 p-3 rounded-lg">
                     <span className="font-semibold text-cyan-300 block mb-1">
-                      এআই-এর গৃহীত সংশোধন (Corrective Action):
+                      কোহর্ট লক স্ট্যাটাস:
                     </span>
                     <p className="text-slate-300 leading-relaxed">{ref.correctiveActionBn}</p>
-                    <span className="text-[10px] text-cyan-400/80 mt-2 block font-mono">
-                      কনফিডেন্স পেনাল্টি: -{ref.confidencePenaltyPercent}%
-                    </span>
                   </div>
                 </div>
               </div>
@@ -458,7 +504,7 @@ export const BengaliKnowledgeHub: React.FC = () => {
             {reflections.length === 0 && (
               <div className="text-center py-12 bg-slate-900/40 border border-slate-800 rounded-xl">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="text-xs text-slate-400">এখনো কোনো ভুলের রেকর্ড নেই। সমস্ত ট্রেড নিখুঁতভাবে চলছে।</p>
+                <p className="text-xs text-slate-400">এই প্রোফাইলে এখনো কোনো লস পর্যবেক্ষণ নেই।</p>
               </div>
             )}
           </div>
@@ -470,13 +516,28 @@ export const BengaliKnowledgeHub: React.FC = () => {
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-bold text-white">সেলফ-লার্নিং টেস্ট ল্যাব (Interactive Learning Sandbox)</h3>
+            <h3 className="text-sm font-bold text-white">সিগন্যাল লার্নিং স্যান্ডবক্স (Cohort Test Lab)</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            এখানে আপনি যেকোনো ট্রেডের ফলাফল (Win অথবা Loss) এআই-কে জানিয়ে টেস্ট করতে পারেন। এআই সাথে সাথে সেই তথ্য বিশ্লেষণ করে বাংলায় পোস্ট-মর্টেম কারণ তৈরি করবে এবং সংশ্লিষ্ট কৌশলের ওপর সতর্কতা ও কনফিডেন্স পরিবর্তন করবে।
+            এখানে নির্দিষ্ট ট্রেড প্রোফাইলের জন্য WIN বা LOSS ফলাফল সাবমিট করে পরীক্ষা করুন—প্রতিটি সিগন্যাল লগে জমা হবে, কিন্তু ১টি ক্যান্ডেলের লসে রুল পরিবর্তন হবে না।
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">ট্রেড প্রোফাইল</label>
+              <select
+                value={simulatedProfile}
+                onChange={(e) => setSimulatedProfile(e.target.value as TradingProfileId)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+              >
+                {TRADING_PROFILE_LIST.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.shortLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">অ্যাসেট সিম্বল</label>
               <select
@@ -487,7 +548,7 @@ export const BengaliKnowledgeHub: React.FC = () => {
                 <option value="EUR/USD OTC">EUR/USD OTC</option>
                 <option value="AUD/CHF OTC">AUD/CHF OTC</option>
                 <option value="BTC/USDT">BTC/USDT</option>
-                <option value="GBP/USD OTC">GBP/USD OTC</option>
+                <option value="XAU/USD">XAU/USD</option>
               </select>
             </div>
 
@@ -498,13 +559,13 @@ export const BengaliKnowledgeHub: React.FC = () => {
                 onChange={(e) => setSimulatedDirection(e.target.value as 'CALL' | 'PUT')}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
               >
-                <option value="CALL">CALL (UP)</option>
-                <option value="PUT">PUT (DOWN)</option>
+                <option value="CALL">CALL / BUY</option>
+                <option value="PUT">PUT / SELL</option>
               </select>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">কাস্টম পর্যবেক্ষণ নোট (ঐচ্ছিক)</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">পর্যবেক্ষণ নোট (ঐচ্ছিক)</label>
               <input
                 type="text"
                 placeholder="যেমন: নিউজ স্পাইকে সাপোর্ট ভেঙেছে..."
@@ -515,13 +576,13 @@ export const BengaliKnowledgeHub: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             <button
               onClick={() => handleSimulateWin()}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>সফল ট্রেড সাবমিট করুন (Record Win)</span>
+              <span>সফল সিগন্যাল লগ (WIN)</span>
             </button>
 
             <button
@@ -529,7 +590,7 @@ export const BengaliKnowledgeHub: React.FC = () => {
               className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>ভুল ট্রেড সাবমিট করুন (Trigger AI Self-Learning)</span>
+              <span>লস পর্যবেক্ষণ লগ (LOSS)</span>
             </button>
           </div>
         </div>

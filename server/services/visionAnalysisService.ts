@@ -30,10 +30,41 @@ export class VisionAnalysisService {
    * Analyzes an image frame (Base64 JPEG/PNG) using Gemini 3.8 Flash Multimodal
    * Accurately recognizes and reads ANY screen (Trading Charts, Code Editor, YouTube, Webpage, Documents, Chats, Desktop)
    */
+  private getProfileDirective(tradingProfile?: string): string {
+    switch (tradingProfile) {
+      case 'BINARY_OTC':
+        return `ACTIVE TRADE MODE: BINARY OPTIONS — OTC MARKET (Quotex OTC, Pocket Option OTC, Binomo OTC).
+- Prioritize wick rejections (>= 35% upper/lower wick), Bollinger band mean-reversion touches, 3-candle exhaustion reversals, and support/resistance bounce.
+- Strictly filter out Doji/tiny-body chop or flat horizontal consolidations with "WAIT".
+- Predict the NEXT 1–2 minute candle (CALL or PUT) with crisp Bengali reasoning.`;
+      case 'BINARY_LIVE':
+        return `ACTIVE TRADE MODE: BINARY OPTIONS — REAL / LIVE MARKET (Quotex Live, IQ Option, Olymp Trade).
+- Prioritize authentic market trend alignment (EMA 9/21 slope), dynamic S/R break & retest, and clean momentum candle continuation.
+- Output direction as CALL (UP) or PUT (DOWN) for next 1–5 minute expiry, or WAIT if EMAs/candles conflict.`;
+      case 'CRYPTO_SPOT':
+        return `ACTIVE TRADE MODE: CRYPTO — SPOT & FUTURES (Binance, Bybit, OKX, Bitget).
+- Analyze macro trend direction, breakout momentum, volume spikes, and major horizontal support/resistance swing zones (DO NOT assume 1-minute binary options).
+- Use CALL to mean LONG / BUY and PUT to mean SHORT / SELL, and mention key Stop Loss / Take Profit structural zone context in nextCandlePredictionReasonBn.`;
+      case 'FOREX':
+        return `ACTIVE TRADE MODE: FOREX (FX / CFD — Exness, XM, IC Markets, MT4/MT5).
+- Focus on institutional market structure (Break of Structure, Liquidity Sweep, Order Block, EMA 21/50 trend), session momentum, and clean Risk-Reward levels.
+- Use CALL to mean BUY (LONG) and PUT to mean SELL (SHORT), and explain SL/TP structural placement in nextCandlePredictionReasonBn. Filter dead-session chop with WAIT.`;
+      case 'COMMODITY_INDEX':
+        return `ACTIVE TRADE MODE: COMMODITIES & INDEX (Gold XAU/USD, NASDAQ, US30).
+- Focus on high-momentum session breakouts, pullback retests, and volatility-protected wick filtering.
+- Use CALL to mean BUY / UP and PUT to mean SELL / DOWN, noting SL protection against spike wicks.`;
+      default:
+        return `ACTIVE TRADE MODE: GENERAL MULTI-PLATFORM CANDLESTICK ANALYSIS.
+- Automatically detect broker style (OTC/Live Binary vs Crypto/Forex) and apply strict wick rejection, trend confluence, and sideways WAIT filtering.`;
+    }
+  }
+
   public async analyzeFrame(
     imageBase64: string,
     mimeType: string = 'image/jpeg',
-    customPrompt?: string
+    customPrompt?: string,
+    tradingProfile?: string,
+    activeProfileRules?: string
   ): Promise<ScreenVisionParsedData> {
     // Extract actual mimeType and clean base64 data
     const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
@@ -171,7 +202,12 @@ YOUR CORE DUTIES:
      * If Total Score < 7.5 or market is choppy/unclear: Set "predictedNextCandle": "WAIT", "tradeQualityTier": "MODERATE" or "HIGH_RISK_DOJI".
 
 6. SAFETY & PRIVACY:
-   - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.`;
+   - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.
+
+7. STRICT PLATFORM-SPECIFIC RULE ISOLATION (APPLY ONLY SELECTED PROFILE RULES):
+CRITICAL RULE: Apply ONLY the rules defined below for the active mode (${tradingProfile || 'BINARY_OTC'}). DO NOT apply rules from any other trade option (e.g., never mix OTC rules into Forex/Crypto, or Binary rules into Spot SL/TP).
+${this.getProfileDirective(tradingProfile)}
+${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHORT-LOCKED):\n${activeProfileRules}` : ''}`;
 
     try {
       let response = null;
@@ -180,8 +216,8 @@ YOUR CORE DUTIES:
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           const userPromptText = customPrompt
-            ? `Analyze this screen frame. The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
-            : 'Analyze this live screen frame using the 5-step institutional signal flow. If it is a trading chart, verify chart, measure candle OHLC & wicks, align trend, filter out sideways chop or news spikes with WAIT, and score setup (>= 7.5 score required for CALL/PUT, otherwise WAIT).';
+            ? `Analyze this screen frame (${tradingProfile || 'GENERAL'} mode). The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
+            : `Analyze this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules using the 5-step institutional signal flow. If it is a trading chart, verify chart, measure candle OHLC & wicks, align trend, filter out sideways chop or news spikes with WAIT, and score setup (>= 7.5 score required for CALL/PUT, otherwise WAIT).`;
 
           response = await ai.models.generateContent({
             model: 'gemini-3.8-flash',

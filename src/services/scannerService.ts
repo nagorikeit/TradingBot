@@ -3,6 +3,7 @@ import { BinanceMarketDataProvider } from '../data/binanceMarketDataProvider';
 import { getAssetInfo, getTimeframeMs } from '../data/marketDataProvider';
 import { computeIndicators } from '../indicators';
 import { evaluateStrategyRules } from '../strategy/signalEngine';
+import { tradingProfileService } from './tradingProfileService';
 
 export const DEFAULT_SCANNER_SYMBOLS = [
   'BTC/USDT',
@@ -46,6 +47,10 @@ export class ScannerService {
   private constructor() {
     this.loadSignalsFromStorage();
     this.setupVisibilityListener();
+    tradingProfileService.subscribe(() => {
+      this.workers.forEach((w) => this.updateWorkerStatus(w));
+      this.notify(true);
+    });
     if (this.loadScannerEnabledFromStorage()) {
       void this.start();
     }

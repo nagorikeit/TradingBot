@@ -12,6 +12,8 @@ import { Capacitor } from '@capacitor/core';
 import { getApiUrl, getApiBaseUrl, DEFAULT_HOSTED_BACKEND_URL } from './apiConfig';
 import { agentLearningService } from './agentLearningService';
 import { authService } from './authService';
+import { tradingProfileService } from './tradingProfileService';
+import { TradingProfileId } from '../strategy/tradingProfiles';
 
 export class LiveScreenService {
   private static instance: LiveScreenService;
@@ -254,7 +256,10 @@ export class LiveScreenService {
   /**
    * Starts native background capture or browser screen capture
    */
-  public async connectScreen(): Promise<boolean> {
+  public async connectScreen(profileId?: TradingProfileId): Promise<boolean> {
+    if (profileId) {
+      tradingProfileService.setActiveProfile(profileId);
+    }
     if (this.state === 'STREAMING') return true;
 
     this.state = 'CONNECTING';
@@ -742,6 +747,7 @@ export class LiveScreenService {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
 
+      const activeProfile = tradingProfileService.getActiveProfileId();
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -750,6 +756,8 @@ export class LiveScreenService {
           mimeType: 'image/jpeg',
           frameCapturedAt: Date.now(),
           customPrompt: question,
+          tradingProfile: activeProfile,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
         }),
       });
 
@@ -921,10 +929,13 @@ export class LiveScreenService {
                 marketService.updateSignalOutcome(targetId, resType);
               }
               agentLearningService.recordOutcome(
-                outcomeData.symbol || 'QUOTEX OTC',
+                outcomeData.symbol || 'LIVE CHART',
                 outcomeData.direction === 'UP' ? 'CALL' : 'PUT',
                 resType,
-                'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ'
+                'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ',
+                undefined,
+                tradingProfileService.getActiveProfileId(),
+                'NATIVE_OVERLAY'
               );
               this.activePendingSignalId = null;
               this.activeSignaledDirection = null;
@@ -1045,8 +1056,19 @@ export class LiveScreenService {
             const resultOutcome: 'WIN' | 'LOSS' = isWin ? 'WIN' : 'LOSS';
             const colorBn = isGreen ? 'সবুজ' : 'লাল';
 
+            const activeProfileId =
+              (this.latestResult?.tradingProfileId as TradingProfileId) ||
+              tradingProfileService.getActiveProfileId();
             marketService.updateSignalOutcome(targetSignalId, resultOutcome);
-            agentLearningService.recordOutcome('QUOTEX OTC', direction, resultOutcome, 'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ');
+            agentLearningService.recordOutcome(
+              this.latestResult?.visionData?.symbol || 'LIVE CHART',
+              direction,
+              resultOutcome,
+              this.latestResult?.visionData?.candlestickPattern || 'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ',
+              undefined,
+              activeProfileId,
+              'WEB_SCREEN_AUTO'
+            );
 
             const voiceMsg = isWin
               ? `১ মিনিটের ট্রেড সমাপ্ত। ফলাফল: লাভ! ক্লোজড ক্যান্ডেলটি ছিল ${colorBn}।`
@@ -1159,6 +1181,7 @@ export class LiveScreenService {
     const timeout = setTimeout(() => controller.abort(), 12000);
 
     try {
+      const activeProfile = tradingProfileService.getActiveProfileId();
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1166,6 +1189,8 @@ export class LiveScreenService {
           imageBase64: frame.imageBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt: frame.timestamp,
+          tradingProfile: activeProfile,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
         }),
         signal: controller.signal,
       });
@@ -1901,19 +1926,22 @@ export class LiveScreenService {
     const confidence = chartDetection.confidence;
     const symbol = chartDetection.symbol;
 
-    // Cross-check with AI Learned Playbook rules and past mistake warnings
+    // Cross-check ONLY with the selected profile's isolated AI Playbook rules
+    const activeProfileId = tradingProfileService.getActiveProfileId();
     const targetDir = dir === 'UP' ? 'CALL' : 'PUT';
-    const learnedRules = agentLearningService.getRules();
+    const learnedRules = agentLearningService.getRulesByProfile(activeProfileId);
     const matchingRule = learnedRules.find(
-      (r) => r.recommendedDirection === targetDir && r.status === 'ACTIVE'
+      (r) => r.recommendedDirection === targetDir && r.status !== 'UNDER_REVIEW'
     );
     const reasoning = [...chartDetection.reason];
     if (matchingRule) {
       reasoning.push(
-        `এআই প্লেবুক নিয়ম: ${matchingRule.titleBn} (কনফিডেন্স: ${Math.round(matchingRule.confidenceWeight * 100)}%)`
+        `এআই প্লেবুক নিয়ম (${activeProfileId}): ${matchingRule.titleBn} (কনফিডেন্স: ${Math.round(
+          matchingRule.confidenceWeight * 100
+        )}%)`
       );
       if (matchingRule.cautionaryNotesBn && matchingRule.cautionaryNotesBn.length > 0) {
-        reasoning.push(`⚠️ অতীতের ভুল থেকে শিক্ষা: ${matchingRule.cautionaryNotesBn[0]}`);
+        reasoning.push(`⚠️ প্রোফাইল সতর্কতা: ${matchingRule.cautionaryNotesBn[0]}`);
       }
     }
 
@@ -2668,6 +2696,7 @@ export class LiveScreenService {
       frameCapturedAt = Date.now();
       imageBase64 = canvas.toDataURL('image/jpeg', 0.75);
 
+      const activeProfile = tradingProfileService.getActiveProfileId();
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2675,6 +2704,8 @@ export class LiveScreenService {
           imageBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt,
+          tradingProfile: activeProfile,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
         }),
         signal: controller.signal,
       });
@@ -2745,6 +2776,7 @@ export class LiveScreenService {
 
     try {
       const frameCapturedAt = Date.now();
+      const activeProfile = tradingProfileService.getActiveProfileId();
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2752,6 +2784,8 @@ export class LiveScreenService {
           imageBase64,
           mimeType: imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
           frameCapturedAt,
+          tradingProfile: activeProfile,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
         }),
         signal: controller.signal,
       });

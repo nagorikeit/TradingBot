@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Signal, Candle, EvaluatedRuleItem } from '../types';
 import { getAssetInfo } from '../data/marketDataProvider';
 import { formatPrice, formatTime, getPriceChangePip } from '../utils/formatters';
+import { getTradingProfile } from '../strategy/tradingProfiles';
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -149,6 +150,9 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
                 Snapshot Locked
               </span>
             )}
+            <span className="text-[10px] font-mono text-amber-300 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded">
+              {getTradingProfile(signal.tradingProfileId || snapshot?.tradingProfileId).shortLabel}
+            </span>
           </div>
         </div>
 
@@ -308,6 +312,23 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
             </div>
           </div>
         </div>
+
+        {(signal.stopLossPrice || signal.takeProfitPrice) && (
+          <div className="grid grid-cols-2 gap-3 text-xs bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+            <div>
+              <span className="text-slate-400 block text-[11px]">Stop Loss (ATR 1.5×)</span>
+              <span className="text-rose-400 font-mono font-bold text-sm tabular-nums mt-0.5 block">
+                {signal.stopLossPrice ? formatPrice(signal.stopLossPrice, asset.pipDecimals) : '—'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[11px]">Take Profit (ATR 3.0×)</span>
+              <span className="text-emerald-400 font-mono font-bold text-sm tabular-nums mt-0.5 block">
+                {signal.takeProfitPrice ? formatPrice(signal.takeProfitPrice, asset.pipDecimals) : '—'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Technical Indicators Snapshot (Immutable) */}
         <div className="space-y-1.5">

@@ -218,9 +218,22 @@ export class ScreenVerificationService {
     };
   }
 
-  /**
-  private lastDetectedScreen: string | null = null;
-  private lastScreenSwitchedAt: number = Date.now();
+  private getProfileLabelBn(tradingProfile?: string): string {
+    switch (tradingProfile) {
+      case 'BINARY_OTC':
+        return 'Binary OTC';
+      case 'BINARY_LIVE':
+        return 'Binary Live';
+      case 'CRYPTO_SPOT':
+        return 'Crypto Spot';
+      case 'FOREX':
+        return 'Forex';
+      case 'COMMODITY_INDEX':
+        return 'Gold & Index';
+      default:
+        return 'Binary OTC';
+    }
+  }
 
   /**
    * Synthesizes Vision data and Market verification into final trading / screen analysis
@@ -229,14 +242,24 @@ export class ScreenVerificationService {
     imageBase64: string,
     mimeType: string = 'image/jpeg',
     frameCapturedAt: number = Date.now(),
-    customPrompt?: string
+    customPrompt?: string,
+    tradingProfile?: string,
+    activeProfileRules?: string
   ): Promise<ScreenAnalysisFinalResult> {
     const analysisId = `screen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
     const latencyMs = now - frameCapturedAt;
+    const activeProfileId = tradingProfile || 'BINARY_OTC';
+    const profileLabelBn = this.getProfileLabelBn(activeProfileId);
 
-    // 1. Vision AI Processing
-    const visionData = await visionAnalysisService.analyzeFrame(imageBase64, mimeType, customPrompt);
+    // 1. Vision AI Processing — Strictly applying ONLY the selected profile's rules
+    const visionData = await visionAnalysisService.analyzeFrame(
+      imageBase64,
+      mimeType,
+      customPrompt,
+      activeProfileId,
+      activeProfileRules
+    );
 
     // Track Screen Transitions (switching between apps/screens)
     const currentAppName = visionData.detectedAppName || (visionData.isClearTradingChart ? 'Trading Chart' : 'Active Screen');
@@ -252,25 +275,27 @@ export class ScreenVerificationService {
     }
     this.lastDetectedScreen = currentAppName;
 
-    // Compute suggested expiry based on detected timeframe
-    let suggestedExpiry = '1 - 2 Min (পরবর্তী ক্যান্ডেল)';
+    // Compute suggested expiry or target format based on active profile & detected timeframe
+    const isSpotSlTp = activeProfileId === 'CRYPTO_SPOT' || activeProfileId === 'FOREX' || activeProfileId === 'COMMODITY_INDEX';
+    let suggestedExpiry = isSpotSlTp
+      ? 'SL / TP স্ট্রাকচার টার্গেট'
+      : '1 - 2 Min (পরবর্তী ক্যান্ডেল)';
     const tf = (visionData.timeframe || '').toLowerCase().trim();
-    if (tf.includes('1m') || tf.includes('60s') || tf === 's30' || tf === 's5') {
-      suggestedExpiry = '1 - 2 Min (পরবর্তী ক্যান্ডেল)';
-    } else if (tf.includes('2m')) {
-      suggestedExpiry = '2 - 3 Min';
-    } else if (tf.includes('5m')) {
-      suggestedExpiry = '5 Min (ক্যান্ডেল ক্লোজ)';
-    } else if (tf.includes('15m')) {
-      suggestedExpiry = '15 Min';
-    } else if (tf.includes('30m')) {
-      suggestedExpiry = '30 Min';
-    } else if (tf.includes('1h')) {
-      suggestedExpiry = '1 Hour';
-    } else if (tf.includes('4h')) {
-      suggestedExpiry = '4 Hours';
-    } else if (tf.includes('1d')) {
-      suggestedExpiry = 'Daily Close';
+    if (!isSpotSlTp) {
+      if (tf.includes('1m') || tf.includes('60s') || tf === 's30' || tf === 's5') {
+        suggestedExpiry = activeProfileId === 'BINARY_OTC' ? '1 - 2 Min (OTC ক্যান্ডেল)' : '1 - 2 Min (পরবর্তী ক্যান্ডেল)';
+      } else if (tf.includes('2m')) {
+        suggestedExpiry = '2 - 3 Min';
+      } else if (tf.includes('5m')) {
+        suggestedExpiry = '5 Min (ক্যান্ডেল ক্লোজ)';
+      } else if (tf.includes('15m')) {
+        suggestedExpiry = '15 Min';
+      }
+    } else {
+      if (tf.includes('15m')) suggestedExpiry = '15m Structure (1:2 R:R)';
+      else if (tf.includes('1h')) suggestedExpiry = '1H Swing (1:2 R:R)';
+      else if (tf.includes('4h')) suggestedExpiry = '4H Swing (1:2 R:R)';
+      else suggestedExpiry = activeProfileId === 'FOREX' ? 'FX Pip SL / TP (1:2)' : 'Spot/Futures SL & TP';
     }
 
     // SAFETY GUARD 1: Sensitive Private Data Detection
@@ -414,22 +439,35 @@ export class ScreenVerificationService {
       if (visionData.lastCandleDirection === 'BULLISH') score += 1;
       if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
 
-      // Decisive Direction: Always deliver actionable CALL or PUT on a live trading chart
-      if (score > 0 || (score === 0 && (aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND' || visionData.lastCandleDirection === 'BULLISH'))) {
-        direction = 'UP';
-        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
-        verdictTitle = `▲ CALL / UP (${assetName}) - পরবর্তী ক্যান্ডেল`;
+      // Decisive Direction or profile-safe WAIT when AI explicitly warns choppy/unclear
+      if (aiForecast === 'WAIT' && visionData.tradeQualityTier === 'HIGH_RISK_DOJI') {
+        direction = 'WAIT';
+        confidence = 25;
+        suggestedExpiry = 'অপেক্ষা করুন';
+        verdictTitle = `⏸ WAIT (${assetName} · ${profileLabelBn})`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি সবুজ (CALL / UP) হওয়ার জোরালো সম্ভাবনা (কনফার্মেশন: ${confidence}%)। বায়ার্স মোমেন্টাম ও চার্ট স্ট্রাকচার পজিটিভ।`
+          `[${profileLabelBn}] অস্থির বা দোজি মার্কেট শনাক্ত হয়েছে—ভুল এন্ট্রি এড়াতে WAIT সিগন্যাল দেওয়া হয়েছে।`
+        );
+      } else if (score > 0 || (score === 0 && (aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND' || visionData.lastCandleDirection === 'BULLISH'))) {
+        direction = 'UP';
+        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
+        verdictTitle = isSpotSlTp
+          ? `▲ LONG / BUY (${assetName} · ${profileLabelBn})`
+          : `▲ CALL / UP (${assetName} · ${profileLabelBn})`;
+        reasoning.push(
+          visionData.nextCandlePredictionReasonBn ||
+          `[${profileLabelBn}] বুলিশ সিগন্যাল (${confidence}%): বায়ার্স মোমেন্টাম ও চার্ট স্ট্রাকচার পজিটিভ।`
         );
       } else {
         direction = 'DOWN';
         confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
-        verdictTitle = `▼ PUT / DOWN (${assetName}) - পরবর্তী ক্যান্ডেল`;
+        verdictTitle = isSpotSlTp
+          ? `▼ SHORT / SELL (${assetName} · ${profileLabelBn})`
+          : `▼ PUT / DOWN (${assetName} · ${profileLabelBn})`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `প্রাইস অ্যাকশন সিগন্যাল: পরবর্তী ক্যান্ডেলটি লাল (PUT / DOWN) হওয়ার জোরালো সম্ভাবনা (কনফার্মেশন: ${confidence}%)। সেলার্স প্রেসার ও চার্ট স্ট্রাকচার ডাউনওয়ার্ড।`
+          `[${profileLabelBn}] বিয়ারিশ সিগন্যাল (${confidence}%): সেলার্স প্রেসার ও চার্ট স্ট্রাকচার ডাউনওয়ার্ড।`
         );
       }
 
@@ -458,6 +496,8 @@ export class ScreenVerificationService {
       safetyDisclaimer:
         'লাইভ স্ক্রিন বিশ্লেষণ একটি এডুকেশনাল ডিসিশন এইড। কোনো অটোমেটেড অর্ডার প্লেস করা হয় না।',
       screenStatus: 'CHART_DETECTED',
+      tradingProfileId: activeProfileId,
+      profileLabelBn,
       screenTransition,
     };
   }

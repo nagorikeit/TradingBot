@@ -1186,7 +1186,14 @@ agentRouter.get('/learning/regime-summary', (_req: Request, res: Response) => {
  */
 agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) => {
   try {
-    const { imageBase64, mimeType = 'image/jpeg', frameCapturedAt, customPrompt } = req.body;
+    const {
+      imageBase64,
+      mimeType = 'image/jpeg',
+      frameCapturedAt,
+      customPrompt,
+      tradingProfile,
+      activeProfileRules,
+    } = req.body;
 
     if (!imageBase64 || typeof imageBase64 !== 'string') {
       res.status(400).json({
@@ -1200,7 +1207,9 @@ agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) =>
       imageBase64,
       mimeType,
       frameCapturedAt ? Number(frameCapturedAt) : Date.now(),
-      customPrompt ? String(customPrompt) : undefined
+      customPrompt ? String(customPrompt) : undefined,
+      typeof tradingProfile === 'string' ? tradingProfile : undefined,
+      typeof activeProfileRules === 'string' ? activeProfileRules : undefined
     );
 
     res.json({

@@ -62,6 +62,8 @@ export interface ScreenAnalysisFinalResult {
 
   // Universal Screen Recognition & Switch Tracking
   screenStatus: 'CHART_DETECTED' | 'OTHER_SCREEN_READING' | 'UNCLEAR_SCREEN';
+  tradingProfileId?: string;
+  profileLabelBn?: string;
   screenTransition?: {
     previousScreen?: string;
     currentScreen: string;

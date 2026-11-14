@@ -4,6 +4,8 @@ import { scannerService } from '../services/scannerService';
 import { authService } from '../services/authService';
 import { getAssetInfo } from '../data/marketDataProvider';
 import { formatPrice, formatTime } from '../utils/formatters';
+import { TRADING_PROFILE_LIST, TradingProfileId } from '../strategy/tradingProfiles';
+import { tradingProfileService } from '../services/tradingProfileService';
 import {
   Radio,
   Power,
@@ -38,6 +40,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [pairsStatus, setPairsStatus] = useState<MonitoredPairStatus[]>(() => scannerService.getPairsStatus());
   const [scoreFilter, setScoreFilter] = useState<'ALL' | '5' | '4'>('ALL');
   const [timeframeFilter, setTimeframeFilter] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
+  const [activeProfileId, setActiveProfileId] = useState<TradingProfileId>(() =>
+    tradingProfileService.getActiveProfileId()
+  );
 
   React.useEffect(() => {
     const update = () => {
@@ -49,8 +54,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     update();
     const unsubscribe = scannerService.subscribe(update);
+    const unsubProfile = tradingProfileService.subscribe((id) => setActiveProfileId(id));
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubProfile();
+    };
   }, []);
 
   const handleToggleScanner = async () => {
@@ -137,8 +146,21 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
           </div>
 
-          {/* Controls: ON/OFF and Timeframe */}
+          {/* Controls: Profile, ON/OFF and Timeframe */}
           <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+            <select
+              value={activeProfileId}
+              onChange={(e) => tradingProfileService.setActiveProfile(e.target.value as TradingProfileId)}
+              aria-label="ট্রেড প্ল্যাটফর্ম প্রোফাইল"
+              className="bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500"
+            >
+              {TRADING_PROFILE_LIST.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.shortLabel}
+                </option>
+              ))}
+            </select>
+
             {/* Timeframe selector */}
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-md p-0.5 text-xs font-mono">
               {(['1m', '5m', '15m'] as TimeframeKey[]).map((tf) => (

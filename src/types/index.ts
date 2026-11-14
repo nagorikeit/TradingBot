@@ -1,3 +1,5 @@
+import type { TradingProfileId } from '../strategy/tradingProfiles';
+
 export interface Candle {
   timestamp: number; // Unix epoch ms
   open: number;
@@ -80,6 +82,9 @@ export interface SignalSnapshot {
   ruleVersion: string;
   marketDataSource: string;
   signalCreatedAt: number;
+  tradingProfileId?: TradingProfileId;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
 }
 
 export interface Signal {
@@ -102,6 +107,9 @@ export interface Signal {
   strategyVersion?: string;
   ruleVersion?: string;
   marketDataSource?: string;
+  tradingProfileId?: TradingProfileId;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   snapshot?: SignalSnapshot;
   result?: SignalResult;
   exitPrice?: number;

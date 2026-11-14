@@ -13,6 +13,9 @@ import { CoinbaseMarketDataProvider } from '../data/coinbaseMarketDataProvider';
 import { generateSignal } from '../strategy/signalEngine';
 import { evaluatePendingSignals } from '../strategy/signalEvaluator';
 import { whatsappAlertService } from './whatsappAlertService';
+import { tradingProfileService } from './tradingProfileService';
+import { agentLearningService } from './agentLearningService';
+import { TradingProfileId } from '../strategy/tradingProfiles';
 
 const STORAGE_KEY_SIGNALS = 'tradepulse_signal_history_v1';
 const STORAGE_KEY_PROVIDER = 'tradepulse_provider_mode_v1';
@@ -52,6 +55,10 @@ export class MarketService {
 
     this.loadHistoryFromStorage();
     this.setupVisibilityListener();
+    tradingProfileService.subscribe(() => {
+      this.evaluateFormingSignal();
+      this.notify();
+    });
     // Initialize initial seed
     this.init(this.currentSymbol, this.currentTimeframe);
   }
@@ -296,6 +303,25 @@ export class MarketService {
       // 1. Resolve any pending signals whose expiry has passed
       const evalResult = evaluatePendingSignals(this.signalHistory, this.candles);
       if (evalResult.resolvedCount > 0) {
+        evalResult.updatedSignals.forEach((updated, idx) => {
+          const prev = this.signalHistory[idx];
+          if (
+            prev &&
+            prev.result === 'PENDING' &&
+            (updated.result === 'WIN' || updated.result === 'LOSS' || updated.result === 'DRAW') &&
+            (updated.direction === 'CALL' || updated.direction === 'PUT')
+          ) {
+            agentLearningService.recordOutcome(
+              updated.symbol,
+              updated.direction,
+              updated.result,
+              updated.reasons?.[0],
+              undefined,
+              (updated.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId(),
+              'MARKET_ENGINE'
+            );
+          }
+        });
         this.signalHistory = evalResult.updatedSignals;
         this.saveHistoryToStorage();
       }
@@ -405,6 +431,25 @@ export class MarketService {
       this.candles = this.mockProvider.advanceNextCandle(this.currentSymbol, this.currentTimeframe);
       const evalResult = evaluatePendingSignals(this.signalHistory, this.candles);
       if (evalResult.resolvedCount > 0) {
+        evalResult.updatedSignals.forEach((updated, idx) => {
+          const prev = this.signalHistory[idx];
+          if (
+            prev &&
+            prev.result === 'PENDING' &&
+            (updated.result === 'WIN' || updated.result === 'LOSS' || updated.result === 'DRAW') &&
+            (updated.direction === 'CALL' || updated.direction === 'PUT')
+          ) {
+            agentLearningService.recordOutcome(
+              updated.symbol,
+              updated.direction,
+              updated.result,
+              updated.reasons?.[0],
+              undefined,
+              (updated.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId(),
+              'DEMO_ADVANCE'
+            );
+          }
+        });
         this.signalHistory = evalResult.updatedSignals;
         this.saveHistoryToStorage();
       }
