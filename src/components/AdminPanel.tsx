@@ -17,14 +17,16 @@ import {
   Sliders,
   Edit3,
   RotateCcw,
+  PlugZap,
 } from 'lucide-react';
+import { ApiHubView } from './ApiHubView';
 
 interface AdminPanelProps {
   onClose?: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'requests' | 'users' | 'plans' | 'settings'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'users' | 'plans' | 'settings' | 'api-hub'>('requests');
   const [requests, setRequests] = useState<SubscriptionRequest[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -258,6 +260,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         >
           <Settings className="w-4 h-4" />
           <span>পেমেন্ট গেটওয়ে সেটিংস</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('api-hub')}
+          className={`px-4 py-2.5 text-xs font-semibold flex items-center gap-2 transition-colors border-b-2 ${
+            activeTab === 'api-hub'
+              ? 'border-emerald-400 text-emerald-400'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <PlugZap className="w-4 h-4 text-emerald-400" />
+          <span>API হাব</span>
         </button>
       </div>
 
@@ -1019,6 +1033,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             )}
           </div>
         </form>
+      )}
+
+      {/* Tab 5: API Hub (Admin Only) */}
+      {activeTab === 'api-hub' && (
+        <div className="pt-1">
+          <ApiHubView />
+        </div>
       )}
     </div>
   );

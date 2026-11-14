@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { authService } from '../services/authService';
-import { Shield, Lock, Mail, User as UserIcon, Phone, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, Phone, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface AuthGatewayModalProps {
   onSuccess?: () => void;
@@ -25,7 +25,7 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
     if (res.success) {
       onSuccess?.();
     } else {
-      setError(res.error || 'জিমেইল লগইন ব্যর্থ হয়েছে');
+      setError(res.error || 'Google লগইন ব্যর্থ হয়েছে');
     }
   };
 
@@ -51,7 +51,7 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) {
-      setError('সবগুলো প্রয়োজনীয় ঘর পূরণ করুন');
+      setError('প্রয়োজনীয় সব ঘর পূরণ করুন');
       return;
     }
     setError(null);
@@ -68,38 +68,27 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 md:p-8 text-zinc-100 my-8">
-        {/* Glow accent */}
-        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Brand Header */}
-        <div className="text-center mb-5">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-600 shadow-lg shadow-emerald-500/20 mb-3 border border-emerald-400/30">
-            <Shield className="w-7 h-7 text-white" />
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[#070b14]/90 backdrop-blur-md">
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
+        <div className="w-full max-w-md bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-7 text-slate-100">
+          {/* Brand Header */}
+          <div className="text-center mb-4 sm:mb-5">
+            <h2 className="text-2xl font-bold tracking-tight text-white">
+              TradePulse <span className="text-emerald-400">AI</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              {tab === 'login' ? 'আপনার অ্যাকাউন্টে প্রবেশ করুন' : 'নতুন অ্যাকাউন্ট তৈরি করুন'}
+            </p>
           </div>
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-            ট্রেডপালস প্রো এআই
-          </h2>
-          <p className="text-xs text-zinc-400 mt-1">
-            প্রাতিষ্ঠানিক কোয়ান্ট সিগন্যাল ও সিকিউর ট্রেডিং টার্মিনাল
-          </p>
-          <div className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-[11px] text-zinc-300">
-            <Lock className="w-3 h-3 text-emerald-400" />
-            <span>সুরক্ষিত লগইন গেটওয়ে বাধ্যতামূলক</span>
-          </div>
-        </div>
 
-        {/* 1-Click Gmail / Google Registration & Login */}
-        <div className="mb-5">
+          {/* Google Sign-In */}
           <button
             type="button"
             onClick={handleGoogleSignIn}
             disabled={googleLoading || loading}
-            className="w-full py-3 px-4 bg-white hover:bg-zinc-100 disabled:opacity-60 text-zinc-900 font-bold text-sm rounded-xl shadow-lg flex items-center justify-center gap-3 transition-all border border-zinc-300 cursor-pointer"
+            className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-semibold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-colors border border-slate-200 cursor-pointer whitespace-nowrap"
           >
-            {/* Official Google "G" SVG Mark */}
-            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#4285F4"
                 d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
@@ -117,41 +106,31 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
                 d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
               />
             </svg>
-            <span>
-              {googleLoading
-                ? 'জিমেইল ভেরিফাই হচ্ছে...'
-                : 'জিমেইল (Gmail) দিয়ে ১-ক্লিকে লগইন / রেজিস্ট্রেশন'}
-            </span>
+            <span>{googleLoading ? 'যাচাই হচ্ছে...' : 'Google দিয়ে প্রবেশ করুন'}</span>
           </button>
-          <p className="text-[11px] text-emerald-400/90 text-center mt-1.5">
-            এক ক্লিকেই আপনার জিমেইল দিয়ে নতুন অ্যাকাউন্ট তৈরি ও লগইন হবে
-          </p>
-        </div>
 
-        {/* Divider */}
-        <div className="relative flex items-center justify-center mb-5">
-          <div className="border-t border-zinc-800 w-full" />
-          <span className="px-3 text-[11px] text-zinc-500 bg-zinc-900 shrink-0">
-            অথবা ইমেইল ও পাসওয়ার্ড দিয়ে
-          </span>
-          <div className="border-t border-zinc-800 w-full" />
-        </div>
+          {/* Divider */}
+          <div className="relative flex items-center justify-center my-4 sm:my-5">
+            <div className="border-t border-slate-800 w-full" />
+            <span className="px-3 text-xs text-slate-500 bg-[#0f172a] shrink-0">অথবা</span>
+            <div className="border-t border-slate-800 w-full" />
+          </div>
 
-        {/* Tab switcher */}
-        <div className="flex border-b border-zinc-800 mb-5">
+          {/* Mode Switcher */}
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-xl mb-4 sm:mb-5">
           <button
             type="button"
             onClick={() => {
               setTab('login');
               setError(null);
             }}
-            className={`flex-1 py-2 text-sm font-semibold text-center border-b-2 transition-colors ${
+            className={`py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
               tab === 'login'
-                ? 'border-emerald-400 text-emerald-400'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'bg-slate-800 text-emerald-400 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            লগইন করুন
+            লগইন
           </button>
           <button
             type="button"
@@ -159,20 +138,20 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
               setTab('register');
               setError(null);
             }}
-            className={`flex-1 py-2 text-sm font-semibold text-center border-b-2 transition-colors ${
+            className={`py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
               tab === 'register'
-                ? 'border-emerald-400 text-emerald-400'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'bg-slate-800 text-emerald-400 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            নতুন অ্যাকাউন্ট খুলুন
+            রেজিস্ট্রেশন
           </button>
         </div>
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
@@ -181,35 +160,31 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
         {tab === 'login' ? (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                ইমেইল ঠিকানা (Email)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">ইমেইল</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="আপনার ইমেইল লিখুন"
-                  className="w-full pl-9 pr-3 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="name@example.com"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                পাসওয়ার্ড (Password)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">পাসওয়ার্ড</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="পাসওয়ার্ড দিন"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
@@ -217,13 +192,13 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
             <button
               type="submit"
               disabled={loading || googleLoading}
-              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
             >
               {loading ? (
-                <span>লগইন হচ্ছে...</span>
+                <span>প্রবেশ হচ্ছে...</span>
               ) : (
                 <>
-                  <span>লগইন করে প্রবেশ করুন</span>
+                  <span>প্রবেশ করুন</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -233,68 +208,60 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
           /* Register Form */
           <form onSubmit={handleRegister} className="space-y-3.5">
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                আপনার নাম (Full Name)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1">পুরো নাম</label>
               <div className="relative">
-                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="যেমন: মোঃ সাকিব হাসান"
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="আপনার নাম লিখুন"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                ইমেইল (Email)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1">ইমেইল</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@gmail.com"
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="name@example.com"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                মোবাইল নম্বর (ঐচ্ছিক)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1">মোবাইল (ঐচ্ছিক)</label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="017XXXXXXXX"
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1">
-                পাসওয়ার্ড (Password)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1">পাসওয়ার্ড</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড"
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="কমপক্ষে ৬ অক্ষর"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
@@ -302,24 +269,19 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
             <button
               type="submit"
               disabled={loading || googleLoading}
-              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
             >
               {loading ? (
-                <span>অ্যাকাউন্ট তৈরি হচ্ছে...</span>
+                <span>তৈরি হচ্ছে...</span>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
                   <span>অ্যাকাউন্ট তৈরি করুন</span>
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
         )}
-
-        {/* Security Footer */}
-        <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-center gap-2 text-[11px] text-zinc-400">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span>২৫৬-বিট এনক্রিপশন • Firebase Google ও সিকিউর অ্যাক্সেস</span>
         </div>
       </div>
     </div>

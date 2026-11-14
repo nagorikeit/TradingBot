@@ -23,7 +23,6 @@ import { LiveScreenAnalyzer } from './components/LiveScreenAnalyzer';
 import { FloatingLiveScreenController } from './components/FloatingLiveScreenController';
 import { BengaliKnowledgeHub } from './components/BengaliKnowledgeHub';
 import { AdminPanel } from './components/AdminPanel';
-import { ApiHubView } from './components/ApiHubView';
 import { AuthGatewayModal } from './components/AuthGatewayModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { authService } from './services/authService';
@@ -31,7 +30,7 @@ import { User, EffectiveScanQuotaStatus } from './types/authTypes';
 import { scannerService } from './services/scannerService';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin'>('terminal');
+  const [currentTab, setCurrentTab] = useState<'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin'>('live-screen');
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getUser());
   const [daysRemaining, setDaysRemaining] = useState<number>(() => authService.getDaysRemaining());
   const [scanQuota, setScanQuota] = useState<EffectiveScanQuotaStatus>(() => authService.getScanQuotaStatus());
@@ -73,7 +72,7 @@ export default function App() {
         setUpgradePromptReason(null);
       }
       if (u?.role !== 'admin' && currentTab === 'admin') {
-        setCurrentTab('terminal');
+        setCurrentTab('live-screen');
       }
     };
 
@@ -204,7 +203,7 @@ export default function App() {
       {/* 4. Main Body Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
         {currentTab === 'admin' && currentUser?.role === 'admin' && (
-          <AdminPanel onClose={() => setCurrentTab('terminal')} />
+          <AdminPanel onClose={() => setCurrentTab('live-screen')} />
         )}
 
         {currentTab === 'terminal' && (
@@ -278,10 +277,6 @@ export default function App() {
 
         {currentTab === 'knowledge' && (
           <BengaliKnowledgeHub />
-        )}
-
-        {currentTab === 'api-hub' && (
-          <ApiHubView />
         )}
       </main>
 

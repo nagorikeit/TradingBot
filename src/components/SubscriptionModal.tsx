@@ -125,8 +125,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-black/90 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-5 md:p-8 text-zinc-100 my-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/90 backdrop-blur-md">
+      <div className="flex min-h-full items-center justify-center p-3 md:p-6">
+        <div className="relative w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-5 md:p-8 text-zinc-100">
         {/* Top bar with user info, optional close, & logout */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-zinc-800">
           <div className="flex items-center gap-3">
@@ -499,6 +500,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               </button>
             </form>
           </div>
+        </div>
         </div>
       </div>
     </div>

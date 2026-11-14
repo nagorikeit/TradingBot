@@ -1,11 +1,11 @@
 import React from 'react';
-import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown, PlugZap } from 'lucide-react';
+import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown } from 'lucide-react';
 import { TimeframeKey } from '../types';
 import { User, EffectiveScanQuotaStatus } from '../types/authTypes';
 
 interface HeaderProps {
-  currentTab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin';
-  onSelectTab: (tab: 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'live-screen' | 'knowledge' | 'api-hub' | 'admin') => void;
+  currentTab: 'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin';
+  onSelectTab: (tab: 'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin') => void;
   onAdvanceCandle: () => void;
   onManualScan: () => void;
   isScanning: boolean;
@@ -48,6 +48,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 2: Navigation Links / View Switchers */}
         <nav className="flex items-center gap-1 sm:gap-2 text-xs font-medium shrink-0 flex-nowrap">
+          <button
+            onClick={() => onSelectTab('live-screen')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+              currentTab === 'live-screen'
+                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Live Screen</span>
+            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/20 text-cyan-300 font-mono">VISION</span>
+          </button>
+
           <button
             onClick={() => onSelectTab('terminal')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
@@ -137,31 +150,6 @@ export const Header: React.FC<HeaderProps> = ({
             <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
             <span>Knowledge</span>
             <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">বাংলা</span>
-          </button>
-
-          <button
-            onClick={() => onSelectTab('live-screen')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
-              currentTab === 'live-screen'
-                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>Live Screen</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/20 text-cyan-300 font-mono">VISION</span>
-          </button>
-
-          <button
-            onClick={() => onSelectTab('api-hub')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
-              currentTab === 'api-hub'
-                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm border-emerald-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
-            }`}
-          >
-            <PlugZap className="w-3.5 h-3.5 text-emerald-400" />
-            <span>API হাব</span>
           </button>
 
           {/* Admin Control Tab (Shown only to Admin) */}
