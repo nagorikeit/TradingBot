@@ -50,17 +50,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     update();
     const unsubscribe = scannerService.subscribe(update);
 
-    // Auto-start scanning when entering Scanner tab if not already running
-    if (!scannerService.getIsRunning()) {
-      setIsStarting(true);
-      scannerService.start().finally(() => setIsStarting(false));
-    }
-
     return () => unsubscribe();
   }, []);
 
   const handleToggleScanner = async () => {
     if (isRunning) {
+      setIsStarting(false);
       scannerService.stop();
     } else {
       setIsStarting(true);

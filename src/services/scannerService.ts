@@ -18,6 +18,7 @@ export const DEFAULT_SCANNER_SYMBOLS = [
 ];
 
 const STORAGE_KEY_SCANNER_SIGNALS = 'tradepulse_scanner_signals_v1';
+const STORAGE_KEY_SCANNER_ENABLED = 'tradepulse_scanner_enabled_v1';
 
 interface SymbolWorker {
   symbol: string;
@@ -45,6 +46,9 @@ export class ScannerService {
   private constructor() {
     this.loadSignalsFromStorage();
     this.setupVisibilityListener();
+    if (this.loadScannerEnabledFromStorage()) {
+      void this.start();
+    }
   }
 
   public static getInstance(): ScannerService {
@@ -105,25 +109,45 @@ export class ScannerService {
     }
   }
 
+  private loadScannerEnabledFromStorage(): boolean {
+    try {
+      return localStorage.getItem(STORAGE_KEY_SCANNER_ENABLED) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private saveScannerEnabledToStorage(enabled: boolean): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_SCANNER_ENABLED, enabled ? 'true' : 'false');
+    } catch {
+      // Ignore storage exceptions
+    }
+  }
+
   /**
    * Starts multi-asset background scanning
    */
   public async start(): Promise<void> {
-    if (this.isRunning) return;
+    this.saveScannerEnabledToStorage(true);
+    if (this.isRunning) {
+      this.notify(true);
+      return;
+    }
     this.isRunning = true;
-    this.notify();
+    this.notify(true);
 
     // Initialize all workers
     const initPromises = this.monitoredSymbols.map((sym) => this.initWorker(sym));
     await Promise.allSettled(initPromises);
-    this.notify();
+    this.notify(true);
   }
 
   /**
    * Stops scanner and cleans up all active WebSocket connections
    */
   public stop(): void {
-    if (!this.isRunning) return;
+    this.saveScannerEnabledToStorage(false);
     this.isRunning = false;
 
     // Clean up all individual socket subscriptions
@@ -133,9 +157,15 @@ export class ScannerService {
         worker.unsubscribe = null;
       }
       worker.isConnected = false;
+      if (worker.cachedStatus) {
+        worker.cachedStatus = {
+          ...worker.cachedStatus,
+          isConnected: false,
+        };
+      }
     });
 
-    this.notify();
+    this.notify(true);
   }
 
   /**
@@ -185,9 +215,21 @@ export class ScannerService {
       worker.unsubscribe = null;
     }
 
+    if (!this.isRunning) {
+      worker.isConnected = false;
+      this.updateWorkerStatus(worker);
+      return;
+    }
+
     // Step 1: Historical seed retrieval
     try {
       const candles = await worker.provider.getCandles(symbol, this.currentTimeframe, 60);
+      if (!this.isRunning) {
+        worker.isConnected = false;
+        this.updateWorkerStatus(worker);
+        return;
+      }
+
       worker.candles = candles;
       worker.isConnected = true;
       worker.lastUpdated = Date.now();
@@ -201,25 +243,41 @@ export class ScannerService {
     } catch (err) {
       console.warn(`Historical seed fetch failed for ${symbol}:`, err);
       worker.isConnected = false;
+      this.updateWorkerStatus(worker);
     }
 
     // Safeguard 2: Async race-condition guard - do not connect WebSocket if stopped during getCandles()
-    if (!this.isRunning) return;
+    if (!this.isRunning) {
+      worker.isConnected = false;
+      this.updateWorkerStatus(worker);
+      return;
+    }
 
     // Step 2: Independent live WebSocket subscription
     try {
-      worker.unsubscribe = worker.provider.subscribeLive(
+      const unsubscribe = worker.provider.subscribeLive(
         symbol,
         this.currentTimeframe,
         (candle: Candle, isClosed: boolean) => {
           this.handleWorkerCandle(symbol, candle, isClosed);
         }
       );
+
+      if (!this.isRunning) {
+        unsubscribe();
+        worker.unsubscribe = null;
+        worker.isConnected = false;
+        this.updateWorkerStatus(worker);
+        return;
+      }
+
+      worker.unsubscribe = unsubscribe;
       worker.isConnected = true;
       this.updateWorkerStatus(worker);
     } catch (err) {
       console.error(`WebSocket subscription failed for ${symbol}:`, err);
       worker.isConnected = false;
+      this.updateWorkerStatus(worker);
     }
   }
 
