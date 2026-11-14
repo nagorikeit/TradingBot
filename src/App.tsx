@@ -28,6 +28,7 @@ import { SubscriptionModal } from './components/SubscriptionModal';
 import { authService } from './services/authService';
 import { User, EffectiveScanQuotaStatus } from './types/authTypes';
 import { scannerService } from './services/scannerService';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin'>('live-screen');
@@ -295,6 +296,9 @@ export default function App() {
         currentTab={currentTab}
         onNavigateToLiveScreen={() => setCurrentTab('live-screen')}
       />
+
+      {/* 7. PWA Offline Connectivity Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

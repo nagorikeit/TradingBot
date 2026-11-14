@@ -2,6 +2,7 @@ import React from 'react';
 import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown } from 'lucide-react';
 import { TimeframeKey } from '../types';
 import { User, EffectiveScanQuotaStatus } from '../types/authTypes';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currentTab: 'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin';
@@ -227,6 +228,8 @@ export const Header: React.FC<HeaderProps> = ({
             <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
             <span>Scan</span>
           </button>
+
+          <PWAInstallButton />
 
           {onLogout && currentUser && (
             <button
