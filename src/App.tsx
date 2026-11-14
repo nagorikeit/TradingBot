@@ -188,17 +188,19 @@ export default function App() {
         />
       )}
 
-      {/* 3. Asset and Timeframe Bar */}
-      <AssetSelectorBar
-        selectedSymbol={symbol}
-        selectedTimeframe={timeframe}
-        providerMode={providerMode}
-        onSelectSymbol={handleSelectSymbol}
-        onSelectTimeframe={handleSelectTimeframe}
-        onSelectProvider={handleSelectProvider}
-        latestCandle={latestCandle}
-        previousCandle={previousCandle}
-      />
+      {/* 3. Asset, Timeframe & Exchange Bar (Shown only on Terminal tab where it applies) */}
+      {currentTab === 'terminal' && (
+        <AssetSelectorBar
+          selectedSymbol={symbol}
+          selectedTimeframe={timeframe}
+          providerMode={providerMode}
+          onSelectSymbol={handleSelectSymbol}
+          onSelectTimeframe={handleSelectTimeframe}
+          onSelectProvider={handleSelectProvider}
+          latestCandle={latestCandle}
+          previousCandle={previousCandle}
+        />
+      )}
 
       {/* 4. Main Body Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">

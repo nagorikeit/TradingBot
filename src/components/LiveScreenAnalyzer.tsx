@@ -17,10 +17,7 @@ import {
   ExternalLink,
   Smartphone,
   Radar,
-  FileText,
-  Code,
   MessageSquare,
-  Video,
   Send,
   History,
   Tv,
@@ -73,7 +70,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [isDesktopPipActive, setIsDesktopPipActive] = useState<boolean>(desktopPipService.isActive());
   const [desktopPipError, setDesktopPipError] = useState<string | null>(null);
   const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
-  const [activeTestScreen, setActiveTestScreen] = useState<string | null>(null);
   const [scanQuota, setScanQuota] = useState<EffectiveScanQuotaStatus>(() => authService.getScanQuotaStatus());
 
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -204,7 +200,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
   const handleDisconnect = () => {
     liveScreenService.disconnect();
-    setActiveTestScreen(null);
   };
 
   const handleTogglePiP = async () => {
@@ -218,13 +213,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
     if (!res.ok && res.message) {
       setDesktopPipError(res.message);
     }
-  };
-
-  const handleScreenSwitchTest = async (
-    type: 'QUOTEX_CHART' | 'CHROME_DOC' | 'VS_CODE' | 'WHATSAPP' | 'YOUTUBE'
-  ) => {
-    setActiveTestScreen(type);
-    await liveScreenService.testScreenSwitch(type);
   };
 
   const handleAskQuestion = async (customQ?: string) => {
@@ -619,73 +607,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
               <span>এক্সটেনশন ডাউনলোড (.zip)</span>
             </a>
           </div>
-        </div>
-      </div>
-
-      {/* 2. Quick Test Strip */}
-      <div className="px-4 py-3 rounded-xl bg-slate-900/95 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <span className="text-xs font-bold text-white whitespace-nowrap shrink-0">কুইক টেস্ট</span>
-
-        <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0">
-          <button
-            onClick={() => handleScreenSwitchTest('QUOTEX_CHART')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-              activeTestScreen === 'QUOTEX_CHART'
-                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200'
-                : 'bg-slate-950 border-slate-800 hover:border-emerald-500/50 text-slate-300'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Quotex চার্ট</span>
-          </button>
-
-          <button
-            onClick={() => handleScreenSwitchTest('CHROME_DOC')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-              activeTestScreen === 'CHROME_DOC'
-                ? 'bg-blue-950/60 border-blue-500 text-blue-200'
-                : 'bg-slate-950 border-slate-800 hover:border-blue-500/50 text-slate-300'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-blue-400" />
-            <span>Chrome পেজ</span>
-          </button>
-
-          <button
-            onClick={() => handleScreenSwitchTest('VS_CODE')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-              activeTestScreen === 'VS_CODE'
-                ? 'bg-purple-950/60 border-purple-500 text-purple-200'
-                : 'bg-slate-950 border-slate-800 hover:border-purple-500/50 text-slate-300'
-            }`}
-          >
-            <Code className="w-3.5 h-3.5 text-purple-400" />
-            <span>VS Code</span>
-          </button>
-
-          <button
-            onClick={() => handleScreenSwitchTest('WHATSAPP')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-              activeTestScreen === 'WHATSAPP'
-                ? 'bg-teal-950/60 border-teal-500 text-teal-200'
-                : 'bg-slate-950 border-slate-800 hover:border-teal-500/50 text-slate-300'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
-            <span>WhatsApp</span>
-          </button>
-
-          <button
-            onClick={() => handleScreenSwitchTest('YOUTUBE')}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-              activeTestScreen === 'YOUTUBE'
-                ? 'bg-rose-950/60 border-rose-500 text-rose-200'
-                : 'bg-slate-950 border-slate-800 hover:border-rose-500/50 text-slate-300'
-            }`}
-          >
-            <Video className="w-3.5 h-3.5 text-rose-400" />
-            <span>YouTube</span>
-          </button>
         </div>
       </div>
 
