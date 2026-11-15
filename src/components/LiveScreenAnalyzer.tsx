@@ -23,6 +23,9 @@ import {
   Terminal,
   Download,
   Puzzle,
+  PenLine,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { liveScreenService } from '../services/liveScreenService';
@@ -98,6 +101,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
   const [customUrlInput, setCustomUrlInput] = useState<string>(getCustomApiUrl());
   const [learningFeedbackMsg, setLearningFeedbackMsg] = useState<string | null>(null);
+  const [showDrawingGuide, setShowDrawingGuide] = useState<boolean>(true);
 
   const handleFeedbackOutcome = (outcome: 'WIN' | 'LOSS') => {
     if (!result || result.direction === 'WAIT') return;
@@ -592,6 +596,99 @@ export const LiveScreenAnalyzer: React.FC = () => {
         </div>
       )}
 
+      {/* 1.6 User Chart Drawing Checklist Guide */}
+      <div className="bg-slate-900/95 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+        <button
+          type="button"
+          onClick={() => setShowDrawingGuide((prev) => !prev)}
+          className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-slate-800/40 transition-colors"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <PenLine className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-bold text-white leading-snug">
+              সঠিক সিগনাল পাওয়ার জন্য নিম্নে বর্ণিত ড্রয়িংগুলো নিশ্চিত করুন
+            </span>
+          </div>
+          {showDrawingGuide ? (
+            <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+          )}
+        </button>
+
+        {showDrawingGuide && (
+          <div className="px-4 pb-4 pt-2 border-t border-slate-800/80 space-y-3 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              <div className="p-3 rounded-lg bg-slate-950 border border-sky-500/40 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-sky-300">১. সাপোর্ট লাইন (Support)</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-sky-200 shrink-0">
+                    <span className="w-3 h-3 rounded-sm bg-sky-400 border border-sky-200 inline-block" aria-hidden="true" />
+                    আকাশী (Sky-Blue)
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  নিচের সাপোর্ট ফ্লোরে <span className="text-sky-300 font-semibold">আকাশী</span> হরাইজন্টাল লাইন আঁকুন। এই লাইন দেখলেই এআই ভুল PUT ব্লক করবে এবং বাউন্সে CALL ধরবে।
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-orange-500/40 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-orange-300">২. রেজিস্ট্যান্স লাইন (Resistance)</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-orange-200 shrink-0">
+                    <span className="w-3 h-3 rounded-sm bg-orange-400 border border-orange-200 inline-block" aria-hidden="true" />
+                    কমলা (Orange)
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  ওপরের রেজিস্ট্যান্স ছাদে <span className="text-orange-300 font-semibold">কমলা</span> হরাইজন্টাল লাইন আঁকুন। এই লাইনের নিচে ভুল CALL ব্লক হবে এবং রিজেকশনে PUT ধরবে।
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-yellow-500/40 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-yellow-300">৩. ট্রেন্ডলাইন (Trendline)</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-yellow-200 shrink-0">
+                    <span className="w-3 h-3 rounded-sm bg-yellow-400 border border-yellow-200 inline-block" aria-hidden="true" />
+                    হলুদ (Yellow)
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  ২–৩টি সুইং হাই/লো যুক্ত করে <span className="text-yellow-300 font-semibold">হলুদ</span> ডায়াগনাল লাইন টানুন। ট্রেন্ডের দিক ও ব্রেকআউট-রিটেস্ট সহজে চিনতে সাহায্য করে।
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-purple-500/40 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-purple-300">৪. সাপ্লাই / ডিমান্ড জোন (Zone Box)</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-purple-200 shrink-0">
+                    <span className="w-3 h-3 rounded-sm bg-purple-400 border border-purple-200 inline-block" aria-hidden="true" />
+                    বেগুনি (Purple)
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  শক্তিশালী উইক বা রিভার্সাল জোনে <span className="text-purple-300 font-semibold">বেগুনি</span> আয়তক্ষেত্র (বক্স) আঁকুন। জোন থেকে রিজেকশন পেলে কনফ্লুয়েন্স স্কোর বাড়ে।
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-600/70 space-y-1.5 md:col-span-2 lg:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-100">৫. প্যারালাল চ্যানেল / ফিবোনাচি (ঐচ্ছিক)</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-white shrink-0">
+                    <span className="w-3 h-3 rounded-sm bg-white border border-slate-400 inline-block" aria-hidden="true" />
+                    সাদা (White)
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  মার্কেট চ্যানেলে চললে <span className="text-white font-semibold">সাদা</span> Parallel Channel বা পুলব্যাক ধরতে ০.৫ / ০.৬১৮ Fibonacci ব্যবহার করুন।
+                  <span className="text-amber-300 font-semibold"> সতর্কতা:</span> ক্যান্ডেলের লাল বা সবুজ রঙের মতো ড্রয়িং আঁকবেন না ও একসাথে সর্বোচ্চ ২–৪টি মূল লেভেল রাখুন।
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Voice Assistant Banner */}
       {voiceNotification && (
         <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center gap-3 text-xs text-cyan-200">
@@ -812,6 +909,34 @@ export const LiveScreenAnalyzer: React.FC = () => {
                     </>
                   )}
                 </div>
+
+                {result.visionData?.userDrawingsDetected &&
+                  result.visionData?.drawingInteraction &&
+                  result.visionData.drawingInteraction !== 'NONE' && (
+                    <div
+                      className={`mt-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] leading-snug max-w-sm ${
+                        result.visionData.drawingInteraction.startsWith('BLOCKED_')
+                          ? 'bg-amber-950/60 border-amber-500/40 text-amber-200'
+                          : result.visionData.drawingInteraction === 'MID_RANGE'
+                            ? 'bg-slate-900/70 border-slate-700 text-slate-300'
+                            : 'bg-cyan-950/50 border-cyan-500/40 text-cyan-200'
+                      }`}
+                    >
+                      <span className="font-bold">
+                        {result.visionData.drawingInteraction.startsWith('BLOCKED_')
+                          ? 'ড্রয়িং সুরক্ষা (এন্ট্রি ব্লক): '
+                          : result.visionData.drawingInteraction === 'MID_RANGE'
+                            ? 'ড্রয়িং জোন (মাঝামাঝি): '
+                            : 'ড্রয়িং ম্যাচ: '}
+                      </span>
+                      <span>
+                        {result.visionData.drawingNoteBn ||
+                          (result.visionData.userDrawingTypes?.length
+                            ? result.visionData.userDrawingTypes.join(', ')
+                            : 'চার্ট ড্রয়িং শনাক্ত হয়েছে')}
+                      </span>
+                    </div>
+                  )}
 
                 {result.direction !== 'WAIT' && (
                   <div className="mt-2 pt-2.5 border-t border-slate-700/50 w-full flex items-center justify-center gap-2">

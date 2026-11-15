@@ -1188,6 +1188,7 @@ agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) =>
   try {
     const {
       imageBase64,
+      zoomedCandleBase64,
       mimeType = 'image/jpeg',
       frameCapturedAt,
       customPrompt,
@@ -1209,7 +1210,8 @@ agentRouter.post('/vision/analyze-frame', async (req: Request, res: Response) =>
       frameCapturedAt ? Number(frameCapturedAt) : Date.now(),
       customPrompt ? String(customPrompt) : undefined,
       typeof tradingProfile === 'string' ? tradingProfile : undefined,
-      typeof activeProfileRules === 'string' ? activeProfileRules : undefined
+      typeof activeProfileRules === 'string' ? activeProfileRules : undefined,
+      typeof zoomedCandleBase64 === 'string' ? zoomedCandleBase64 : undefined
     );
 
     res.json({

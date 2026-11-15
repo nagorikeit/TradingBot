@@ -57,6 +57,17 @@ export interface ScreenVisionParsedData {
   confidenceScore: number;
   isClearTradingChart: boolean;
   containsSensitivePrivateData: boolean;
+  userDrawingsDetected?: boolean;
+  userDrawingTypes?: string[];
+  drawingInteraction?:
+    | 'AT_SUPPORT_BOUNCE'
+    | 'AT_RESISTANCE_REJECT'
+    | 'BREAKOUT_RETEST'
+    | 'BLOCKED_AT_RESISTANCE'
+    | 'BLOCKED_AT_SUPPORT'
+    | 'MID_RANGE'
+    | 'NONE';
+  drawingNoteBn?: string;
 }
 
 export interface MarketVerificationResult {

@@ -57,6 +57,17 @@ export interface ScreenVisionParsedData {
   confidenceScore: number; // 0.0 - 1.0
   isClearTradingChart: boolean;
   containsSensitivePrivateData: boolean; // Flag if user balance or account ID detected
+  userDrawingsDetected?: boolean;
+  userDrawingTypes?: string[];
+  drawingInteraction?:
+    | 'AT_SUPPORT_BOUNCE'
+    | 'AT_RESISTANCE_REJECT'
+    | 'BREAKOUT_RETEST'
+    | 'BLOCKED_AT_RESISTANCE'
+    | 'BLOCKED_AT_SUPPORT'
+    | 'MID_RANGE'
+    | 'NONE';
+  drawingNoteBn?: string;
   signalFlow?: InstitutionalSignalFlow;
 }
 

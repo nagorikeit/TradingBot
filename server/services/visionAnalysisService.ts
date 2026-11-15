@@ -64,12 +64,16 @@ export class VisionAnalysisService {
     mimeType: string = 'image/jpeg',
     customPrompt?: string,
     tradingProfile?: string,
-    activeProfileRules?: string
+    activeProfileRules?: string,
+    zoomedCandleBase64?: string
   ): Promise<ScreenVisionParsedData> {
     // Extract actual mimeType and clean base64 data
     const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
     const resolvedMimeType = match ? match[1] : (mimeType || 'image/jpeg');
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
+    const cleanZoomedBase64 = zoomedCandleBase64
+      ? zoomedCandleBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim()
+      : '';
 
     if (!process.env.GEMINI_API_KEY) {
       return this.heuristicChartDetector(cleanBase64, customPrompt);
@@ -110,7 +114,9 @@ YOUR CORE DUTIES:
      * THAT rightmost bar attached to the live price line / countdown timer is the STILL-FORMING live candle ("formingCandleColor": "GREEN" | "RED" | "DOJI"). Because it has NOT closed yet, its color/wick can still flip before expiry!
      * Therefore, the **NEWLY CLOSED CANDLE** ("closedCandleColor", "lastCandleDirection") is the **last COMPLETED candle immediately to the LEFT of the forming candle** (2nd candle from the right!).
      * Only if there is clearly NO live forming candle / no live price line (e.g. a paused/offline historical screenshot where the rightmost candle sits cleanly to the left of whitespace with no active tick line), then treat the rightmost candle as the closed candle ("formingCandleColor": "NONE").
-   - Measure the CLOSED candle carefully:
+   - Measure the CLOSED candle carefully${cleanZoomedBase64 ? ' (use IMAGE 2, the 2x zoomed right-edge close-up, for exact pixel-level inspection of the last candles, wicks, live price line, and timer!)' : ''}:
+     * CRITICAL ANCHOR CHECK: Locate the horizontal dashed/solid current-price line + live price pill on the right Y-axis. Follow that horizontal line leftwards to the candle currently touching/tracking the live price — THAT candle is the FORMING candle ("formingCandleColor"). Never treat it as the closed candle!
+     * The NEWLY CLOSED CANDLE ("closedCandleColor", "lastCandleDirection") is the completed bar IMMEDIATELY to the LEFT of the candle attached to the live price line. If the live candle has just opened (thin 1-2px tick or flat line on the live price), be extra careful NOT to skip the newly closed candle right next to it, and do NOT confuse the green/red Y-axis price label box with a candle!
      * "closedCandleColor": "GREEN" (bullish close > open), "RED" (bearish close < open), or "DOJI" (tiny/flat body < 18% of total high-to-low height).
      * "lastCandleDirection": "BULLISH" if GREEN, "BEARISH" if RED, "DOJI" if DOJI.
      * Estimate "closedCandleBodyPercent", "closedCandleUpperWickPercent", "closedCandleLowerWickPercent" (summing roughly to 100% of total height).
@@ -126,6 +132,26 @@ YOUR CORE DUTIES:
    - SIDEWAYS / DOJI / CHOP FILTER:
      * Alternating red-green-red-green small candles, tight horizontal box range, multiple Dojis, or erratic oversized news spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY" or "HIGH_VOLATILITY_SPIKE", "step4FilterPassed": false, and "predictedNextCandle": "WAIT"! NEVER guess or force CALL/PUT in chop!
 
+3B. USER-DRAWN CHART MARKUP PRIORITY (CRITICAL WHEN PRESENT!):
+   - Carefully inspect BOTH IMAGE 1 (full chart) and IMAGE 2 (zoomed right-edge crop) for any trader-drawn annotations on the broker chart.
+   - RECOGNIZE THIS EXACT COLOR-CODED DRAWING LEGEND IMMEDIATELY (when used by the trader):
+     * SKY-BLUE / CYAN (আকাশী) horizontal line/ray = Trader-marked SUPPORT FLOOR ("HORIZONTAL_SR"). Look for "AT_SUPPORT_BOUNCE" (CALL) or "BLOCKED_AT_SUPPORT" (block PUT right above it).
+     * ORANGE (কমলা) horizontal line/ray = Trader-marked RESISTANCE CEILING ("HORIZONTAL_SR"). Look for "AT_RESISTANCE_REJECT" (PUT) or "BLOCKED_AT_RESISTANCE" (block CALL right below it).
+     * YELLOW (হলুদ) diagonal line = Trader-marked TRENDLINE ("TRENDLINE"). Evaluate trend bounce, trend rejection, or "BREAKOUT_RETEST".
+     * PURPLE / VIOLET (বেগুনি) rectangle/box = Trader-marked SUPPLY/DEMAND ZONE BOX ("ZONE_BOX"). Evaluate rejection or bounce from the box edge/interior.
+     * WHITE (সাদা) parallel lines / retracement = Trader-marked PARALLEL CHANNEL or FIBONACCI ("CHANNEL" / "FIBONACCI").
+     * Also detect any other neutral/non-candle trader-drawn lines or boxes if present in non-standard colors.
+   - Set "userDrawingsDetected": true if any trader-drawn lines/boxes exist (else false) and list types in "userDrawingTypes" (e.g. ["HORIZONTAL_SR", "TRENDLINE", "ZONE_BOX", "CHANNEL", "FIBONACCI"]).
+   - Evaluate "drawingInteraction" based on how the NEWLY CLOSED candle interacts with the nearest trader-drawn level/zone:
+     * "AT_SUPPORT_BOUNCE": Closed candle touched/wicked into a drawn support/trendline/demand box and rejected upward -> strong CALL confluence.
+     * "AT_RESISTANCE_REJECT": Closed candle touched/wicked into a drawn resistance/trendline/supply box and rejected downward -> strong PUT confluence.
+     * "BREAKOUT_RETEST": Closed candle decisively broke through a drawn level/trendline with strong body or cleanly retested the flipped level -> valid continuation in breakout direction.
+     * "BLOCKED_AT_RESISTANCE": Price/closed candle sits immediately below a drawn resistance ceiling/trendline (especially Orange line / Purple upper zone) with NO clean breakout -> DO NOT output CALL; emit WAIT (prevent buying into a wall!).
+     * "BLOCKED_AT_SUPPORT": Price/closed candle sits immediately above a drawn support floor/trendline (especially Sky-Blue line / Purple lower zone) with NO clean breakdown -> DO NOT output PUT; emit WAIT (prevent selling into a floor!).
+     * "MID_RANGE": Drawings exist but price is sitting cleanly in open space away from levels.
+     * "NONE": No trader-drawn markings visible.
+   - Write a crisp 1-sentence Bengali summary mentioning the recognized color and interaction in "drawingNoteBn" (e.g. "আকাশী সাপোর্ট লাইনে লোয়ার উইক রিজেকশন নিশ্চিত" বা "কমলা রেজিস্ট্যান্স লাইনের ঠিক নিচে CALL ব্লক").
+
 4. STRICT 5-STEP / 5-POINT INSTITUTIONAL AUDIT (MUST MATCH YOUR DECISION):
    Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (exact count of true values, 0 to 5):
    - Step 1 ("step1ChartValid"): Trading chart verified, asset symbol & timeframe clearly readable, >= 6 sequential candles.
@@ -136,6 +162,7 @@ YOUR CORE DUTIES:
    CRITICAL CONSISTENCY RULE:
    - "confirmedPoints" MUST equal (step1?1:0) + (step2?1:0) + (step3?1:0) + (step4?1:0) + (step5?1:0).
    - Only emit "predictedNextCandle": "CALL" or "PUT" when "confirmedPoints" >= 4 AND "step4FilterPassed" === true AND "totalScore" >= 7.5. Otherwise emit "WAIT".
+   - Do NOT predict counter to the newly closed candle unless there is a clear >= 35% rejection wick (Hammer / Shooting Star) at S/R or clear 3+ candle exhaustion extreme.
    - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
 5. STRICT PLATFORM-SPECIFIC RULE ISOLATION:
@@ -151,24 +178,34 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
         try {
           const userPromptText = customPrompt
             ? `Analyze this screen frame (${tradingProfile || 'GENERAL'} mode). The user asked: "${customPrompt}". Answer in customPromptAnswer and also inspect chart/closed candle & 5-step points if a chart is visible.`
-            : `Inspect this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules. First distinguish the rightmost FORMING candle from the immediately preceding newly CLOSED candle, measure the closed candle's color/body/wick percentages, evaluate all 5 steps (step1ChartValid..step5SetupConfirmed), compute confirmedPoints (0-5) and totalScore (0-10), and output CALL, PUT, or WAIT with crisp Bengali reasoning.`;
+            : `Inspect this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules. ${cleanZoomedBase64 ? 'IMAGE 1 is the full screen; IMAGE 2 is a 2x zoomed close-up of the rightmost candles, live price line, and timer.' : ''} First locate the live price line to isolate the rightmost FORMING candle from the immediately preceding newly CLOSED candle, measure the closed candle's exact color/body/wick percentages, evaluate all 5 steps (step1ChartValid..step5SetupConfirmed), compute confirmedPoints (0-5) and totalScore (0-10), and output CALL, PUT, or WAIT with crisp Bengali reasoning.`;
+
+          const contentParts: any[] = [
+            {
+              inlineData: {
+                mimeType: resolvedMimeType,
+                data: cleanBase64,
+              },
+            },
+          ];
+          if (cleanZoomedBase64) {
+            contentParts.push({
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: cleanZoomedBase64,
+              },
+            });
+          }
+          contentParts.push({
+            text: userPromptText,
+          });
 
           response = await ai.models.generateContent({
             model: 'gemini-4-hydrogen',
             contents: [
               {
                 role: 'user',
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType: resolvedMimeType,
-                      data: cleanBase64,
-                    },
-                  },
-                  {
-                    text: userPromptText,
-                  },
-                ],
+                parts: contentParts,
               },
             ],
             config: {
@@ -307,6 +344,20 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   confidenceScore: { type: Type.NUMBER, description: 'Visual recognition confidence 0.0 to 1.0' },
                   isClearTradingChart: { type: Type.BOOLEAN, description: 'Whether the image is an active trading candlestick chart' },
                   containsSensitivePrivateData: { type: Type.BOOLEAN, description: 'True ONLY if passwords or bank cards were visible' },
+                  userDrawingsDetected: { type: Type.BOOLEAN, description: 'True if user-drawn S/R lines, trendlines, boxes, channels, or Fibonacci levels are visible' },
+                  userDrawingTypes: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: 'Types of detected user drawings e.g. HORIZONTAL_SR, TRENDLINE, ZONE_BOX, CHANNEL, FIBONACCI',
+                  },
+                  drawingInteraction: {
+                    type: Type.STRING,
+                    description: 'AT_SUPPORT_BOUNCE, AT_RESISTANCE_REJECT, BREAKOUT_RETEST, BLOCKED_AT_RESISTANCE, BLOCKED_AT_SUPPORT, MID_RANGE, or NONE',
+                  },
+                  drawingNoteBn: {
+                    type: Type.STRING,
+                    description: 'Short Bengali note explaining how the closed candle reacted to user-drawn lines/zones',
+                  },
                 },
                 required: [
                   'screenCategory',
@@ -336,6 +387,8 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   'confidenceScore',
                   'isClearTradingChart',
                   'containsSensitivePrivateData',
+                  'userDrawingsDetected',
+                  'drawingInteraction',
                 ],
               },
             },

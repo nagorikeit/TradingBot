@@ -1307,15 +1307,17 @@ export class LiveScreenService {
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 22000);
 
     try {
       const activeProfile = tradingProfileService.getActiveProfileId();
+      const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(frame.imageBase64);
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: frame.imageBase64,
+          zoomedCandleBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt: frame.timestamp,
           tradingProfile: activeProfile,
@@ -1378,6 +1380,51 @@ export class LiveScreenService {
       this.isProcessingFrame = false;
       this.notify();
     }
+  }
+
+  /**
+   * Creates a 2x zoomed close-up crop of the rightmost chart region (last 6-8 candles + live price line + timer)
+   * so Gemini Vision can inspect closed vs forming candle bodies and 1px wicks with crisp clarity.
+   */
+  private async buildZoomedRightCandleCrop(imageBase64: string): Promise<string | undefined> {
+    if (typeof document === 'undefined' || !imageBase64) return undefined;
+    return new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const w = img.naturalWidth || img.width || 0;
+            const h = img.naturalHeight || img.height || 0;
+            if (w < 120 || h < 120) {
+              return resolve(undefined);
+            }
+            const isPortrait = h > w;
+            const sx = Math.floor(w * (isPortrait ? 0.34 : 0.46));
+            const sy = Math.floor(h * (isPortrait ? 0.16 : 0.08));
+            const sw = Math.max(80, Math.floor(w * (isPortrait ? 0.64 : 0.52)));
+            const sh = Math.max(80, Math.floor(h * (isPortrait ? 0.58 : 0.80)));
+
+            const cropCanvas = document.createElement('canvas');
+            const outW = Math.min(1080, Math.max(sw, Math.round(sw * 1.8)));
+            const outH = Math.round((sh / sw) * outW);
+            cropCanvas.width = outW;
+            cropCanvas.height = outH;
+            const cCtx = cropCanvas.getContext('2d');
+            if (!cCtx) return resolve(undefined);
+            cCtx.imageSmoothingEnabled = true;
+            cCtx.imageSmoothingQuality = 'high';
+            cCtx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+            resolve(cropCanvas.toDataURL('image/jpeg', 0.90));
+          } catch {
+            resolve(undefined);
+          }
+        };
+        img.onerror = () => resolve(undefined);
+        img.src = imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+      } catch {
+        resolve(undefined);
+      }
+    });
   }
 
   /**
@@ -1457,7 +1504,7 @@ export class LiveScreenService {
             const yStart = isPortrait ? Math.floor(targetHeight * 0.20) : Math.floor(targetHeight * 0.08);
             const yEnd = isPortrait ? Math.floor(targetHeight * 0.70) : Math.floor(targetHeight * 0.90);
             const xStart = Math.floor(targetWidth * 0.04);
-            const xEnd = Math.floor(targetWidth * 0.88); // Excludes right-side vertical price scale
+            const xEnd = Math.floor(targetWidth * 0.82); // Excludes right-side vertical price scale & floating live price pill
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
 
             if (totalExamined <= 0) {
@@ -1757,10 +1804,31 @@ export class LiveScreenService {
               }
             }
 
-            // Stage 4: Filter genuine vertical candlestick morphology
-            const verifiedCandles = candleBands.filter(
+            // Stage 4: Filter genuine vertical candlestick morphology + strip right-edge UI price pills
+            const rawCandles = candleBands.filter(
               (b) => (b.height >= b.width * 1.05 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.85)) && b.height >= 12
             );
+
+            // Pitch & width outlier guard: if the rightmost band is an isolated price tag/badge (too wide or separated by >2.3x median candle pitch), strip it!
+            let verifiedCandles = rawCandles;
+            if (rawCandles.length >= 5) {
+              const sample = rawCandles.slice(-Math.min(8, rawCandles.length - 1), -1);
+              const widths = sample.map((c) => c.width).sort((a, b) => a - b);
+              const medianW = widths[Math.floor(widths.length / 2)] || 10;
+              const gaps: number[] = [];
+              for (let i = 1; i < sample.length; i++) {
+                gaps.push(sample[i].centerX - sample[i - 1].centerX);
+              }
+              gaps.sort((a, b) => a - b);
+              const medianStep = gaps.length > 0 ? gaps[Math.floor(gaps.length / 2)] : medianW * 1.5;
+
+              const tail = rawCandles[rawCandles.length - 1];
+              const prev = rawCandles[rawCandles.length - 2];
+              const tailGap = tail.centerX - prev.centerX;
+              if (tailGap > Math.max(medianStep * 2.4, 38) || tail.width > Math.max(medianW * 2.4, 28)) {
+                verifiedCandles = rawCandles.slice(0, -1);
+              }
+            }
 
             const distinctCandleBars = verifiedCandles.length;
             let verifiedWicksCount = 0;
@@ -2992,12 +3060,14 @@ export class LiveScreenService {
       frameCapturedAt = Date.now();
       imageBase64 = canvas.toDataURL('image/jpeg', 0.88);
 
+      const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(imageBase64);
       const activeProfile = tradingProfileService.getActiveProfileId();
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
+          zoomedCandleBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt,
           tradingProfile: activeProfile,
@@ -3068,16 +3138,18 @@ export class LiveScreenService {
 
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 22000);
 
     try {
       const frameCapturedAt = Date.now();
       const activeProfile = tradingProfileService.getActiveProfileId();
+      const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(imageBase64);
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
+          zoomedCandleBase64,
           mimeType: imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
           frameCapturedAt,
           tradingProfile: activeProfile,

@@ -531,6 +531,45 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         });
     }
 
+    private String buildZoomedCandleCrop(final String frameBase64) {
+        try {
+            if (frameBase64 == null || frameBase64.isEmpty()) return null;
+            String raw = frameBase64;
+            int commaIdx = raw.indexOf(",");
+            if (commaIdx != -1) raw = raw.substring(commaIdx + 1);
+            byte[] bytes = Base64.decode(raw, Base64.DEFAULT);
+            Bitmap src = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            if (src == null) return null;
+
+            int w = src.getWidth();
+            int h = src.getHeight();
+            if (w < 120 || h < 120) {
+                src.recycle();
+                return null;
+            }
+            boolean isPortrait = h > w;
+            int sx = (int) (w * (isPortrait ? 0.34f : 0.46f));
+            int sy = (int) (h * (isPortrait ? 0.16f : 0.08f));
+            int sw = Math.max(80, Math.min(w - sx, (int) (w * (isPortrait ? 0.64f : 0.52f))));
+            int sh = Math.max(80, Math.min(h - sy, (int) (h * (isPortrait ? 0.58f : 0.80f))));
+
+            Bitmap cropped = Bitmap.createBitmap(src, sx, sy, sw, sh);
+            src.recycle();
+
+            int outW = Math.min(1080, Math.max(sw, Math.round(sw * 1.8f)));
+            int outH = Math.max(80, Math.round(((float) sh / (float) sw) * outW));
+            Bitmap scaled = (outW == sw) ? cropped : Bitmap.createScaledBitmap(cropped, outW, outH, true);
+            if (scaled != cropped) cropped.recycle();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            scaled.compress(Bitmap.CompressFormat.JPEG, 90, baos);
+            scaled.recycle();
+            return "data:image/jpeg;base64," + Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private boolean tryBackendVisionAnalysis(final String frameBase64, final long timestamp) {
         HttpURLConnection conn = null;
         try {
@@ -540,13 +579,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             URL url = new URL(backendUrl + "/api/agent/vision/analyze-frame");
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(4500);
-            conn.setReadTimeout(11000);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(20000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
 
             JSONObject payload = new JSONObject();
             payload.put("imageBase64", frameBase64);
+            String zoomedCrop = buildZoomedCandleCrop(frameBase64);
+            if (zoomedCrop != null) {
+                payload.put("zoomedCandleBase64", zoomedCrop);
+            }
             payload.put("mimeType", "image/jpeg");
             payload.put("frameCapturedAt", timestamp > 0 ? timestamp : System.currentTimeMillis());
             payload.put("tradingProfile", activeTradingProfile != null ? activeTradingProfile : "BINARY_OTC");
@@ -733,7 +776,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int startY = (int) (height * 0.22f);
             int endY = (int) (height * 0.70f);
             int startX = (int) (width * 0.08f); // Starts past left sidebar/briefcase icon to prevent false red bias
-            int endX = (int) (width * 0.85f); // Extended to include full rightmost active candle before price scale
+            int endX = (int) (width * 0.81f); // Excludes right price axis & live current-price label pill
 
             // Determine Floating Overlay's exact on-screen position so we can MASK IT OUT!
             // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button and border from contaminating candles!
@@ -974,7 +1017,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                 cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                                 cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                                bands.add(cb);
+                                boolean isCandleShape = cb.height >= 12
+                                        && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
+                                float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
+                                boolean isHollowBox = (bandWidth > 22 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                                if (isCandleShape && !isHollowBox) {
+                                    bands.add(cb);
+                                }
                             }
                             emptyCols = 0;
                         }
@@ -1034,7 +1083,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                     cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                    bands.add(cb);
+                    boolean isCandleShape = cb.height >= 12
+                            && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
+                    float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
+                    boolean isHollowBox = (bandWidth > 22 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                    if (isCandleShape && !isHollowBox) {
+                        bands.add(cb);
+                    }
                 }
             }
 
@@ -1078,6 +1133,38 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // ধাপ ৫: High-Probability Institutional Setup Matching (Zero Guessing)
             // =========================================================================
 
+            // Strip right-edge floating price pill/badge if it slipped into bands (wider or far outside regular candle pitch)
+            if (bands.size() >= 5) {
+                int sampleCount = Math.min(8, bands.size() - 1);
+                int sampleStart = bands.size() - 1 - sampleCount;
+                int[] sampleWidths = new int[sampleCount];
+                for (int i = 0; i < sampleCount; i++) {
+                    CandleBand sb = bands.get(sampleStart + i);
+                    sampleWidths[i] = Math.max(1, sb.endX - sb.startX + 1);
+                }
+                java.util.Arrays.sort(sampleWidths);
+                int medianW = sampleWidths[sampleWidths.length / 2];
+
+                int gapCount = Math.max(0, sampleCount - 1);
+                int medianStep = Math.max(8, (int) (medianW * 1.5f));
+                if (gapCount > 0) {
+                    int[] sampleGaps = new int[gapCount];
+                    for (int i = 0; i < gapCount; i++) {
+                        sampleGaps[i] = bands.get(sampleStart + i + 1).centerX - bands.get(sampleStart + i).centerX;
+                    }
+                    java.util.Arrays.sort(sampleGaps);
+                    medianStep = Math.max(6, sampleGaps[sampleGaps.length / 2]);
+                }
+
+                CandleBand tailBand = bands.get(bands.size() - 1);
+                CandleBand prevTailBand = bands.get(bands.size() - 2);
+                int tailWidth = tailBand.endX - tailBand.startX + 1;
+                int tailGap = tailBand.centerX - prevTailBand.centerX;
+                if (tailGap > Math.max((int) (medianStep * 2.4f), 42) || tailWidth > Math.max((int) (medianW * 2.4f), 34)) {
+                    bands.remove(bands.size() - 1);
+                }
+            }
+
             int candleCount = bands.size();
             String verifiedSymbol = "QUOTEX • OTC";
 
@@ -1089,23 +1176,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             CandleBand penultimate = (candleCount >= 2) ? bands.get(candleCount - 2) : rightmost;
             CandleBand antepenultimate = (candleCount >= 3) ? bands.get(candleCount - 3) : null;
 
-            CandleBand runningCandle;
-            CandleBand closedSignalCandle;
-            CandleBand prevCandle;
-
-            // If scanned within first 8 seconds of new candle and rightmost is a tiny opening baby candle:
-            boolean isRightmostBaby = (currentSec <= 8) && (rightmost.bodyHeight <= 8 || 
-                (rightmost.greenCount + rightmost.redCount) < (penultimate.greenCount + penultimate.redCount) * 0.35f);
-
-            if (isRightmostBaby) {
-                runningCandle = rightmost;
-                closedSignalCandle = penultimate;
-                prevCandle = antepenultimate;
-            } else {
-                runningCandle = rightmost;
-                closedSignalCandle = (candleCount >= 2) ? penultimate : rightmost;
-                prevCandle = antepenultimate;
-            }
+            CandleBand runningCandle = rightmost;
+            CandleBand closedSignalCandle = (candleCount >= 2) ? penultimate : rightmost;
+            CandleBand prevCandle = antepenultimate;
 
             // For compatibility with JSObject flow reporting
             CandleBand lastClosedCandle = closedSignalCandle;
@@ -1752,7 +1825,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 int startY = (int) (height * 0.22f);
                 int endY = (int) (height * 0.70f);
                 int startX = (int) (width * 0.08f);
-                int endX = (int) (width * 0.85f); // Extended to include full rightmost active candle before price scale
+                int endX = (int) (width * 0.81f); // Excludes right price axis & live current-price label pill
 
                 int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
                 if (overlayView != null) {

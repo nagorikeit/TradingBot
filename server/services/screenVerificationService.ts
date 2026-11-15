@@ -244,7 +244,8 @@ export class ScreenVerificationService {
     frameCapturedAt: number = Date.now(),
     customPrompt?: string,
     tradingProfile?: string,
-    activeProfileRules?: string
+    activeProfileRules?: string,
+    zoomedCandleBase64?: string
   ): Promise<ScreenAnalysisFinalResult> {
     const analysisId = `screen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
@@ -258,7 +259,8 @@ export class ScreenVerificationService {
       mimeType,
       customPrompt,
       activeProfileId,
-      activeProfileRules
+      activeProfileRules,
+      zoomedCandleBase64
     );
 
     // Track Screen Transitions (switching between apps/screens)
@@ -549,12 +551,16 @@ export class ScreenVerificationService {
       if (closedCandleType === 'BEARISH' && !isBullishRejection) directionalScore -= 1;
 
       const step1Passed = Boolean(visionData.step1ChartValid ?? visionData.isClearTradingChart);
+
+      // Step 2 MUST fail if closed candle is uncertain or a tiny Doji (<18% body) without a clear >=35% pin-bar wick!
+      const isWeakAmbiguousDoji = closedCandleType === 'DOJI' || (bodyPct < 18 && !hasRejection);
       const step2Passed = Boolean(
-        visionData.step2ClosedCandleValid ??
-          (rawClosedColor !== 'UNCERTAIN' &&
-            visionData.lastCandleDirection !== 'UNCERTAIN' &&
-            (closedCandleType !== 'DOJI' || hasRejection))
+        rawClosedColor !== 'UNCERTAIN' &&
+          visionData.lastCandleDirection !== 'UNCERTAIN' &&
+          !isWeakAmbiguousDoji &&
+          (visionData.step2ClosedCandleValid !== false)
       );
+
       const mtfConfluence: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL' =
         macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
           ? 'ALIGNED'
@@ -564,17 +570,39 @@ export class ScreenVerificationService {
           ? 'CONFLICT'
           : 'NEUTRAL';
 
+      // User-Drawn Chart Markup Confluence & Anti-Wall Entry Guard
+      const drawingInteraction = visionData.drawingInteraction || 'NONE';
+      const hasUserDrawings = Boolean(visionData.userDrawingsDetected && drawingInteraction !== 'NONE');
+      const isDrawingConfirmed =
+        hasUserDrawings &&
+        ((aiForecast === 'CALL' && (drawingInteraction === 'AT_SUPPORT_BOUNCE' || drawingInteraction === 'BREAKOUT_RETEST')) ||
+          (aiForecast === 'PUT' && (drawingInteraction === 'AT_RESISTANCE_REJECT' || drawingInteraction === 'BREAKOUT_RETEST')));
+      const isBlockedByDrawing =
+        hasUserDrawings &&
+        ((aiForecast === 'CALL' && drawingInteraction === 'BLOCKED_AT_RESISTANCE') ||
+          (aiForecast === 'PUT' && drawingInteraction === 'BLOCKED_AT_SUPPORT'));
+
+      // Enforce genuine alignment: if 15m & 5m directly conflict, allow ONLY with a genuine >=35% wick rejection reversal or verified drawing bounce/retest!
       const step3Passed = Boolean(
-        visionData.step3TrendAligned ?? (mtfConfluence === 'ALIGNED' || hasRejection)
+        !isBlockedByDrawing &&
+          (mtfConfluence === 'ALIGNED' ||
+            isDrawingConfirmed ||
+            (hasRejection && mtfConfluence !== 'CONFLICT') ||
+            (hasRejection && visionData.step3TrendAligned === true && (upperWickPct >= 38 || lowerWickPct >= 38)))
       );
 
-      const filterPassed =
-        visionData.step4FilterPassed !== undefined
-          ? Boolean(visionData.step4FilterPassed)
-          : marketRegime === 'TRENDING' ||
-            (marketRegime !== 'DOJI_CHOPPY' &&
-              marketRegime !== 'HIGH_VOLATILITY_SPIKE' &&
-              visionData.tradeQualityTier !== 'HIGH_RISK_DOJI');
+      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / HIGH_VOLATILITY_SPIKE unless explicit high-wick S/R bounce in sideways range
+      const isUnsafeMarketRegime =
+        marketRegime === 'DOJI_CHOPPY' ||
+        marketRegime === 'HIGH_VOLATILITY_SPIKE' ||
+        visionData.tradeQualityTier === 'HIGH_RISK_DOJI';
+      const isSidewaysNoRejection = marketRegime === 'SIDEWAYS' && !hasRejection && !isDrawingConfirmed;
+      const filterPassed = Boolean(
+        !isUnsafeMarketRegime &&
+          !isSidewaysNoRejection &&
+          !isBlockedByDrawing &&
+          (visionData.step4FilterPassed !== false)
+      );
 
       // Weighted 10-point score
       const rawPaScore =
@@ -592,24 +620,51 @@ export class ScreenVerificationService {
           ? 1.8
           : 0.7;
 
+      const baseScore =
+        typeof visionData.totalScore === 'number' && visionData.totalScore > 0
+          ? visionData.totalScore
+          : rawPaScore + rawIndScore + rawTrendScore;
       const computedTotalScore = Number(
-        (
-          typeof visionData.totalScore === 'number' && visionData.totalScore > 0
-            ? visionData.totalScore
-            : rawPaScore + rawIndScore + rawTrendScore
-        ).toFixed(1)
+        Math.min(10, Math.max(0, baseScore + (isDrawingConfirmed ? 0.3 : 0))).toFixed(1)
       );
+
+      // CLOSED-CANDLE CONSISTENCY & ANTI-COUNTER-TREND GUARD (Prevents wrong entries!)
+      // 1) Do NOT enter CALL if closed candle is strong RED body (>=35%) with NO lower-wick Hammer rejection, unless extreme exhaustion (>=8.5/10)
+      const isContradictoryCall =
+        aiForecast === 'CALL' &&
+        closedCandleType === 'BEARISH' &&
+        !isBullishRejection &&
+        lowerWickPct < 30 &&
+        bodyPct >= 35 &&
+        computedTotalScore < 8.6;
+      // 2) Do NOT enter PUT if closed candle is strong GREEN body (>=35%) with NO upper-wick Shooting Star rejection, unless extreme exhaustion (>=8.5/10)
+      const isContradictoryPut =
+        aiForecast === 'PUT' &&
+        closedCandleType === 'BULLISH' &&
+        !isBearishRejection &&
+        upperWickPct < 30 &&
+        bodyPct >= 35 &&
+        computedTotalScore < 8.6;
+      // 3) Do NOT guess against aligned 15m+5m macro trend without a decisive >=35% rejection wick or explicit drawing level bounce
+      const isBlindCounterTrend =
+        !isDrawingConfirmed &&
+        ((aiForecast === 'CALL' && macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND' && !isBullishRejection) ||
+          (aiForecast === 'PUT' && macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND' && !isBearishRejection));
 
       const hasClearDirection =
         aiForecast !== 'WAIT' &&
+        !isBlockedByDrawing &&
+        !isContradictoryCall &&
+        !isContradictoryPut &&
+        !isBlindCounterTrend &&
         (aiForecast === 'CALL' ? directionalScore > 0 : directionalScore < 0 || Math.abs(directionalScore) >= 3);
 
       const step5Passed = Boolean(
-        (visionData.step5SetupConfirmed ?? (computedTotalScore >= 7.5 && hasClearDirection)) &&
+        (visionData.step5SetupConfirmed !== false) &&
+          hasClearDirection &&
           filterPassed &&
           step2Passed &&
-          computedTotalScore >= 7.0 &&
-          aiForecast !== 'WAIT'
+          computedTotalScore >= 7.5
       );
 
       const stepChecks = [
@@ -632,14 +687,26 @@ export class ScreenVerificationService {
           key: 'MTF_TREND' as const,
           labelBn: 'মাল্টি-TF',
           passed: step3Passed,
-          detailBn: mtfConfluence === 'ALIGNED' ? 'অ্যালাইন্ড' : hasRejection ? 'রিজেকশন জোন' : 'সতর্কতা',
+          detailBn: isBlockedByDrawing
+            ? 'লেভেল বাধা'
+            : isDrawingConfirmed
+            ? 'ড্রয়িং ম্যাচ'
+            : mtfConfluence === 'ALIGNED'
+            ? 'অ্যালাইন্ড'
+            : hasRejection
+            ? 'রিজেকশন জোন'
+            : 'সতর্কতা',
         },
         {
           step: 4,
           key: 'MARKET_FILTER' as const,
           labelBn: 'ফিল্টার',
           passed: filterPassed,
-          detailBn: filterPassed ? 'ক্লিয়ার মার্কেট' : 'চপি/দোজি ফিল্টার্ড',
+          detailBn: isBlockedByDrawing
+            ? 'ড্রয়িং দেয়াল ব্লক'
+            : filterPassed
+            ? 'ক্লিয়ার মার্কেট'
+            : 'চপি/দোজি ফিল্টার্ড',
         },
         {
           step: 5,
@@ -652,12 +719,13 @@ export class ScreenVerificationService {
 
       const confirmedPoints = stepChecks.filter((s) => s.passed).length;
 
-      // STRICT PRECISION RULE: Require >= 4/5 confirmed points, filterPassed, and non-WAIT AI forecast!
+      // STRICT PRECISION RULE: Require >= 4/5 confirmed points, filterPassed, step2Passed, step5Passed, and zero contradiction!
       const canIssueTradeSignal =
         confirmedPoints >= 4 &&
         filterPassed &&
         step2Passed &&
         step5Passed &&
+        hasClearDirection &&
         (aiForecast === 'CALL' || aiForecast === 'PUT');
 
       if (!canIssueTradeSignal) {
@@ -666,13 +734,26 @@ export class ScreenVerificationService {
         suggestedExpiry = 'অপেক্ষা করুন';
         verdictTitle = `⏸ WAIT (${assetName} · ${confirmedPoints}/5 পয়েন্ট)`;
         const failedStepNames = stepChecks.filter((s) => !s.passed).map((s) => s.labelBn).join(', ');
-        reasoning.push(
-          visionData.nextCandlePredictionReasonBn ||
-            `[${profileLabelBn}] ৫টির মধ্যে ${confirmedPoints}/৫ পয়েন্ট নিশ্চিত হয়েছে (${failedStepNames || 'কনফার্মেশন অপর্যাপ্ত'}) — নিরাপদ এন্ট্রির জন্য WAIT।`
-        );
-      } else if (aiForecast === 'CALL' || (directionalScore > 0 && aiForecast !== 'PUT')) {
+        const blockNote = isBlockedByDrawing
+          ? `[${profileLabelBn}] ড্রয়িং সুরক্ষা: ${
+              visionData.drawingNoteBn ||
+              (drawingInteraction === 'BLOCKED_AT_RESISTANCE'
+                ? 'আপনার আঁকা রেজিস্ট্যান্স লাইনের ঠিক নিচে CALL এন্ট্রি ব্লক করা হয়েছে (WAIT)।'
+                : 'আপনার আঁকা সাপোর্ট লাইনের ঠিক ওপরে PUT এন্ট্রি ব্লক করা হয়েছে (WAIT)।')
+            }`
+          : isContradictoryCall || isContradictoryPut
+          ? `[${profileLabelBn}] ক্লোজড ক্যান্ডেল (${closedCandleLabelBn}) ও সিগন্যালে অসঙ্গতি থাকায় ভুল এন্ট্রি এড়াতে WAIT।`
+          : isBlindCounterTrend
+          ? `[${profileLabelBn}] মেইন ট্রেন্ডের বিপরীতে স্পষ্ট রিজেকশন না থাকায় WAIT।`
+          : visionData.nextCandlePredictionReasonBn ||
+            `[${profileLabelBn}] ৫টির মধ্যে ${confirmedPoints}/৫ পয়েন্ট নিশ্চিত হয়েছে (${failedStepNames || 'কনফার্মেশন অপর্যাপ্ত'}) — নিরাপদ এন্ট্রির জন্য WAIT।`;
+        reasoning.push(blockNote);
+      } else if (aiForecast === 'CALL') {
         direction = 'UP';
-        confidence = Math.min(95, Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0))));
+        confidence = Math.min(
+          96,
+          Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0) + (isDrawingConfirmed ? 2 : 0)))
+        );
         verdictTitle = isSpotSlTp
           ? `▲ LONG / BUY (${assetName} · ${confirmedPoints}/5)`
           : `▲ CALL / UP (${assetName} · ${confirmedPoints}/5)`;
@@ -682,13 +763,31 @@ export class ScreenVerificationService {
         );
       } else {
         direction = 'DOWN';
-        confidence = Math.min(95, Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0))));
+        confidence = Math.min(
+          96,
+          Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0) + (isDrawingConfirmed ? 2 : 0)))
+        );
         verdictTitle = isSpotSlTp
           ? `▼ SHORT / SELL (${assetName} · ${confirmedPoints}/5)`
           : `▼ PUT / DOWN (${assetName} · ${confirmedPoints}/5)`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
             `[${profileLabelBn}] বিয়ারিশ সিগন্যাল (${confidence}% · ${confirmedPoints}/৫ পয়েন্ট): ক্লোজড ক্যান্ডেল ${closedCandleLabelBn} ও সেটআপ নিশ্চিত।`
+        );
+      }
+
+      if (hasUserDrawings && !isBlockedByDrawing) {
+        reasoning.push(
+          `ড্রয়িং ম্যাচ: ${
+            visionData.drawingNoteBn ||
+            (drawingInteraction === 'AT_SUPPORT_BOUNCE'
+              ? 'আঁকা সাপোর্ট/ট্রেন্ডলাইন থেকে বাউন্স নিশ্চিত'
+              : drawingInteraction === 'AT_RESISTANCE_REJECT'
+              ? 'আঁকা রেজিস্ট্যান্স/ট্রেন্ডলাইন থেকে রিজেকশন নিশ্চিত'
+              : drawingInteraction === 'BREAKOUT_RETEST'
+              ? 'আঁকা লেভেল ব্রেকআউট ও রিটেস্ট শনাক্ত'
+              : 'চার্ট ড্রয়িং পর্যবেক্ষণ সক্রিয়')
+          }`
         );
       }
 
