@@ -171,27 +171,22 @@ export const WhatsAppAlertConfigPanel: React.FC = () => {
             }`}>
               <MessageSquare className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h3 className="text-lg font-bold text-white tracking-tight">WhatsApp Trade Signal Alerts</h3>
-                <span
-                  className={`px-2.5 py-0.5 text-xs font-mono font-semibold rounded-full border ${
-                    config.enabled
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
-                >
-                  {config.enabled ? '● ACTIVE & READY' : '○ DISABLED'}
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-lg font-bold text-white tracking-tight">WhatsApp সিগন্যাল অ্যালার্ট</h3>
+              <span
+                className={`px-2.5 py-0.5 text-xs font-mono font-semibold rounded-full border ${
+                  config.enabled
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}
+              >
+                {config.enabled ? 'ACTIVE' : 'DISABLED'}
+              </span>
+              {saveSuccess && (
+                <span className="text-xs text-emerald-400 flex items-center gap-1 font-mono">
+                  <Check className="w-3.5 h-3.5" /> Saved
                 </span>
-                {saveSuccess && (
-                  <span className="text-xs text-emerald-400 flex items-center gap-1 font-mono">
-                    <Check className="w-3.5 h-3.5" /> Saved
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                AI এজেন্ট যখন চার্ট বা মার্কেট ফিড বিশ্লেষণ করে নিশ্চিত সিগন্যাল শনাক্ত করবে, তখন সরাসরি আপনার হোয়াটসঅ্যাপে রিয়েল-টাইম বিস্তারিত নোটিফিকেশন পৌঁছে দেবে।
-              </p>
+              )}
             </div>
           </div>
 
@@ -223,78 +218,60 @@ export const WhatsAppAlertConfigPanel: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Option 1: CallMeBot (Instant / Free) */}
+          {/* CallMeBot */}
           <button
             type="button"
             onClick={() => handleProviderChange('callmebot')}
-            className={`p-4 rounded-xl border text-left transition-all relative ${
+            className={`p-3.5 rounded-xl border text-left transition-all relative ${
               config.provider === 'callmebot'
                 ? 'bg-emerald-950/20 border-emerald-500/60 shadow-lg shadow-emerald-950/30'
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             }`}
           >
-            {config.provider === 'callmebot' && (
-              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            )}
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-emerald-400" />
-              <span className="font-semibold text-sm text-white">CallMeBot (বিনামূল্যে / সহজ)</span>
+              <span className="font-semibold text-sm text-white">CallMeBot</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              সবচেয়ে সহজ পদ্ধতি। কোনো অ্যাকাউন্ট সাইনআপ বা বিলিং প্রয়োজন নেই। হোয়াটসঅ্যাপে বটকে ১টি মেসেজ পাঠিয়ে বিনামূল্যে API কী পাওয়া যায়।
-            </p>
-            <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Personal Free Alert
+            <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-mono rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Free Personal
             </span>
           </button>
 
-          {/* Option 2: Twilio WhatsApp API */}
+          {/* Twilio */}
           <button
             type="button"
             onClick={() => handleProviderChange('twilio')}
-            className={`p-4 rounded-xl border text-left transition-all relative ${
+            className={`p-3.5 rounded-xl border text-left transition-all relative ${
               config.provider === 'twilio'
                 ? 'bg-cyan-950/20 border-cyan-500/60 shadow-lg shadow-cyan-950/30'
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             }`}
           >
-            {config.provider === 'twilio' && (
-              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            )}
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-cyan-400" />
-              <span className="font-semibold text-sm text-white">Twilio WhatsApp API</span>
+              <span className="font-semibold text-sm text-white">Twilio API</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              অফিসিয়াল এন্টারপ্রাইজ টুইলিও গেটওয়ে। টুইলিও স্যান্ডবক্স বা প্রোডাকশন নম্বর ব্যবহার করে উচ্চ ডেলিভারি রেটে মেসেজ পাঠানো যায়।
-            </p>
-            <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-mono rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              Twilio Business Cloud
+            <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-mono rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              Business Cloud
             </span>
           </button>
 
-          {/* Option 3: Custom Webhook / Gateway */}
+          {/* Custom Webhook */}
           <button
             type="button"
             onClick={() => handleProviderChange('custom_webhook')}
-            className={`p-4 rounded-xl border text-left transition-all relative ${
+            className={`p-3.5 rounded-xl border text-left transition-all relative ${
               config.provider === 'custom_webhook'
                 ? 'bg-purple-950/20 border-purple-500/60 shadow-lg shadow-purple-950/30'
                 : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             }`}
           >
-            {config.provider === 'custom_webhook' && (
-              <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-purple-400 animate-ping" />
-            )}
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-purple-400" />
-              <span className="font-semibold text-sm text-white">Custom Webhook / HTTP</span>
+              <span className="font-semibold text-sm text-white">Custom Webhook</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              যেকোনো কাস্টম গেটওয়ে যেমন Green API, UltraMsg, WPPConnect, Baileys, নতুবা আপনার নিজস্ব নোটিফিকেশন সার্ভার বা ডিসকর্ড/টেলিগ্রাম রিলে।
-            </p>
-            <span className="inline-block mt-3 px-2 py-0.5 text-[10px] font-mono rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              REST / Webhook Relay
+            <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-mono rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              REST Relay
             </span>
           </button>
         </div>

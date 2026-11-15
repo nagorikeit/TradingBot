@@ -54,7 +54,7 @@ class DesktopPipService {
 
   public async openInteractiveBubble(): Promise<{
     ok: boolean;
-    reason?: 'UNSUPPORTED' | 'IFRAME_BLOCKED' | 'ERROR';
+    reason?: 'UNSUPPORTED' | 'IFRAME_BLOCKED' | 'GESTURE_EXPIRED' | 'ERROR';
     message?: string;
   }> {
     if (this.isActive()) {
@@ -66,8 +66,7 @@ class DesktopPipService {
       return {
         ok: false,
         reason: 'UNSUPPORTED',
-        message:
-          'আপনার বর্তমান ব্রাউজারে Document Picture-in-Picture সাপোর্ট নেই। অনুগ্রহ করে ডেস্কটপ Google Chrome (v116+) বা Microsoft Edge ব্যবহার করুন অথবা নিচে থাকা Chrome এক্সটেনশনটি ব্যবহার করুন।',
+        message: 'কম্পিউটার বাবল Chrome বা Edge ব্রাউজারে চলে।',
       };
     }
 
@@ -99,6 +98,10 @@ class DesktopPipService {
       if (this.unsubLive) this.unsubLive();
       if (this.unsubAuth) this.unsubAuth();
       this.unsubLive = liveScreenService.subscribe(() => {
+        if (liveScreenService.getState() === 'DISCONNECTED') {
+          this.close();
+          return;
+        }
         this.renderPipContent();
       });
       this.unsubAuth = authService.subscribe(() => {
@@ -110,25 +113,30 @@ class DesktopPipService {
       return { ok: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
       const isIframeIssue =
-        window.self !== window.top ||
-        msg.toLowerCase().includes('top-level') ||
-        msg.toLowerCase().includes('disallowed') ||
-        msg.toLowerCase().includes('gesture');
+        window.self !== window.top || lower.includes('top-level') || lower.includes('disallowed');
 
       if (isIframeIssue) {
         return {
           ok: false,
           reason: 'IFRAME_BLOCKED',
-          message:
-            'ব্রাউজার সিকিউরিটির কারণে প্রিভিউ ফ্রেমের ভেতর থেকে Always-on-Top বাবল খোলা যাচ্ছে না। "নতুন ট্যাবে অ্যাপ খুলুন" বাটনে ক্লিক করে সরাসরি ব্রাউজারে খুললে এটি ১০০% কাজ করবে।',
+          message: 'প্রিভিউ ফ্রেম থেকে বাবল ব্লক করা হয়েছে। সরাসরি ট্যাবে খুলুন।',
+        };
+      }
+
+      if (lower.includes('gesture') || lower.includes('activation')) {
+        return {
+          ok: false,
+          reason: 'GESTURE_EXPIRED',
+          message: 'অটো-বাবল খোলার জন্য এক ক্লিক করুন।',
         };
       }
 
       return {
         ok: false,
         reason: 'ERROR',
-        message: 'পিসি ফ্লোটিং বাবল চালু করতে সমস্যা হয়েছে: ' + msg,
+        message: 'কম্পিউটার বাবল চালু করা যায়নি।',
       };
     }
   }
@@ -257,7 +265,7 @@ class DesktopPipService {
       <div class="top">
         <div class="brand">
           <span id="pip-dot" class="dot"></span>
-          <span>TradePulse পিসি বাবল</span>
+          <span>TradePulse</span>
         </div>
         <div class="top-actions">
           <button id="pip-voice" class="mini-btn" title="ভয়েস">🔊</button>
@@ -267,7 +275,7 @@ class DesktopPipService {
 
       <div id="pip-hero" class="hero">
         <div id="pip-dir" class="dir wait">প্রস্তুত</div>
-        <div id="pip-meta" class="meta">অন্য ট্যাবে গিয়ে স্ক্যান করুন</div>
+        <div id="pip-meta" class="meta">অপেক্ষায়</div>
         <div id="pip-steps" class="steps" style="display:none;">
           <div class="step" data-step="1"></div>
           <div class="step" data-step="2"></div>
@@ -278,7 +286,7 @@ class DesktopPipService {
         <div id="pip-reason" class="reason"></div>
       </div>
 
-      <button id="pip-scan" class="scan-btn">⚡ ১-ক্লিক স্ক্যান (Scan)</button>
+      <button id="pip-scan" class="scan-btn">⚡ স্ক্যান</button>
     `;
 
     const scanBtn = doc.getElementById('pip-scan');
@@ -351,16 +359,16 @@ class DesktopPipService {
     if (scanBtn) {
       if (!quota.canScan) {
         scanBtn.disabled = false;
-        scanBtn.textContent = '🔒 লিমিট শেষ — মূল অ্যাপে আপগ্রেড করুন';
+        scanBtn.textContent = '🔒 আপগ্রেড করুন';
       } else if (state !== 'STREAMING' && state !== 'PAUSED') {
         scanBtn.disabled = false;
-        scanBtn.textContent = `🖥️ স্ক্রিন কানেক্ট করুন (${quotaBadge})`;
+        scanBtn.textContent = 'স্ক্রিন কানেক্ট';
       } else if (isBusy) {
         scanBtn.disabled = true;
-        scanBtn.textContent = scanStep ? `⏳ ধাপ ${scanStep.step}/5: ${scanStep.title}` : '⏳ স্ক্যান চলছে...';
+        scanBtn.textContent = scanStep ? `⏳ ধাপ ${scanStep.step}/5` : '⏳ স্ক্যান...';
       } else {
         scanBtn.disabled = false;
-        scanBtn.textContent = `⚡ ১-ক্লিক স্ক্যান (${quotaBadge})`;
+        scanBtn.textContent = '⚡ স্ক্যান';
       }
     }
 
@@ -380,57 +388,57 @@ class DesktopPipService {
       if (!quota.canScan) {
         heroEl.className = 'hero wait';
         dirEl.className = 'dir wait';
-        dirEl.textContent = '🔒 স্ক্যান লিমিট শেষ';
+        dirEl.textContent = 'লিমিট শেষ';
         metaEl.textContent = quotaBadge;
-        reasonEl.textContent = quota.blockReasonBn || 'অনুগ্রহ করে মূল ট্যাবে গিয়ে ভিআইপি প্ল্যান আপগ্রেড করুন।';
+        reasonEl.textContent = '';
         return;
       }
 
       if (state !== 'STREAMING' && state !== 'PAUSED') {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
-        dirEl.textContent = 'স্ক্রিন সংযুক্ত নয়';
-        metaEl.textContent = `${quotaBadge} · ট্রেডিং ট্যাব সিলেক্ট করুন`;
-        reasonEl.textContent = 'একবার সংযোগ করলে অন্য যেকোনো ট্রেডিং ওয়েবসাইটের উপরেও এই বাবল ভেসে থাকবে।';
+        dirEl.textContent = 'সংযুক্ত নয়';
+        metaEl.textContent = quotaBadge;
+        reasonEl.textContent = '';
         return;
       }
 
       if (isBusy && scanStep) {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
-        dirEl.textContent = `বিশ্লেষণ: ধাপ ${scanStep.step}/5`;
+        dirEl.textContent = `ধাপ ${scanStep.step}/5`;
         metaEl.textContent = scanStep.title;
-        reasonEl.textContent = scanStep.subtitle;
+        reasonEl.textContent = '';
         return;
       }
 
       if (result) {
         const dir = result.direction;
         const conf = result.confidence || 0;
-        const sym = result.visionData?.symbol || 'LIVE CHART';
+        const sym = result.visionData?.symbol || 'CHART';
         const countdown = expirySec > 0 ? ` · ${expirySec}s` : '';
 
         if (dir === 'UP') {
           heroEl.className = 'hero up';
           dirEl.className = 'dir up';
-          dirEl.textContent = `▲ CALL (UP) · ${conf}%`;
+          dirEl.textContent = `▲ CALL · ${conf}%`;
         } else if (dir === 'DOWN') {
           heroEl.className = 'hero down';
           dirEl.className = 'dir down';
-          dirEl.textContent = `▼ PUT (DOWN) · ${conf}%`;
+          dirEl.textContent = `▼ PUT · ${conf}%`;
         } else {
           heroEl.className = 'hero wait';
           dirEl.className = 'dir wait';
-          dirEl.textContent = '⏸ অপেক্ষা করুন (WAIT)';
+          dirEl.textContent = '⏸ WAIT';
         }
 
-        metaEl.textContent = `${sym}${countdown} · ${quotaBadge}`;
-        reasonEl.textContent = result.reasoning?.[0] || result.verdictTitle || '';
+        metaEl.textContent = `${sym}${countdown}`;
+        reasonEl.textContent = result.visionData?.candlestickPattern || '';
       } else {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
-        dirEl.textContent = 'স্ক্যান করতে প্রস্তুত';
-        metaEl.textContent = `${quotaBadge} · ট্রেডিং সাইটে গিয়ে স্ক্যান করুন`;
+        dirEl.textContent = 'প্রস্তুত';
+        metaEl.textContent = quotaBadge;
         reasonEl.textContent = '';
       }
     }

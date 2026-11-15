@@ -82,12 +82,9 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
 
   if (!signal) {
     return (
-      <div className="bg-[#111827] border border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[320px] text-center">
-        <Radio className="w-8 h-8 text-emerald-400 animate-pulse mb-3" />
-        <h3 className="text-sm font-semibold text-white">INITIALIZING SCANNER</h3>
-        <p className="text-xs text-slate-400 mt-1 max-w-sm">
-          Loading market candle series and calculating technical indicators...
-        </p>
+      <div className="bg-[#111827] border border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[260px] text-center">
+        <Radio className="w-8 h-8 text-emerald-400 animate-pulse mb-2" />
+        <h3 className="text-sm font-semibold text-white">স্ক্যানার প্রস্তুত হচ্ছে...</h3>
       </div>
     );
   }
@@ -242,7 +239,6 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
               </span>
             </div>
 
-            {/* Rule alignment bar without misleading percentage win probability */}
             <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
               <div
                 className={`h-full transition-all duration-500 ${
@@ -255,9 +251,6 @@ export const SignalHeroCard: React.FC<SignalHeroCardProps> = ({
                 style={{ width: `${(score / 5) * 100}%` }}
               />
             </div>
-            <span className="text-[10px] text-slate-500 mt-1 block">
-              * Rule score represents indicator alignment count, not win probability.
-            </span>
           </div>
         </div>
 

@@ -129,20 +129,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             }`}>
               <Radio className={`w-5 h-5 ${isRunning ? 'animate-pulse' : ''}`} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white font-mono">Multi-Asset Binance Scanner</h2>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold border ${
-                  isRunning
-                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80'
-                    : 'bg-slate-800 text-slate-400 border-slate-700'
-                }`}>
-                  {isRunning ? 'MONITORING LIVE' : 'PAUSED'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Simultaneous candle-close evaluation of {totalCount} Binance crypto pairs for 4/5 and 5/5 rule alignment.
-              </p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-white font-mono">Multi-Asset Scanner</h2>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold border ${
+                isRunning
+                  ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}>
+                {isRunning ? 'LIVE' : 'PAUSED'}
+              </span>
             </div>
           </div>
 
@@ -246,11 +241,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-bold text-white font-mono">
-              Live Confirmed Signals Feed ({sortedSignals.length})
+              Live Signals ({sortedSignals.length})
             </h3>
-            <span className="text-[11px] text-slate-400 font-mono">
-              (Strong 5/5 & Qualified 4/5)
-            </span>
           </div>
 
           {/* Filter & Clear Controls */}
@@ -321,18 +313,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
         {/* Signals List */}
         {sortedSignals.length === 0 ? (
-          <div className="bg-[#111827] border border-slate-800/80 rounded-lg p-8 text-center flex flex-col items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-3">
-              <Radio className={`w-6 h-6 ${isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+          <div className="bg-[#111827] border border-slate-800/80 rounded-lg p-6 text-center flex flex-col items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-2">
+              <Radio className={`w-5 h-5 ${isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
             </div>
             <h4 className="text-sm font-semibold text-white font-mono">
-              {isRunning ? 'Scanner Monitoring Closed Candles' : 'Scanner is Currently Stopped'}
+              {isRunning ? 'Waiting for Confirmed Signal...' : 'Scanner Paused'}
             </h4>
-            <p className="text-xs text-slate-400 max-w-md mt-1">
-              {isRunning
-                ? 'Listening to live Binance WebSocket streams. When any pair finishes a candle with 4/5 or 5/5 confirmed rule alignment, it will appear here immediately.'
-                : 'Click "Start Scanner" above to connect 10 parallel Binance WebSocket streams.'}
-            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

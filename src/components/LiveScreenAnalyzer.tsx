@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Clock,
-  Layers,
   CheckCircle2,
   Sliders,
   Volume2,
@@ -25,6 +24,7 @@ import {
   Download,
   Puzzle,
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { liveScreenService } from '../services/liveScreenService';
 import { desktopPipService } from '../services/desktopPipService';
 import { voiceAssistantService } from '../services/voiceAssistantService';
@@ -48,6 +48,7 @@ import { TRADING_PROFILE_LIST, TradingProfileId, getTradingProfile } from '../st
 import { tradingProfileService } from '../services/tradingProfileService';
 
 export const LiveScreenAnalyzer: React.FC = () => {
+  const isMobileApp = Capacitor.isNativePlatform();
   const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
   const [streamState, setStreamState] = useState<LiveStreamState>(liveScreenService.getState());
   const [result, setResult] = useState<ScreenAnalysisFinalResult | null>(liveScreenService.getLatestResult());
@@ -68,10 +69,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [activeScreenName, setActiveScreenName] = useState<string>(liveScreenService.getActiveScreenName());
   const [frameCount, setFrameCount] = useState<number>(liveScreenService.getFrameCount());
   const [lastDetectedAppName, setLastDetectedAppName] = useState<string>(liveScreenService.getLastDetectedAppName());
-  const [isPiPActive, setIsPiPActive] = useState<boolean>(liveScreenService.isPictureInPictureActive());
   const [isDesktopPipActive, setIsDesktopPipActive] = useState<boolean>(desktopPipService.isActive());
-  const [desktopPipError, setDesktopPipError] = useState<string | null>(null);
-  const [isOverlayActive, setIsOverlayActive] = useState<boolean>(liveScreenService.isOverlayActive());
+  const [desktopPipError, setDesktopPipError] = useState<{ message: string; reason?: string } | null>(null);
   const [scanQuota, setScanQuota] = useState<EffectiveScanQuotaStatus>(() => authService.getScanQuotaStatus());
   const [activeProfileId, setActiveProfileId] = useState<TradingProfileId>(() =>
     tradingProfileService.getActiveProfileId()
@@ -157,11 +156,12 @@ export const LiveScreenAnalyzer: React.FC = () => {
       setActiveScreenName(liveScreenService.getActiveScreenName());
       setFrameCount(liveScreenService.getFrameCount());
       setLastDetectedAppName(liveScreenService.getLastDetectedAppName());
-      setIsPiPActive(liveScreenService.isPictureInPictureActive());
-      setIsOverlayActive(liveScreenService.isOverlayActive());
     });
     const unsubPip = desktopPipService.subscribe((active) => {
       setIsDesktopPipActive(active);
+      if (active) {
+        setDesktopPipError(null);
+      }
     });
     const unsubAuth = authService.subscribe(() => {
       setScanQuota(authService.getScanQuotaStatus());
@@ -215,7 +215,15 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const handleConfirmProfileAndConnect = async () => {
     tradingProfileService.setActiveProfile(pendingProfileId);
     setShowConnectProfileModal(false);
-    await liveScreenService.connectScreen(pendingProfileId);
+    setDesktopPipError(null);
+
+    const connected = await liveScreenService.connectScreen(pendingProfileId);
+    if (connected && !isMobileApp && !desktopPipService.isActive()) {
+      const pipRes = await desktopPipService.openInteractiveBubble();
+      if (!pipRes.ok && pipRes.message) {
+        setDesktopPipError({ message: pipRes.message, reason: pipRes.reason });
+      }
+    }
   };
 
   const handleToggleVoice = () => {
@@ -232,19 +240,18 @@ export const LiveScreenAnalyzer: React.FC = () => {
   };
 
   const handleDisconnect = () => {
+    setDesktopPipError(null);
+    if (!isMobileApp) {
+      desktopPipService.close();
+    }
     liveScreenService.disconnect();
   };
 
-  const handleTogglePiP = async () => {
-    const active = await liveScreenService.togglePictureInPicture();
-    setIsPiPActive(active);
-  };
-
-  const handleToggleDesktopPip = async () => {
+  const handleOpenDesktopBubbleFallback = async () => {
     setDesktopPipError(null);
     const res = await desktopPipService.openInteractiveBubble();
     if (!res.ok && res.message) {
-      setDesktopPipError(res.message);
+      setDesktopPipError({ message: res.message, reason: res.reason });
     }
   };
 
@@ -364,29 +371,13 @@ export const LiveScreenAnalyzer: React.FC = () => {
             )}
 
             {(streamState === 'IDLE' || streamState === 'DISCONNECTED' || streamState === 'ERROR') && (
-              <>
-                <button
-                  onClick={handleConnect}
-                  className="px-3.5 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-                >
-                  <Monitor className="w-3.5 h-3.5" />
-                  <span>স্ক্রিন শেয়ার</span>
-                </button>
-
-                {isInsideIframe && (
-                  <button
-                    onClick={() => {
-                      if (typeof window !== 'undefined') {
-                        window.open(window.location.href, '_blank');
-                      }
-                    }}
-                    className="px-3 py-2 text-xs font-semibold text-amber-300 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                    <span>নতুন ট্যাব</span>
-                  </button>
-                )}
-              </>
+              <button
+                onClick={handleConnect}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                <span>স্ক্রিন শেয়ার</span>
+              </button>
             )}
 
             {isConnecting && (
@@ -408,18 +399,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
             )}
 
             <button
-              onClick={handleTogglePiP}
-              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                isPiPActive
-                  ? 'bg-purple-950/50 border-purple-500/50 text-purple-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Tv className="w-3.5 h-3.5 text-purple-400" />
-              <span>PiP উইন্ডো</span>
-            </button>
-
-            <button
               onClick={handleToggleVoice}
               className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
                 isVoiceOn
@@ -429,31 +408,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
             >
               {isVoiceOn ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
               <span>{isVoiceOn ? 'ভয়েস অন' : 'ভয়েস অফ'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (isOverlayActive) {
-                  liveScreenService.hideFloatingOverlayHUD();
-                } else {
-                  liveScreenService.showFloatingOverlayHUD({
-                    direction: result?.direction || 'WAIT',
-                    confidence: result?.confidence || 0,
-                    durationText: '1-3 min',
-                    verdictTitle: result?.verdictTitle || 'TRADEPULSE HUD',
-                    reasonText: result?.reasoning[0] || 'Floating HUD active over trading app.',
-                    latencyMs: 120,
-                  });
-                }
-              }}
-              className={`px-3 py-2 text-xs font-semibold rounded-lg border flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                isOverlayActive
-                  ? 'border-cyan-500 bg-cyan-950/70 text-cyan-200'
-                  : 'border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{isOverlayActive ? 'HUD অন' : 'ফ্লোটিং HUD'}</span>
             </button>
 
             <button
@@ -512,6 +466,36 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 <span>নতুন ট্যাবে খুলুন</span>
               </a>
             )}
+          </div>
+        )}
+
+        {/* Auto-bubble Fallback Notice ONLY if browser prevented immediate auto-open */}
+        {!isMobileApp && desktopPipError && !isDesktopPipActive && (
+          <div className="p-2.5 rounded-lg bg-cyan-950/40 border border-cyan-500/40 flex flex-wrap items-center justify-between gap-2 text-xs text-cyan-200">
+            <span className="flex items-center gap-2">
+              <Tv className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>{desktopPipError.message}</span>
+            </span>
+            {desktopPipError.reason === 'IFRAME_BLOCKED' && isInsideIframe ? (
+              <a
+                href={typeof window !== 'undefined' ? window.location.href : '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 whitespace-nowrap shrink-0"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>নতুন ট্যাব</span>
+              </a>
+            ) : desktopPipError.reason === 'GESTURE_EXPIRED' ? (
+              <button
+                type="button"
+                onClick={handleOpenDesktopBubbleFallback}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs whitespace-nowrap shrink-0"
+              >
+                <Tv className="w-3.5 h-3.5" />
+                <span>বাবল খুলুন</span>
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -589,82 +573,24 @@ export const LiveScreenAnalyzer: React.FC = () => {
         </div>
       </div>
 
-      {/* 1.5 Desktop Floating Bubble & Chrome Extension */}
-      <div className="bg-slate-900/95 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg space-y-4">
-        <h3 className="text-sm font-bold text-white">ডেস্কটপ ফ্লোটিং বাবল</h3>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          {/* Method 1: Always-on-Top Browser Bubble */}
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between gap-3">
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                  <Tv className="w-3.5 h-3.5" />
-                  <span>Always-on-Top বাবল (PiP)</span>
-                </span>
-                <span className="text-[11px] text-slate-400 whitespace-nowrap">তাৎক্ষণিক</span>
-              </div>
-              <p className="text-xs text-slate-400">
-                অন্য ট্যাবে বা ব্রোকার সাইটে গেলেও ভাসমান উইন্ডো থেকে ১-ক্লিকে স্ক্যান ও সিগন্যাল দেখা যাবে।
-              </p>
-            </div>
-
-            {desktopPipError && (
-              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-wrap items-center justify-between gap-2">
-                <span>{desktopPipError}</span>
-                {isInsideIframe && (
-                  <a
-                    href={typeof window !== 'undefined' ? window.location.href : '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 whitespace-nowrap shrink-0"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    <span>নতুন ট্যাব</span>
-                  </a>
-                )}
-              </div>
-            )}
-
-            <button
-              onClick={handleToggleDesktopPip}
-              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${
-                isDesktopPipActive
-                  ? 'bg-cyan-500 text-slate-950'
-                  : 'bg-cyan-600/20 hover:bg-cyan-600/35 text-cyan-200 border border-cyan-500/40'
-              }`}
-            >
-              <Tv className="w-4 h-4" />
-              <span>{isDesktopPipActive ? 'পিসি বাবল চালু আছে (বন্ধ করুন)' : 'পিসি বাবল চালু করুন'}</span>
-            </button>
+      {/* 1.5 Chrome Extension Strip (Desktop Only) */}
+      {!isMobileApp && (
+        <div className="bg-slate-900/95 border border-slate-800 rounded-xl px-4 py-3 shadow-lg flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs">
+            <Puzzle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-bold text-white">Chrome এক্সটেনশন</span>
+            <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">· chrome://extensions</span>
           </div>
-
-          {/* Method 2: Chrome Extension */}
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between gap-3">
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                  <Puzzle className="w-3.5 h-3.5" />
-                  <span>Chrome এক্সটেনশন</span>
-                </span>
-                <span className="text-[11px] text-slate-400 whitespace-nowrap">অটো ইনজেক্ট</span>
-              </div>
-              <p className="text-xs text-slate-400">
-                ডাউনলোড ও আনজিপ করে <code className="text-cyan-300">chrome://extensions</code> (Developer mode → Load unpacked)-এ যুক্ত করুন।
-              </p>
-            </div>
-
-            <a
-              href={getApiUrl('/api/extension/download')}
-              download="TradePulse-Chrome-Extension.zip"
-              className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
-            >
-              <Download className="w-4 h-4" />
-              <span>এক্সটেনশন ডাউনলোড (.zip)</span>
-            </a>
-          </div>
+          <a
+            href={getApiUrl('/api/extension/download')}
+            download="TradePulse-Chrome-Extension.zip"
+            className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>ডাউনলোড (.zip)</span>
+          </a>
         </div>
-      </div>
+      )}
 
       {/* Voice Assistant Banner */}
       {voiceNotification && (
@@ -964,65 +890,33 @@ export const LiveScreenAnalyzer: React.FC = () => {
           {(lastDetectedAppName.toLowerCase().includes('tradepulse') ||
             lastDetectedAppName.includes('ট্রেডপাল্স') ||
             Boolean(chartDiagnostic?.failureReason?.includes('ট্রেডপাল্স'))) && (
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
-              <div className="flex items-center gap-2.5">
-                <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>অ্যাপ মিনিমাইজ করে আপনার ব্রোকার (Quotex / Pocket Option) চার্ট ওপেন করুন।</span>
-              </div>
-              <button
-                onClick={() => {
-                  if (!liveScreenService.isOverlayActive()) {
-                    liveScreenService.showFloatingOverlayHUD({
-                      direction: 'WAIT',
-                      confidence: 0,
-                      durationText: 'অপেক্ষা',
-                      verdictTitle: 'চার্ট অনুসন্ধান চলছে',
-                      reasonText: 'ট্রেডপাল্স মিনিমাইজ করে ব্রোকার ওপেন করুন',
-                      latencyMs: 50,
-                    });
-                  }
-                }}
-                className="px-3 py-1.5 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0"
-              >
-                ফ্লোটিং HUD অন করুন
-              </button>
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 flex items-center gap-2.5 text-xs text-amber-200">
+              <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>অ্যাপ মিনিমাইজ করে আপনার ব্রোকার (Quotex / Pocket Option) চার্ট ওপেন করুন।</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-center">
-            {/* Live Video Feed */}
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-400 pb-1.5 border-b border-slate-800">
-                <span className="font-semibold text-cyan-300">লাইভ স্ক্রিন প্রিভিউ</span>
-                <span className="font-mono text-slate-400 truncate max-w-[160px]">{lastDetectedAppName}</span>
-              </div>
-
-              <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center">
-                {liveScreenService.getStream() ? (
-                  <video
-                    ref={previewVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <div className="text-center p-6 text-xs text-slate-400 flex flex-col items-center gap-2">
-                    <Monitor className="w-8 h-8 text-slate-600" />
-                    <span>উপরের &quot;স্ক্রিন শেয়ার&quot; বাটনে ক্লিক করে ব্রোকার স্ক্রিন সংযুক্ত করুন।</span>
-                  </div>
-                )}
-              </div>
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-400 pb-1.5 border-b border-slate-800">
+              <span className="font-semibold text-cyan-300">লাইভ প্রিভিউ</span>
+              <span className="font-mono text-slate-400 truncate max-w-[160px]">{lastDetectedAppName}</span>
             </div>
 
-            {/* Concise Usage Guide */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs text-slate-300">
-              <div className="font-bold text-white text-sm">ব্যবহার নির্দেশিকা</div>
-              <ol className="space-y-2 text-xs text-slate-300 list-decimal list-inside">
-                <li>উপর থেকে স্ক্রিন শেয়ার চালু করে সম্পূর্ণ স্ক্রিন বা ব্রোকার ট্যাব সিলেক্ট করুন।</li>
-                <li>ব্রোকারে ক্যান্ডেলস্টিক চার্ট ওপেন রেখে &quot;স্ক্যান করুন&quot; অথবা পিসি বাবলে ক্লিক করুন।</li>
-                <li>চার্ট দৃশ্যমান থাকলেই লাইভ CALL / PUT সিগন্যাল ও টাইমার দেখা যাবে।</li>
-              </ol>
+            <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center">
+              {liveScreenService.getStream() ? (
+                <video
+                  ref={previewVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <div className="text-center p-6 text-xs text-slate-400 flex flex-col items-center gap-2">
+                  <Monitor className="w-8 h-8 text-slate-600" />
+                  <span>স্ক্রিন শেয়ার প্রস্তুত</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

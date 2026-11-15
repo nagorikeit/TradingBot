@@ -175,16 +175,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     <div className="w-full max-w-6xl mx-auto p-4 md:p-6 bg-zinc-950/80 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-md text-zinc-100 my-4">
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800 mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">👑</span>
-            <h2 className="text-xl font-bold bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">
-              অ্যাডমিন কন্ট্রোল সেন্টার (Admin Control Center)
-            </h2>
-          </div>
-          <p className="text-xs text-zinc-400 mt-1">
-            ইউজার সাবস্ক্রিপশন অনুমোদন, ফ্রি ও দৈনিক স্ক্যান লিমিট এডিট এবং পেমেন্ট গেটওয়ে কন্ট্রোল
-          </p>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">
+            অ্যাডমিন প্যানেল
+          </h2>
         </div>
 
         <div className="flex items-center gap-2">

@@ -93,8 +93,8 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
 
       {/* Content */}
       {filteredSignals.length === 0 ? (
-        <div className="p-8 text-center text-slate-500 text-xs">
-          No signals match the selected filter. As new market candles form, signals and their verified outcomes will appear here.
+        <div className="p-6 text-center text-slate-500 text-xs font-mono">
+          কোনো সিগন্যাল পাওয়া যায়নি
         </div>
       ) : (
         <div className="divide-y divide-slate-800">

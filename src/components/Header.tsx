@@ -1,6 +1,5 @@
 import React from 'react';
-import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, Shield, LogOut, Crown } from 'lucide-react';
-import { TimeframeKey } from '../types';
+import { Activity, Play, RefreshCw, BarChart2, History, Sliders, Radio, Cpu, BookOpen, LogOut, Crown } from 'lucide-react';
 import { User, EffectiveScanQuotaStatus } from '../types/authTypes';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -33,40 +32,34 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="border-b border-slate-800 bg-[#0f172a]/95 sticky top-0 z-40 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-3 overflow-x-auto whitespace-nowrap scrollbar-thin scroll-smooth flex-nowrap">
-        {/* Zone 1: Wordmark brand */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-base font-bold tracking-tight text-white font-mono">
-              TradePulse
-            </span>
-          </div>
-          <span className="hidden sm:inline text-xs text-slate-500 border-l border-slate-700/60 pl-2.5">
-            Signal Engine
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-13 flex items-center justify-between gap-3 overflow-x-auto whitespace-nowrap scrollbar-thin scroll-smooth flex-nowrap">
+        {/* Zone 1: Brand */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-sm sm:text-base font-bold tracking-tight text-white font-mono">
+            TradePulse
           </span>
         </div>
 
-        {/* Zone 2: Navigation Links / View Switchers */}
-        <nav className="flex items-center gap-1 sm:gap-2 text-xs font-medium shrink-0 flex-nowrap">
+        {/* Zone 2: Clean Single-Line Smart Tabs */}
+        <nav className="flex items-center gap-1 sm:gap-1.5 text-xs font-medium shrink-0 flex-nowrap">
           <button
             onClick={() => onSelectTab('live-screen')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'live-screen'
-                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                ? 'bg-slate-800 text-cyan-400 font-semibold border border-cyan-500/40'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span>Live Screen</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/20 text-cyan-300 font-mono">VISION</span>
           </button>
 
           <button
             onClick={() => onSelectTab('terminal')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'terminal'
-                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm'
+                ? 'bg-slate-800 text-emerald-400 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -78,14 +71,14 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onSelectTab('scanner')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 relative shrink-0 ${
               currentTab === 'scanner'
-                ? 'bg-slate-800 text-amber-400 font-semibold shadow-sm'
+                ? 'bg-slate-800 text-amber-400 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Radio className="w-3.5 h-3.5" />
             <span>Scanner</span>
             {scannerSignalCount > 0 && (
-              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+              <span className="px-1.5 text-[10px] rounded bg-amber-500/20 text-amber-300 font-mono">
                 {scannerSignalCount}
               </span>
             )}
@@ -95,19 +88,19 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onSelectTab('backtest')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'backtest'
-                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm'
+                ? 'bg-slate-800 text-emerald-400 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <BarChart2 className="w-3.5 h-3.5" />
-            <span>Backtester</span>
+            <span>Backtest</span>
           </button>
 
           <button
             onClick={() => onSelectTab('history')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'history'
-                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm'
+                ? 'bg-slate-800 text-emerald-400 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -119,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onSelectTab('strategy')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'strategy'
-                ? 'bg-slate-800 text-emerald-400 font-semibold shadow-sm'
+                ? 'bg-slate-800 text-emerald-400 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -129,82 +122,73 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onSelectTab('agent')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'agent'
-                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                ? 'bg-slate-800 text-cyan-400 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
             <span>AI Agent</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">2E</span>
           </button>
 
           <button
             onClick={() => onSelectTab('knowledge')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border border-slate-700/60 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 ${
               currentTab === 'knowledge'
-                ? 'bg-slate-800 text-cyan-400 font-semibold shadow-sm border-cyan-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                ? 'bg-slate-800 text-cyan-400 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
             <span>Knowledge</span>
-            <span className="px-1 py-0.2 text-[9px] rounded bg-cyan-500/10 text-cyan-300 font-mono">বাংলা</span>
           </button>
 
-          {/* Admin Control Tab (Shown only to Admin) */}
           {currentUser?.role === 'admin' && (
             <button
               onClick={() => onSelectTab('admin')}
               className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 border ${
                 currentTab === 'admin'
-                  ? 'bg-amber-500/20 text-amber-300 font-bold border-amber-500/50 shadow-sm'
+                  ? 'bg-amber-500/20 text-amber-300 font-bold border-amber-500/50'
                   : 'text-amber-400/90 border-amber-500/30 hover:bg-amber-500/10'
               }`}
             >
               <Crown className="w-3.5 h-3.5 text-amber-400" />
-              <span>এডমিন প্যানেল</span>
+              <span>Admin</span>
             </button>
           )}
         </nav>
 
-        {/* Zone 3: User status & Quick Action Buttons */}
+        {/* Zone 3: Quick Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* User Profile & Live Scan Quota Badge */}
           {currentUser && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs">
               <span className={`w-2 h-2 rounded-full ${currentUser.role === 'admin' ? 'bg-amber-400' : scanQuota?.canScan === false ? 'bg-rose-400' : 'bg-emerald-400'}`} />
-              <span className="hidden md:inline text-slate-200 font-medium truncate max-w-[90px]">{currentUser.name}</span>
               {currentUser.role === 'admin' ? (
-                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  ADMIN · ∞
-                </span>
+                <span className="text-[10px] font-mono font-bold text-amber-300">ADMIN · ∞</span>
               ) : scanQuota?.mode === 'FREE_TRIAL' ? (
                 <button
                   type="button"
                   onClick={onOpenUpgrade}
-                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-colors"
-                  title="ভিআইপি প্ল্যান আপগ্রেড করুন"
+                  className="text-[10px] font-bold text-cyan-300 hover:text-cyan-200"
                 >
-                  ফ্রি: {scanQuota.freeRemaining}/{scanQuota.freeLimit} · আপগ্রেড
+                  ফ্রি {scanQuota.freeRemaining}/{scanQuota.freeLimit} · আপগ্রেড
                 </button>
               ) : scanQuota?.mode === 'PAID' ? (
                 <button
                   type="button"
                   onClick={onOpenUpgrade}
-                  className="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                  title="মেয়াদ ও দৈনিক স্ক্যান ব্যালেন্স"
+                  className="text-[10px] font-mono font-bold text-emerald-300"
                 >
-                  {daysRemaining}d · {scanQuota.dailyLimit === 0 ? '∞/দিন' : `${scanQuota.dailyRemaining}/${scanQuota.dailyLimit}`}
+                  {daysRemaining}d · {scanQuota.dailyLimit === 0 ? '∞' : `${scanQuota.dailyRemaining}/${scanQuota.dailyLimit}`}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={onOpenUpgrade}
-                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 animate-pulse"
+                  className="text-[10px] font-bold text-rose-300"
                 >
-                  লিমিট শেষ · আপগ্রেড
+                  আপগ্রেড
                 </button>
               )}
             </div>
@@ -212,17 +196,16 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={onAdvanceCandle}
-            title="Advance 1 full candle to test signal progression"
-            className="px-2 sm:px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-md transition-colors flex items-center gap-1 shrink-0"
+            title="Next Candle"
+            className="px-2 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-md transition-colors flex items-center gap-1 shrink-0"
           >
             <Play className="w-3 h-3 text-emerald-400 fill-emerald-400/40" />
-            <span className="hidden sm:inline">Next Candle</span>
+            <span className="hidden sm:inline">Next</span>
           </button>
 
           <button
             onClick={onManualScan}
             disabled={isScanning}
-            title="Force immediate technical scan"
             className="px-2.5 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors flex items-center gap-1 disabled:opacity-50 shrink-0"
           >
             <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />

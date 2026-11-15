@@ -948,7 +948,18 @@ export class LiveScreenService {
 
         this.notify();
 
-        // Do not auto-launch floating HUD bubble on connect - user toggles via "Floating HUD" button
+        // Automatically open Floating HUD bubble on mobile app connect
+        await this.showFloatingOverlayHUD({
+          direction: 'WAIT',
+          confidence: 0,
+          durationText: '--:--',
+          verdictTitle: 'প্রস্তুত',
+          reasonText: 'স্ক্যান করুন',
+          latencyMs: 0,
+          captureState: 'RUNNING',
+          aiState: 'IDLE',
+        });
+
         voiceAssistantService.speak('স্ক্রিন শেয়ার সংযুক্ত হয়েছে। স্ক্যান করতে স্ক্যান বাটনে চাপুন।');
         return true;
       } else {
@@ -2216,6 +2227,11 @@ export class LiveScreenService {
   }
 
   public async showFloatingOverlayHUD(data: FloatingOverlayData): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      this.hasFloatingOverlayActive = false;
+      this.notify();
+      return;
+    }
     this.hasFloatingOverlayActive = true;
     this.notify();
     try {
@@ -2426,8 +2442,8 @@ export class LiveScreenService {
       direction: 'WAIT',
       confidence: 0,
       durationText: '...',
-      verdictTitle: '🔍 স্ক্যান করা হচ্ছে...',
-      reasonText: 'স্ক্রিন ফ্রেম রিয়েল-টাইম বিশ্লেষণ চলছে',
+      verdictTitle: 'স্ক্যান চলছে',
+      reasonText: 'বিশ্লেষণ হচ্ছে',
       latencyMs: 0,
       aiState: 'ANALYZING',
       isScanning: true,
@@ -2479,8 +2495,8 @@ export class LiveScreenService {
       direction: 'WAIT',
       confidence: 0,
       durationText: '--:--',
-      verdictTitle: '⚡ প্রস্তুত (Ready)',
-      reasonText: 'স্ক্যান করতে বাটনে চাপুন',
+      verdictTitle: 'প্রস্তুত',
+      reasonText: 'স্ক্যান করুন',
       latencyMs: 0,
       aiState: 'IDLE',
       isScanning: false,
@@ -2551,24 +2567,24 @@ export class LiveScreenService {
       this.notify();
     };
 
-    // ১/৫: Chart Verification চলছে
-    postStep(1, '১/৫: Chart Verification চলছে', 'চার্ট, Asset, Timeframe ও ডেটা যাচাই');
+    // ১/৫: চার্ট যাচাই
+    postStep(1, '১/৫ চার্ট যাচাই', 'অ্যাসেট ও টাইমফ্রেম');
     await new Promise((r) => setTimeout(r, 320));
 
-    // ২/৫: Candle Data Collection চলছে
-    postStep(2, '২/৫: Candle Data Collection চলছে', 'OHLC, Closed Candle ও Timer যাচাই');
+    // ২/৫: ক্যান্ডেল ডেটা
+    postStep(2, '২/৫ ক্যান্ডেল', 'OHLC ও টাইমার');
     await new Promise((r) => setTimeout(r, 320));
 
-    // ৩/৫: Multi-Timeframe Analysis চলছে
-    postStep(3, '৩/৫: Multi-Timeframe Analysis চলছে', '১৫M + ৫M + ১M Trend কাঠামো যাচাই');
+    // ৩/৫: মাল্টি-TF
+    postStep(3, '৩/৫ মাল্টি-TF', '১৫M · ৫M · ১M');
     await new Promise((r) => setTimeout(r, 320));
 
-    // ৪/৫: Market Condition Filter করা হচ্ছে
-    postStep(4, '৪/৫: Market Condition Filter করা হচ্ছে', 'Trend, Sideways, Volatility ও Spike ফিল্টার');
+    // ৪/৫: মার্কেট ফিল্টার
+    postStep(4, '৪/৫ ফিল্টার', 'ট্রেন্ড ও ভলিউম');
     await new Promise((r) => setTimeout(r, 320));
 
-    // ৫/৫: Signal Scoring চলছে
-    postStep(5, '৫/৫: Signal Scoring চলছে', 'Indicator ও Price Action মিলিয়ে Score...');
+    // ৫/৫: স্কোরিং
+    postStep(5, '৫/৫ স্কোরিং', 'ফাইনাল সিগন্যাল');
     await new Promise((r) => setTimeout(r, 320));
 
     // 3. Capture and analyze exactly ONE frame
@@ -2592,11 +2608,11 @@ export class LiveScreenService {
           ? `${String(Math.floor(this.expirySecondsLeft / 60)).padStart(2, '0')}:${String(this.expirySecondsLeft % 60).padStart(2, '0')}`
           : '--:--',
         verdictTitle: this.latestResult.direction === 'UP'
-          ? '▲ CALL (সবুজ) — 🔒 লকড'
+          ? '▲ CALL'
           : this.latestResult.direction === 'DOWN'
-          ? '▼ PUT (লাল) — 🔒 লকড'
-          : 'WAIT',
-        reasonText: this.latestResult.visionData?.nextCandlePredictionReasonBn || this.latestResult.reasoning[0] || '১-ক্লিক সিগন্যাল লকড',
+          ? '▼ PUT'
+          : '⏸ WAIT',
+        reasonText: this.latestResult.visionData?.symbol || 'সিগন্যাল প্রস্তুত',
         latencyMs: 0,
         aiState: 'IDLE',
         isScanning: false,
@@ -2606,8 +2622,8 @@ export class LiveScreenService {
         direction: 'WAIT',
         confidence: 0,
         durationText: '--:--',
-        verdictTitle: '⚡ প্রস্তুত (Ready)',
-        reasonText: 'স্ক্যান করতে বাটনে চাপুন',
+        verdictTitle: 'প্রস্তুত',
+        reasonText: 'স্ক্যান করুন',
         latencyMs: 0,
         aiState: 'IDLE',
         isScanning: false,

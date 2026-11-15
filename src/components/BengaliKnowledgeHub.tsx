@@ -138,18 +138,13 @@ export const BengaliKnowledgeHub: React.FC = () => {
             <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
               <Brain className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold text-white tracking-tight">
-                  AI Knowledge Hub & Isolated Playbook
-                </h1>
-                <span className="text-xs text-cyan-400 font-mono bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">
-                  ৭/৩০-দিন রুল লক
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                প্রতিটি মার্কেটের রুল সম্পূর্ণ আলাদা। প্রতিটি সিগন্যাল থেকে ডেটা জমা হয়, কিন্তু ১টি ক্যান্ডেল বিপরীত হলেই মূল রুল পরিবর্তন হয় না।
-              </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-bold text-white tracking-tight">
+                AI নলেজ হাব
+              </h1>
+              <span className="text-xs text-cyan-400 font-mono bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">
+                ৭/৩০-দিন লক
+              </span>
             </div>
           </div>
 
@@ -177,18 +172,18 @@ export const BengaliKnowledgeHub: React.FC = () => {
           </div>
         </div>
 
-        {/* Platform Filter Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-800/80">
+        {/* Single-Line Platform Filter Tabs */}
+        <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-slate-800/80 overflow-x-auto whitespace-nowrap pb-1">
           <button
             type="button"
             onClick={() => setSelectedProfile('ALL')}
-            className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+            className={`flex-1 min-w-fit px-3 py-1.5 text-xs rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
               selectedProfile === 'ALL'
                 ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 font-semibold'
                 : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
             }`}
           >
-            সকল প্রোফাইল
+            সকল
           </button>
           {TRADING_PROFILE_LIST.map((p) => (
             <button
@@ -198,7 +193,7 @@ export const BengaliKnowledgeHub: React.FC = () => {
                 setSelectedProfile(p.id);
                 setSimulatedProfile(p.id);
               }}
-              className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+              className={`flex-1 min-w-fit px-3 py-1.5 text-xs rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
                 selectedProfile === p.id
                   ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-semibold'
                   : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
@@ -443,14 +438,11 @@ export const BengaliKnowledgeHub: React.FC = () => {
       {/* TAB 2: MISTAKE REFLECTIONS DIARY */}
       {activeTab === 'reflections' && (
         <div className="space-y-4">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Brain className="w-4 h-4 text-cyan-400" />
-              <span>প্রতিটি সিগন্যাল পর্যবেক্ষণ ও কোহর্ট কিউ লগ</span>
+              <span>সিগন্যাল পর্যবেক্ষণ লগ</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              কোনো একটি ক্যান্ডেল বিপরীত হলেই মূল রুল পরিবর্তন করা হয় না—প্রতিটি ফলাফল এখানে সংরক্ষিত থাকে এবং ৭ বা ৩০ দিনের কোহর্ট বিশ্লেষণ শেষে নিশ্চিত প্যাটার্নের ওপর ভিত্তি করে রুল আপডেট হয়।
-            </p>
           </div>
 
           <div className="space-y-3">
@@ -516,11 +508,8 @@ export const BengaliKnowledgeHub: React.FC = () => {
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-bold text-white">সিগন্যাল লার্নিং স্যান্ডবক্স (Cohort Test Lab)</h3>
+            <h3 className="text-sm font-bold text-white">সিগন্যাল টেস্ট ল্যাব</h3>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            এখানে নির্দিষ্ট ট্রেড প্রোফাইলের জন্য WIN বা LOSS ফলাফল সাবমিট করে পরীক্ষা করুন—প্রতিটি সিগন্যাল লগে জমা হবে, কিন্তু ১টি ক্যান্ডেলের লসে রুল পরিবর্তন হবে না।
-          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>

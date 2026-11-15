@@ -96,18 +96,13 @@ export const BacktestView: React.FC = () => {
     <div className="space-y-6">
       {/* 1. Configuration Panel */}
       <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 sm:p-5 shadow-sm">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3 mb-4">
-          <div>
-            <h2 className="text-base font-bold text-white font-mono flex items-center gap-2">
-              <BarChart2 className="w-4 h-4 text-emerald-400" />
-              Historical Strategy Validation (Backtesting)
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Empirical historical measurement of the existing 5-rule technical strategy on real Binance OHLCV candle series.
-            </p>
-          </div>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3 mb-4">
+          <h2 className="text-base font-bold text-white font-mono flex items-center gap-2">
+            <BarChart2 className="w-4 h-4 text-emerald-400" />
+            Historical Backtest
+          </h2>
           <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded shrink-0">
-            ✓ Zero Look-Ahead Bias Enforced
+            Zero Look-Ahead
           </span>
         </div>
 
@@ -237,22 +232,12 @@ export const BacktestView: React.FC = () => {
       {/* 2. Results Area */}
       {result && (
         <div className="space-y-6">
-          {/* Disclaimer & Sample Size Alert */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-mono">
-            <div className="flex items-center gap-2 text-slate-300">
-              <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>
-                <strong>Historical Validation:</strong> Past performance measured on historical candle closes does not guarantee future market returns.
-              </span>
+          {isSmallSample && (
+            <div className="flex items-center gap-1.5 text-amber-400 bg-amber-950/60 border border-amber-800/80 px-2.5 py-1.5 rounded text-xs font-mono w-fit">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Small Sample (N={result.completedSignals})</span>
             </div>
-
-            {isSmallSample && (
-              <div className="flex items-center gap-1.5 text-amber-400 bg-amber-950/60 border border-amber-800/80 px-2.5 py-1 rounded shrink-0">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Small Sample (N={result.completedSignals}) · Preliminary Result</span>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Dataset Provenance Card */}
           <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 text-xs font-mono">
@@ -394,13 +379,10 @@ export const BacktestView: React.FC = () => {
 
           {/* Core Score Comparison: 5/5 STRONG vs 4/5 QUALIFIED */}
           <div className="bg-[#111827] border border-slate-800 rounded-lg p-4 sm:p-5">
-            <h3 className="text-sm font-bold text-white font-mono mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-white font-mono mb-4 flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400" />
-              Score Tier Performance Comparison (Empirical Measurement)
+              Score Tier Comparison
             </h3>
-            <p className="text-xs text-slate-400 mb-4 font-mono">
-              Core research question: Does a 5/5 confirmed rule score historically outperform a 4/5 score?
-            </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
               {/* 5/5 STRONG Card */}
@@ -563,12 +545,9 @@ export const BacktestView: React.FC = () => {
           {/* Tab 1: Equity Curve Trend */}
           {activeTab === 'OVERVIEW' && (
             <div className="bg-[#111827] border border-slate-800 rounded-lg p-4">
-              <h4 className="text-xs font-bold text-white font-mono mb-2">
-                Cumulative Outcome Progression
+              <h4 className="text-xs font-bold text-white font-mono mb-3">
+                Equity Curve Progression
               </h4>
-              <p className="text-[11px] text-slate-400 font-mono mb-4">
-                Chronological cumulative trajectory of wins and losses across all qualified signals.
-              </p>
 
               {result.equityCurve.length === 0 ? (
                 <div className="text-center py-6 text-slate-500 text-xs font-mono">
@@ -664,9 +643,6 @@ export const BacktestView: React.FC = () => {
           {/* Tab 3: Rule Combinations */}
           {activeTab === 'RULES' && (
             <div className="space-y-3 font-mono text-xs">
-              <div className="text-slate-400 text-xs">
-                Empirical occurrences of specific rule alignments and their historical resolution:
-              </div>
               {result.ruleCombinations.length === 0 ? (
                 <div className="bg-[#111827] border border-slate-800 rounded-lg p-6 text-center text-slate-500">
                   No rule combinations recorded.

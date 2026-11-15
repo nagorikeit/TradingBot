@@ -333,18 +333,10 @@ export const AgentCommandCenter: React.FC = () => {
             <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
               <Cpu className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-tight">
-                  AI Agent Command Center
-                </h2>
-                <span className="px-2 py-0.5 text-[11px] font-mono rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                  Phase 2C: YouTube & Research Processing & Library
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Caption-First YouTube Ingestion · Safe PDF/Doc Extraction · SSRF & Prompt Injection Firewall · Logical Chunks
-              </p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-white tracking-tight">
+                AI Agent Command Center
+              </h2>
             </div>
           </div>
 
@@ -702,13 +694,9 @@ export const AgentCommandCenter: React.FC = () => {
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
                 <Play className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-sm font-semibold text-slate-200">
-                  Scheduler Manual Trigger Test
+                  Manual Trigger Test
                 </h3>
               </div>
-
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Test the scheduler’s single-run mutex lock, state transition, and execution lifecycle. In Phase 2A, manual triggers verify the lock acquisition and safety foundation without calling external scrapers or AI models.
-              </p>
 
               <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between text-xs">
@@ -719,7 +707,7 @@ export const AgentCommandCenter: React.FC = () => {
                     className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 ${triggerLoading ? 'animate-spin' : ''}`} />
-                    <span>{triggerLoading ? 'Acquiring Lock...' : 'Execute Test Run'}</span>
+                    <span>{triggerLoading ? 'Running...' : 'Execute Run'}</span>
                   </button>
                 </div>
                 {triggerMessage && (
@@ -729,15 +717,9 @@ export const AgentCommandCenter: React.FC = () => {
                 )}
               </div>
 
-              {/* Safety Architecture Note */}
-              <div className="p-3 rounded-lg bg-cyan-950/20 border border-cyan-800/40 text-xs space-y-1">
-                <div className="flex items-center gap-1.5 text-cyan-400 font-semibold text-[11px]">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Single-Run Mutex Guard Active</span>
-                </div>
-                <p className="text-cyan-200/80 text-[11px] leading-relaxed">
-                  Duplicate trigger requests during active runs are rejected with code 409 (MUTEX_LOCKED), preventing parallel race conditions or duplicate sessions.
-                </p>
+              <div className="p-2.5 rounded-lg bg-cyan-950/20 border border-cyan-800/40 text-xs flex items-center gap-1.5 text-cyan-400 font-semibold text-[11px]">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Mutex Guard Active</span>
               </div>
             </div>
           </div>
@@ -1002,17 +984,9 @@ export const AgentCommandCenter: React.FC = () => {
       {/* Sub-Tab: Phase 2B Web Content Acquisition & Untrusted Firewall */}
       {activeSubTab === 'content' && (
         <div className="space-y-6">
-          {/* 1. Critical Security Boundary Alert Banner */}
-          <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-600/40 text-amber-200 space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-sm text-amber-400">
-              <ShieldAlert className="w-4 h-4 shrink-0" />
-              <span>HARD ARCHITECTURAL INVARIANT: UNTRUSTED DATA FIREWALL</span>
-            </div>
-            <p className="text-xs text-amber-200/90 leading-relaxed">
-              All external web, research, and RSS feed content is strictly isolated as <code className="px-1 py-0.5 rounded bg-black/40 font-mono text-amber-300">untrusted: true</code>.
-              External text is <strong>never</strong> treated as instructions, prompt commands, or execution directives.
-              It is quarantined as passive observation data only, with SSRF filters, HTML sanitization, and adversarial injection scanners active.
-            </p>
+          <div className="px-3.5 py-2.5 rounded-xl bg-amber-950/30 border border-amber-600/40 text-amber-300 flex items-center gap-2 font-semibold text-xs">
+            <ShieldAlert className="w-4 h-4 shrink-0" />
+            <span>Untrusted Data Firewall Active</span>
           </div>
 
           {/* 2. Acquisition Console: Fetch & Sanitize Tester */}
@@ -2900,19 +2874,6 @@ export const AgentCommandCenter: React.FC = () => {
       {activeSubTab === 'whatsappAlerts' && (
         <WhatsAppAlertConfigPanel />
       )}
-
-      {/* 5. Existing System Protection Footer */}
-      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span>
-            Existing TradingBot features (Binance WebSockets, 10-Pair Scanner, Backtest, Evaluator, Rules) remain 100% active and preserved.
-          </span>
-        </div>
-        <span className="text-[11px] font-mono text-slate-500">
-          Phase 2C Complete
-        </span>
-      </div>
     </div>
   );
 };
