@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const windowId = sender.tab ? sender.tab.windowId : chrome.windows.WINDOW_ID_CURRENT;
       const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
         format: 'jpeg',
-        quality: 82,
+        quality: 90,
       });
 
       if (!dataUrl || !dataUrl.includes(',')) {

@@ -93,6 +93,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private volatile boolean isTradeActiveAndLocked = false;
     private final java.util.List<Runnable> pendingScanProgressRunnables = new java.util.ArrayList<>();
 
+    // Profile & 5-Step Audit HUD Cache
+    private volatile String activeTradingProfile = "BINARY_OTC";
+    private volatile int lastConfirmedPoints = 0;
+    private volatile boolean[] lastStepResults = new boolean[]{false, false, false, false, false};
+    private volatile String lastClosedCandleColor = "UNCERTAIN";
+    private volatile String lastClosedCandleLabel = "ক্লোজ: --";
+
     private void cancelPendingScanProgress() {
         if (captureHandler != null) {
             for (Runnable r : pendingScanProgressRunnables) {
@@ -264,6 +271,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 this.backendUrl = customUrl.trim().replaceAll("/+$", "");
             }
 
+            String profile = call.getString("tradingProfile", "");
+            if (profile != null && !profile.trim().isEmpty()) {
+                this.activeTradingProfile = profile.trim();
+            }
+
             if (projectionManager == null) {
                 call.reject("MediaProjectionManager not available on this device");
                 return;
@@ -356,8 +368,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         int screenWidth = metrics.widthPixels > 0 ? metrics.widthPixels : 720;
         int screenHeight = metrics.heightPixels > 0 ? metrics.heightPixels : 1280;
 
-        // Scale to 720 width while preserving true device aspect ratio
-        float scale = Math.min(1.0f, 720.0f / (float) screenWidth);
+        // Scale to 1080 width while preserving true device aspect ratio for crisp candle wicks & timers
+        float scale = Math.min(1.0f, 1080.0f / (float) screenWidth);
         int width = Math.round(screenWidth * scale);
         int height = Math.round(screenHeight * scale);
         if (width % 2 != 0) width++;
@@ -401,7 +413,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
                     Bitmap cropped = (safeWidth == w) ? bitmap : Bitmap.createBitmap(bitmap, 0, 0, w, h);
                     ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                    cropped.compress(Bitmap.CompressFormat.JPEG, 75, byteArrayOutputStream);
+                    cropped.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream);
                     byte[] byteArray = byteArrayOutputStream.toByteArray();
 
                     latestFrameBase64 = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP);
@@ -503,17 +515,147 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    // Direct On-Device Native Computer Vision Analyzer:
-                    // Instant (<15ms), 100% offline, zero network reliance, completely eliminates connection errors!
+                    // Priority 1: Cloud Gemini Vision 5-Step Analyzer
+                    if (tryBackendVisionAnalysis(frameBase64, timestamp)) {
+                        return;
+                    }
+                    // Priority 2: On-Device Fallback Computer Vision Analyzer (Offline resilience)
                     analyzeFrameLocallyNative(frameBase64);
                 } catch (Exception e) {
-                    Log.e("TradePulseNativeScreen", "Local analysis exception: " + e.getMessage(), e);
+                    Log.e("TradePulseNativeScreen", "Native analysis exception: " + e.getMessage(), e);
                     showAnalysisErrorOnOverlay("বিশ্লেষণ ব্যর্থ হয়েছে — আবার চাপুন");
                 } finally {
                     isAnalyzingNativeFrame.set(false);
                 }
             }
         });
+    }
+
+    private boolean tryBackendVisionAnalysis(final String frameBase64, final long timestamp) {
+        HttpURLConnection conn = null;
+        try {
+            if (backendUrl == null || backendUrl.trim().isEmpty()) {
+                return false;
+            }
+            URL url = new URL(backendUrl + "/api/agent/vision/analyze-frame");
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(4500);
+            conn.setReadTimeout(11000);
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+
+            JSONObject payload = new JSONObject();
+            payload.put("imageBase64", frameBase64);
+            payload.put("mimeType", "image/jpeg");
+            payload.put("frameCapturedAt", timestamp > 0 ? timestamp : System.currentTimeMillis());
+            payload.put("tradingProfile", activeTradingProfile != null ? activeTradingProfile : "BINARY_OTC");
+
+            byte[] out = payload.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(out);
+            }
+
+            int status = conn.getResponseCode();
+            if (status < 200 || status >= 300) {
+                Log.w("TradePulseNativeScreen", "Backend vision non-200: " + status);
+                return false;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            try (InputStream is = conn.getInputStream();
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+            }
+
+            JSONObject json = new JSONObject(sb.toString());
+            if (!json.optBoolean("ok", false) || !json.has("result")) {
+                return false;
+            }
+            JSONObject result = json.getJSONObject("result");
+            String direction = result.optString("direction", "WAIT");
+            int confidence = result.optInt("confidence", 0);
+            String verdictTitle = result.optString("verdictTitle", direction);
+
+            JSONObject vision = result.optJSONObject("visionData");
+            String symbol = (vision != null && !vision.optString("symbol", "").isEmpty())
+                    ? vision.optString("symbol", "CHART")
+                    : "CHART";
+
+            String finalReason = "";
+            JSONArray reasoningArr = result.optJSONArray("reasoning");
+            if (reasoningArr != null && reasoningArr.length() > 0) {
+                finalReason = reasoningArr.optString(0, "");
+            }
+            if ((finalReason == null || finalReason.isEmpty()) && vision != null) {
+                finalReason = vision.optString("candlestickPattern", verdictTitle);
+            }
+
+            // Parse 5-step audit metrics & closed candle color
+            boolean[] steps = new boolean[]{false, false, false, false, false};
+            int pts = 0;
+            String closedColor = (vision != null) ? vision.optString("closedCandleColor", "UNCERTAIN") : "UNCERTAIN";
+            String closedLabel = "ক্লোজ: --";
+            JSObject flowJs = null;
+
+            JSONObject flowJson = result.optJSONObject("signalFlow");
+            if (flowJson != null) {
+                flowJs = new JSObject(flowJson.toString());
+                pts = flowJson.optInt("confirmedPoints", 0);
+                JSONArray stepChecks = flowJson.optJSONArray("stepChecks");
+                if (stepChecks != null && stepChecks.length() == 5) {
+                    int counted = 0;
+                    for (int i = 0; i < 5; i++) {
+                        JSONObject sc = stepChecks.optJSONObject(i);
+                        boolean passed = sc != null && sc.optBoolean("passed", false);
+                        steps[i] = passed;
+                        if (passed) counted++;
+                    }
+                    if (pts == 0) pts = counted;
+                }
+                JSONObject cData = flowJson.optJSONObject("candleData");
+                if (cData != null) {
+                    JSONObject cClosed = cData.optJSONObject("closedCandle");
+                    if (cClosed != null) {
+                        String t = cClosed.optString("type", "");
+                        if ("UNCERTAIN".equals(closedColor)) {
+                            if ("BULLISH".equals(t)) closedColor = "GREEN";
+                            else if ("BEARISH".equals(t)) closedColor = "RED";
+                            else if ("DOJI".equals(t)) closedColor = "DOJI";
+                        }
+                        String lbl = cClosed.optString("labelBn", "");
+                        if (lbl != null && !lbl.isEmpty()) {
+                            closedLabel = "ক্লোজ: " + lbl;
+                        }
+                    }
+                }
+            }
+
+            if ("ক্লোজ: --".equals(closedLabel)) {
+                if ("GREEN".equalsIgnoreCase(closedColor)) closedLabel = "ক্লোজ: সবুজ";
+                else if ("RED".equalsIgnoreCase(closedColor)) closedLabel = "ক্লোজ: লাল";
+                else if ("DOJI".equalsIgnoreCase(closedColor)) closedLabel = "ক্লোজ: ডোজি";
+                else closedLabel = "ক্লোজ: অস্পষ্ট";
+            }
+
+            this.lastConfirmedPoints = pts;
+            this.lastStepResults = steps;
+            this.lastClosedCandleColor = closedColor;
+            this.lastClosedCandleLabel = closedLabel;
+
+            updateOverlayUI(direction, confidence, verdictTitle, finalReason, symbol, flowJs);
+            return true;
+        } catch (Exception e) {
+            Log.w("TradePulseNativeScreen", "Backend vision fallback to local: " + e.getMessage());
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
+            }
+        }
     }
 
     private static class CandleBand {
@@ -1116,9 +1258,50 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             String direction = proposedDirection;
 
+            boolean step1Passed = isAuthenticChart;
+            boolean step2Passed = (lastClosedCandle != null);
+            boolean step3Passed = !"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M);
+            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike;
+            boolean step5Passed = !"WAIT".equals(direction);
+            int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
+
+            String closedTypeStr = (lastClosedCandle != null && lastClosedCandle.isDoji)
+                    ? "DOJI"
+                    : (lastClosedCandle != null && lastClosedCandle.isGreen ? "BULLISH" : "BEARISH");
+            String closedColorStr = (lastClosedCandle != null && lastClosedCandle.isDoji)
+                    ? "DOJI"
+                    : (lastClosedCandle != null && lastClosedCandle.isGreen ? "GREEN" : "RED");
+            String closedShortBn = "GREEN".equals(closedColorStr)
+                    ? "সবুজ (বুলিশ)"
+                    : ("RED".equals(closedColorStr) ? "লাল (বিয়ারিশ)" : "ডোজি");
+
+            this.lastConfirmedPoints = confirmedPoints;
+            this.lastStepResults = new boolean[]{step1Passed, step2Passed, step3Passed, step4Passed, step5Passed};
+            this.lastClosedCandleColor = closedColorStr;
+            this.lastClosedCandleLabel = "ক্লোজ: " + ("GREEN".equals(closedColorStr) ? "সবুজ" : ("RED".equals(closedColorStr) ? "লাল" : "ডোজি"));
+
             JSObject flowObj = new JSObject();
+            flowObj.put("confirmedPoints", confirmedPoints);
+            flowObj.put("totalPoints", 5);
+
+            try {
+                JSONArray stepChecksArr = new JSONArray();
+                String[] keys = new String[]{"CHART", "CLOSED_CANDLE", "MTF_TREND", "MARKET_FILTER", "SETUP_SCORE"};
+                String[] labels = new String[]{"১. চার্ট", "২. ক্লোজ ক্যান্ডেল", "৩. মাল্টি-TF", "৪. ফিল্টার", "৫. স্কোর"};
+                boolean[] passedArr = new boolean[]{step1Passed, step2Passed, step3Passed, step4Passed, step5Passed};
+                for (int i = 0; i < 5; i++) {
+                    JSONObject sc = new JSONObject();
+                    sc.put("step", i + 1);
+                    sc.put("key", keys[i]);
+                    sc.put("labelBn", labels[i]);
+                    sc.put("passed", passedArr[i]);
+                    stepChecksArr.put(sc);
+                }
+                flowObj.put("stepChecks", stepChecksArr);
+            } catch (Exception ignored) {}
+
             JSObject cVer = new JSObject();
-            cVer.put("isChartValid", true);
+            cVer.put("isChartValid", step1Passed);
             cVer.put("detectedAsset", verifiedSymbol);
             cVer.put("detectedTimeframe", "1M");
             cVer.put("candleBarsCount", candleCount);
@@ -1128,11 +1311,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             JSObject cData = new JSObject();
             cData.put("candleCount", candleCount);
             JSObject cClosed = new JSObject();
-            cClosed.put("type", lastClosedCandle != null && lastClosedCandle.isGreen ? "BULLISH" : "BEARISH");
+            cClosed.put("type", closedTypeStr);
             cClosed.put("bodySizePx", lastClosedCandle != null ? (lastClosedCandle.bodyHeight > 0 ? lastClosedCandle.bodyHeight : lastClosedCandle.height) : 0);
             cClosed.put("upperWickPx", lastClosedCandle != null ? lastClosedCandle.upperWickPx : 0);
             cClosed.put("lowerWickPx", lastClosedCandle != null ? lastClosedCandle.lowerWickPx : 0);
             cClosed.put("isRejection", lastClosedCandle != null && (lastClosedCandle.isHammer || lastClosedCandle.isShootingStar));
+            cClosed.put("labelBn", closedShortBn);
             cClosed.put("isHammer", lastClosedCandle != null && lastClosedCandle.isHammer);
             cClosed.put("isShootingStar", lastClosedCandle != null && lastClosedCandle.isShootingStar);
             cClosed.put("isDoji", lastClosedCandle != null && lastClosedCandle.isDoji);
@@ -1148,22 +1332,22 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cMtf.put("macroTrend15m", macroTrend15M);
             cMtf.put("secondaryTrend5m", secTrend5M);
             cMtf.put("microTrend1m", microTrend1M);
-            cMtf.put("confluenceStatus", !"WAIT".equals(direction) ? "ALIGNED" : "CONFLICT");
+            cMtf.put("confluenceStatus", step3Passed ? "ALIGNED" : "CONFLICT");
             flowObj.put("multiTimeframe", cMtf);
 
             JSObject cFilter = new JSObject();
-            cFilter.put("regime", isAlternatingChop ? "SIDEWAYS_CHOP" : (isSpinningTop || isExhaustionSpike ? "HIGH_VOLATILITY" : "NORMAL"));
-            cFilter.put("passed", !"WAIT".equals(direction));
-            cFilter.put("blockReason", finalReason);
+            cFilter.put("regime", isAlternatingChop ? "SIDEWAYS" : (isSpinningTop || isExhaustionSpike ? "HIGH_VOLATILITY_SPIKE" : "TRENDING"));
+            cFilter.put("passed", step4Passed);
+            cFilter.put("blockReason", step4Passed ? "" : finalReason);
             flowObj.put("marketFilter", cFilter);
 
             JSObject cScore = new JSObject();
-            cScore.put("priceActionScore", !"WAIT".equals(direction) ? 4.8 : 2.0);
-            cScore.put("indicatorMomentumScore", microGreenPct >= 60 || microRedPct >= 60 ? 3.0 : 1.5);
-            cScore.put("trendAlignmentScore", !"WAIT".equals(direction) ? 2.0 : 0.0);
-            cScore.put("totalScore", confidence > 0 ? (confidence / 10.0f) : 0.0f);
+            cScore.put("priceActionScore", step2Passed ? 4.5 : 2.0);
+            cScore.put("indicatorMomentumScore", microGreenPct >= 60 || microRedPct >= 60 ? 2.8 : 1.5);
+            cScore.put("trendAlignmentScore", step3Passed ? 1.8 : 0.6);
+            cScore.put("totalScore", confidence > 0 ? (confidence / 10.0f) : ((confirmedPoints / 5.0f) * 8.0f));
             cScore.put("thresholdRequired", 7.5);
-            cScore.put("finalVerdict", direction);
+            cScore.put("finalVerdict", "UP".equals(direction) ? "CALL" : ("DOWN".equals(direction) ? "PUT" : "WAIT"));
             flowObj.put("signalScoring", cScore);
 
             updateOverlayUI(direction, confidence, verdictTitle, finalReason, verifiedSymbol, flowObj);
@@ -1192,11 +1376,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         if (isTtsInitialized && textToSpeech != null) {
             String ttsMsg = null;
             if ("UP".equalsIgnoreCase(direction)) {
-                ttsMsg = "কল আপ সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
+                ttsMsg = "কল আপ সিগন্যাল। পয়েন্ট " + lastConfirmedPoints + "। কনফিডেন্স " + confidence + " পারসেন্ট।";
             } else if ("DOWN".equalsIgnoreCase(direction)) {
-                ttsMsg = "পুট ডাউন সিগন্যাল। কনফিডেন্স " + confidence + " পারসেন্ট।";
+                ttsMsg = "পুট ডাউন সিগন্যাল। পয়েন্ট " + lastConfirmedPoints + "। কনফিডেন্স " + confidence + " পারসেন্ট।";
             } else {
-                ttsMsg = "মার্কেট রেঞ্জিং। পরবর্তী ক্যান্ডেলের জন্য প্রস্তুত থাকুন।";
+                ttsMsg = "মার্কেট রেঞ্জিং। পয়েন্ট ৫ এর মধ্যে " + lastConfirmedPoints + "। অপেক্ষা করুন।";
             }
             if (ttsMsg != null) {
                 final String msg = ttsMsg;
@@ -1219,10 +1403,52 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         nativeResult.put("verdictTitle", verdictTitle);
         nativeResult.put("reasonText", finalReason);
         nativeResult.put("symbol", finalSymbol);
+        nativeResult.put("confirmedPoints", lastConfirmedPoints);
+        nativeResult.put("closedCandleColor", lastClosedCandleColor);
+        nativeResult.put("closedCandleLabel", lastClosedCandleLabel);
+        nativeResult.put("tradingProfile", activeTradingProfile);
         if (flowObj != null) {
             nativeResult.put("signalFlow", flowObj);
         }
         notifyListeners("onNativeAnalysisComplete", nativeResult);
+    }
+
+    private void updateOverlayAuditWidgets(int confirmedPoints, boolean[] stepResults, String closedLabel, String closedColor) {
+        if (overlayView == null) return;
+        TextView pointsView = (TextView) overlayView.findViewWithTag("pointsText");
+        if (pointsView != null) {
+            if (confirmedPoints <= 0 && ("UNCERTAIN".equalsIgnoreCase(closedColor) || closedLabel == null || closedLabel.endsWith("--"))) {
+                pointsView.setVisibility(View.GONE);
+            } else {
+                pointsView.setVisibility(View.VISIBLE);
+                String cText = (closedLabel != null && !closedLabel.isEmpty()) ? closedLabel : "ক্লোজ: --";
+                pointsView.setText("পয়েন্ট: " + confirmedPoints + "/৫  ·  " + cText);
+                int ptsColor = confirmedPoints >= 4 ? 0xFF34D399 : (confirmedPoints == 3 ? 0xFFFBBF24 : 0xFFFB7185);
+                pointsView.setTextColor(ptsColor);
+            }
+        }
+
+        android.view.ViewGroup stepsRow = (android.view.ViewGroup) overlayView.findViewWithTag("stepsRow");
+        if (stepsRow != null) {
+            if (confirmedPoints <= 0 && (stepResults == null || !stepResults[0])) {
+                stepsRow.setVisibility(View.GONE);
+            } else {
+                stepsRow.setVisibility(View.VISIBLE);
+                for (int i = 0; i < 5; i++) {
+                    TextView pill = (TextView) overlayView.findViewWithTag("stepPill_" + (i + 1));
+                    if (pill != null) {
+                        boolean ok = stepResults != null && i < stepResults.length && stepResults[i];
+                        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                        bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+                        bg.setCornerRadius(12f);
+                        bg.setColor(ok ? 0x3310B981 : 0x22EF4444);
+                        bg.setStroke(2, ok ? 0xFF10B981 : 0x88EF4444);
+                        pill.setBackground(bg);
+                        pill.setTextColor(ok ? 0xFF34D399 : 0xFFFDA4AF);
+                    }
+                }
+            }
+        }
     }
 
     private void applySignalToOverlay(String direction, int confidence, String verdictTitle, String reason, String symbol) {
@@ -1261,20 +1487,22 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 String initTimeStr = String.format(Locale.US, "%02d:%02d", initSecs / 60, initSecs % 60);
                 dirView.setText(badgeText + "  " + confidence + "%  ⏱ " + initTimeStr);
             } else {
-                dirView.setText(verdictTitle != null && !verdictTitle.isEmpty() ? verdictTitle : "⏸ চার্ট মেলেনি (WAIT)");
+                dirView.setText(verdictTitle != null && !verdictTitle.isEmpty() ? verdictTitle : "⏸ WAIT (" + lastConfirmedPoints + "/৫)");
             }
         }
 
-        // 3. Update Details Text with dynamic real-time vision notices
+        // 3. Update Details Text & Audit Row + 5 Step Pills
         if (detView != null) {
             String shortReason = (reason != null && !reason.isEmpty()) ? reason : "মোমেন্টাম নিশ্চিত";
             if (shortReason.length() > 62) shortReason = shortReason.substring(0, 60) + "..";
             if (hasSignal) {
-                detView.setText(shortReason + " • 🔒 লকড");
+                detView.setText(symbol + " · " + shortReason + " • 🔒");
             } else {
                 detView.setText(shortReason);
             }
         }
+
+        updateOverlayAuditWidgets(lastConfirmedPoints, lastStepResults, lastClosedCandleLabel, lastClosedCandleColor);
 
         // 4. Update Button visual to 'New Scan' button!
         if (toggleBtn != null) {
@@ -2037,6 +2265,38 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         detailsView.setText("স্ক্যান করতে বাটনে চাপুন");
         dragContainer.addView(detailsView);
 
+        TextView pointsView = new TextView(getContext());
+        pointsView.setId(android.view.View.generateViewId());
+        pointsView.setTextSize(10);
+        pointsView.setTextColor(0xFF38BDF8);
+        pointsView.setTypeface(null, android.graphics.Typeface.BOLD);
+        pointsView.setTag("pointsText");
+        pointsView.setPadding(0, 6, 0, 2);
+        pointsView.setVisibility(View.GONE);
+        dragContainer.addView(pointsView);
+
+        android.widget.LinearLayout stepsRow = new android.widget.LinearLayout(getContext());
+        stepsRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        stepsRow.setTag("stepsRow");
+        stepsRow.setPadding(0, 4, 0, 2);
+        stepsRow.setVisibility(View.GONE);
+        String[] stepTitles = new String[]{"১.চার্ট", "২.ক্লোজ", "৩.TF", "৪.ফিল্টার", "৫.স্কোর"};
+        for (int i = 0; i < 5; i++) {
+            TextView pill = new TextView(getContext());
+            pill.setTag("stepPill_" + (i + 1));
+            pill.setText(stepTitles[i]);
+            pill.setTextSize(9);
+            pill.setTypeface(null, android.graphics.Typeface.BOLD);
+            pill.setGravity(Gravity.CENTER);
+            pill.setPadding(8, 4, 8, 4);
+            android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f
+            );
+            if (i > 0) lp.setMargins(4, 0, 0, 0);
+            stepsRow.addView(pill, lp);
+        }
+        dragContainer.addView(stepsRow);
+
         layout.addView(dragContainer);
 
         // Bottom Action Button Row with ONE-CLICK SCAN BUTTON (Controlled directly from Floating Bubble)
@@ -2274,6 +2534,31 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             this.backendUrl = customUrl.trim().replaceAll("/+$", "");
         }
 
+        String profile = call.getString("tradingProfile", "");
+        if (profile != null && !profile.trim().isEmpty()) {
+            this.activeTradingProfile = profile.trim();
+        }
+
+        if (call.hasOption("confirmedPoints")) {
+            this.lastConfirmedPoints = call.getInt("confirmedPoints", this.lastConfirmedPoints);
+        }
+        if (call.hasOption("closedCandleColor")) {
+            this.lastClosedCandleColor = call.getString("closedCandleColor", this.lastClosedCandleColor);
+        }
+        if (call.hasOption("closedCandleLabel")) {
+            this.lastClosedCandleLabel = call.getString("closedCandleLabel", this.lastClosedCandleLabel);
+        }
+        if (call.hasOption("stepResults")) {
+            com.getcapacitor.JSArray arr = call.getArray("stepResults");
+            if (arr != null && arr.length() >= 5) {
+                boolean[] parsed = new boolean[5];
+                for (int i = 0; i < 5; i++) {
+                    parsed[i] = arr.optBoolean(i, false);
+                }
+                this.lastStepResults = parsed;
+            }
+        }
+
         String direction = call.getString("direction", "WAIT");
         int confidence = call.getInt("confidence", 0);
         String durationText = call.getString("durationText", "--:--");
@@ -2283,7 +2568,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
         int frameCount = call.getInt("frameCount", sequenceCounter);
         String lastFrameTime = call.getString("lastFrameTime", "");
-        String resolution = call.getString("resolution", "720p");
+        String resolution = call.getString("resolution", "1080p");
         int latencyMs = call.getInt("latencyMs", 0);
         String errorReason = call.getString("errorReason", "");
         String aiState = call.getString("aiState", "IDLE");
@@ -2319,18 +2604,18 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 dirView.setText("⚠️ " + errorReason);
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("Frame #" + frameCount + " • ⏱ " + latencyMs + "ms • State: WAIT");
+                updateOverlayAuditWidgets(0, new boolean[]{false,false,false,false,false}, "ক্লোজ: --", "UNCERTAIN");
             } else if (isBusy) {
                 dirView.setTextColor(0xFF38BDF8);
                 dirView.setText("⚡ ১-ক্লিক স্ক্যান হচ্ছে...");
                 detView.setVisibility(View.VISIBLE);
-                detView.setText("ফ্রেম বিশ্লেষণ চলছে — ১টি সিগন্যাল লক হবে");
+                detView.setText("ফ্রেম বিশ্লেষণ চলছে — ৫-ধাপ যাচাই");
+                updateOverlayAuditWidgets(0, new boolean[]{false,false,false,false,false}, "ক্লোজ: --", "UNCERTAIN");
             } else if (hasSignal) {
-                // When chart analyzed: UP / DOWN - ALWAYS SHOW IT PROMINENTLY ON THE FLOATING BUBBLE!
                 detView.setVisibility(View.VISIBLE);
                 String badgeText = "UP".equalsIgnoreCase(direction) ? "▲ CALL (সবুজ)" : "▼ PUT (লাল)";
                 dirView.setTextColor(strokeColor);
 
-                // Include Live Candle Expiry Timer: prioritize active synchronized native clock!
                 String timerBadge = "";
                 if (overlaySecondsRemaining > 0) {
                     int mins = overlaySecondsRemaining / 60;
@@ -2343,13 +2628,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
                 String shortReason = (reasonText != null && !reasonText.isEmpty()) ? reasonText : "মোমেন্টাম নিশ্চিত";
                 if (shortReason.length() > 34) shortReason = shortReason.substring(0, 32) + "..";
-                detView.setText(symbol + " • " + shortReason + " • 🔒 লকড");
+                detView.setText(symbol + " • " + shortReason + " • 🔒");
+                updateOverlayAuditWidgets(lastConfirmedPoints, lastStepResults, lastClosedCandleLabel, lastClosedCandleColor);
             } else if ("WAIT".equalsIgnoreCase(direction)) {
                 dirView.setTextColor(0xFFF59E0B);
                 if (verdictTitle != null && !verdictTitle.isEmpty()) {
                     dirView.setText(verdictTitle);
                 } else {
-                    dirView.setText("⏸ চার্ট মেলেনি (WAIT)");
+                    dirView.setText("⏸ WAIT (" + lastConfirmedPoints + "/৫)");
                 }
                 detView.setVisibility(View.VISIBLE);
                 String sub = (reasonText != null && !reasonText.trim().isEmpty())
@@ -2357,11 +2643,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         : "ক্যান্ডেল স্পষ্ট রাখুন বা বাবলটি একপাশে সরান";
                 if (sub.length() > 36) sub = sub.substring(0, 34) + "..";
                 detView.setText(sub);
+                updateOverlayAuditWidgets(lastConfirmedPoints, lastStepResults, lastClosedCandleLabel, lastClosedCandleColor);
             } else {
                 dirView.setTextColor(0xFF38BDF8);
                 dirView.setText("⚡ প্রস্তুত (Ready)");
                 detView.setVisibility(View.VISIBLE);
                 detView.setText("স্ক্যান করতে নিচের বাটনে ট্যাপ করুন");
+                updateOverlayAuditWidgets(0, new boolean[]{false,false,false,false,false}, "ক্লোজ: --", "UNCERTAIN");
             }
         }
     }

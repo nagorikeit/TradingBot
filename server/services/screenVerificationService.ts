@@ -393,93 +393,365 @@ export class ScreenVerificationService {
     const assetName = visionData.symbol || 'ASSET';
     let verdictTitle = `WAIT / NEUTRAL (${assetName})`;
 
+    // Normalize Closed Candle info from Vision AI
+    const rawClosedColor = visionData.closedCandleColor;
+    const closedCandleType: 'BULLISH' | 'BEARISH' | 'DOJI' =
+      rawClosedColor === 'GREEN' || visionData.lastCandleDirection === 'BULLISH'
+        ? 'BULLISH'
+        : rawClosedColor === 'RED' || visionData.lastCandleDirection === 'BEARISH'
+        ? 'BEARISH'
+        : 'DOJI';
+
+    const upperWickPct = Number(visionData.closedCandleUpperWickPercent ?? 0);
+    const lowerWickPct = Number(visionData.closedCandleLowerWickPercent ?? 0);
+    const bodyPct = Number(visionData.closedCandleBodyPercent ?? (closedCandleType === 'DOJI' ? 12 : 55));
+    const hasRejection =
+      visionData.closedCandleRejection === 'UPPER_REJECTION' ||
+      visionData.closedCandleRejection === 'LOWER_REJECTION' ||
+      upperWickPct >= 35 ||
+      lowerWickPct >= 35;
+
+    const closedCandleLabelBn =
+      closedCandleType === 'BULLISH'
+        ? `সবুজ${hasRejection ? ' (উইক রিজেকশন)' : ' (বুলিশ বডি)'}`
+        : closedCandleType === 'BEARISH'
+        ? `লাল${hasRejection ? ' (উইক রিজেকশন)' : ' (বিয়ারিশ বডি)'}`
+        : 'ডোজি (সিদ্ধান্তহীন)';
+
+    // Normalize Multi-Timeframe & Market Filter from Vision AI
+    const macroTrend15m =
+      visionData.macroTrend15m ||
+      (visionData.chartStructure === 'UPTREND'
+        ? 'UPTREND'
+        : visionData.chartStructure === 'DOWNTREND'
+        ? 'DOWNTREND'
+        : 'SIDEWAYS');
+    const secondaryTrend5m = visionData.secondaryTrend5m || macroTrend15m;
+    const microTrend1m =
+      visionData.microTrend1m ||
+      (closedCandleType === 'BULLISH' ? 'UPTREND' : closedCandleType === 'BEARISH' ? 'DOWNTREND' : 'SIDEWAYS');
+
+    const marketRegime =
+      visionData.marketRegime ||
+      (visionData.chartStructure === 'RANGING' || visionData.chartStructure === 'CONSOLIDATION'
+        ? 'SIDEWAYS'
+        : visionData.tradeQualityTier === 'HIGH_RISK_DOJI'
+        ? 'DOJI_CHOPPY'
+        : 'TRENDING');
+
     // SAFETY GUARD 4: Price Mismatch Gate
+    let signalFlow = visionData.signalFlow;
+
     if (marketVerification.status === 'PRICE_MISMATCH') {
       direction = 'WAIT';
-      confidence = 10;
+      confidence = 15;
       verdictTitle = `WAIT / PRICE MISMATCH (${assetName})`;
       suggestedExpiry = 'N/A';
       reasoning.push(
         `প্রাইস অমিল গার্ড: স্ক্রিন প্রাইস ($${marketVerification.screenPrice}) ও লাইভ মার্কেট ($${marketVerification.livePrice}) এর মধ্যে ${marketVerification.priceDeltaPercent}% অমিল। চার্ট বা স্প্রেড অসঙ্গতিপূর্ণ।`
       );
+      const stepChecks = [
+        { step: 1, key: 'CHART' as const, labelBn: 'চার্ট', passed: true, detailBn: assetName },
+        { step: 2, key: 'CLOSED_CANDLE' as const, labelBn: 'ক্লোজ ক্যান্ডেল', passed: closedCandleType !== 'DOJI', detailBn: closedCandleLabelBn },
+        { step: 3, key: 'MTF_TREND' as const, labelBn: 'মাল্টি-TF', passed: false, detailBn: 'অমিল' },
+        { step: 4, key: 'MARKET_FILTER' as const, labelBn: 'ফিল্টার', passed: false, detailBn: 'প্রাইস মিসম্যাচ' },
+        { step: 5, key: 'SETUP_SCORE' as const, labelBn: 'স্কোর', passed: false, detailBn: 'WAIT' },
+      ];
+      signalFlow = {
+        confirmedPoints: stepChecks.filter((s) => s.passed).length,
+        totalPoints: 5,
+        stepChecks,
+        chartVerification: {
+          isChartValid: true,
+          detectedAsset: assetName,
+          detectedTimeframe: visionData.timeframe || '1m',
+          candleBarsCount: 12,
+          notes: 'চার্ট শনাক্ত হলেও লাইভ প্রাইসে অমিল।',
+        },
+        candleData: {
+          candleCount: 12,
+          closedCandle: {
+            type: closedCandleType,
+            bodySizePx: Math.round(bodyPct),
+            upperWickPx: Math.round(upperWickPct),
+            lowerWickPx: Math.round(lowerWickPct),
+            isRejection: hasRejection,
+            labelBn: closedCandleLabelBn,
+          },
+          runningCandle: {
+            isForming: visionData.formingCandleColor !== 'NONE',
+            intraBarBias:
+              visionData.formingCandleColor === 'GREEN'
+                ? 'BUYING'
+                : visionData.formingCandleColor === 'RED'
+                ? 'SELLING'
+                : 'NEUTRAL',
+          },
+          candleTimerSecondsLeft: visionData.candleTimerSecondsLeft ?? 0,
+        },
+        multiTimeframe: {
+          macroTrend15m,
+          secondaryTrend5m,
+          microTrend1m,
+          confluenceStatus: 'CONFLICT',
+        },
+        marketFilter: {
+          regime: marketRegime,
+          passed: false,
+          blockReason: 'প্রাইস অমিল গার্ড',
+        },
+        signalScoring: {
+          priceActionScore: 1.5,
+          indicatorMomentumScore: 0.5,
+          trendAlignmentScore: 0,
+          totalScore: 2.0,
+          thresholdRequired: 7.5,
+          finalVerdict: 'WAIT',
+        },
+      };
     } else {
-      // 3. Professional Binary Options Price Action Consensus Engine
+      // 3. High-Precision Consensus Scoring + 5-Step Verification Gate
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
-      const aiForecast = visionData.predictedNextCandle;
+      const aiForecast = visionData.predictedNextCandle || 'WAIT';
       const setup = (visionData.priceActionSetup || '').toLowerCase();
       const pattern = (visionData.candlestickPattern || '').toLowerCase();
 
-      let score = 0;
+      let directionalScore = 0;
 
-      // Weight 1: AI Multimodal Price Action Forecast (Evaluates full chart)
-      if (aiForecast === 'CALL') score += 4;
-      if (aiForecast === 'PUT') score -= 4;
+      if (aiForecast === 'CALL') directionalScore += 4;
+      if (aiForecast === 'PUT') directionalScore -= 4;
 
-      // Weight 2: Specific Candlestick Rejections (Pin Bar / Shooting Star / Hammer)
-      const isBearishRejection = setup.includes('shooting star') || setup.includes('exhaustion') || pattern.includes('shooting star') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BULLISH');
-      const isBullishRejection = setup.includes('hammer') || setup.includes('exhaustion') || pattern.includes('hammer') || (pattern.includes('pin bar') && visionData.lastCandleDirection === 'BEARISH');
+      const isBearishRejection =
+        visionData.closedCandleRejection === 'UPPER_REJECTION' ||
+        setup.includes('shooting star') ||
+        pattern.includes('shooting star') ||
+        (pattern.includes('pin bar') && closedCandleType === 'BULLISH');
+      const isBullishRejection =
+        visionData.closedCandleRejection === 'LOWER_REJECTION' ||
+        setup.includes('hammer') ||
+        pattern.includes('hammer') ||
+        (pattern.includes('pin bar') && closedCandleType === 'BEARISH');
 
-      if (isBearishRejection) score -= 3;
-      if (isBullishRejection) score += 3;
+      if (isBearishRejection) directionalScore -= 3;
+      if (isBullishRejection) directionalScore += 3;
 
-      // Weight 3: Indicator Confluence
-      score += bullishIndicators * 2;
-      score -= bearishIndicators * 2;
+      directionalScore += bullishIndicators * 1.5;
+      directionalScore -= bearishIndicators * 1.5;
 
-      // Weight 4: Trend Direction & Momentum
-      if (!isBearishRejection && visionData.chartStructure === 'UPTREND') score += 2;
-      if (!isBullishRejection && visionData.chartStructure === 'DOWNTREND') score -= 2;
+      if (!isBearishRejection && macroTrend15m === 'UPTREND') directionalScore += 2;
+      if (!isBullishRejection && macroTrend15m === 'DOWNTREND') directionalScore -= 2;
 
-      // Weight 5: Engulfing patterns
-      if (pattern.includes('bullish engulfing')) score += 3;
-      if (pattern.includes('bearish engulfing')) score -= 3;
+      if (pattern.includes('bullish engulfing')) directionalScore += 3;
+      if (pattern.includes('bearish engulfing')) directionalScore -= 3;
 
-      // Weight 6: Candle direction bias
-      if (visionData.lastCandleDirection === 'BULLISH') score += 1;
-      if (visionData.lastCandleDirection === 'BEARISH') score -= 1;
+      if (closedCandleType === 'BULLISH' && !isBearishRejection) directionalScore += 1;
+      if (closedCandleType === 'BEARISH' && !isBullishRejection) directionalScore -= 1;
 
-      // Decisive Direction or profile-safe WAIT when AI explicitly warns choppy/unclear
-      if (aiForecast === 'WAIT' && visionData.tradeQualityTier === 'HIGH_RISK_DOJI') {
+      const step1Passed = Boolean(visionData.step1ChartValid ?? visionData.isClearTradingChart);
+      const step2Passed = Boolean(
+        visionData.step2ClosedCandleValid ??
+          (rawClosedColor !== 'UNCERTAIN' &&
+            visionData.lastCandleDirection !== 'UNCERTAIN' &&
+            (closedCandleType !== 'DOJI' || hasRejection))
+      );
+      const mtfConfluence: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL' =
+        macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
+          ? 'ALIGNED'
+          : macroTrend15m === 'SIDEWAYS' && secondaryTrend5m === 'SIDEWAYS'
+          ? 'NEUTRAL'
+          : macroTrend15m !== secondaryTrend5m && secondaryTrend5m !== 'SIDEWAYS'
+          ? 'CONFLICT'
+          : 'NEUTRAL';
+
+      const step3Passed = Boolean(
+        visionData.step3TrendAligned ?? (mtfConfluence === 'ALIGNED' || hasRejection)
+      );
+
+      const filterPassed =
+        visionData.step4FilterPassed !== undefined
+          ? Boolean(visionData.step4FilterPassed)
+          : marketRegime === 'TRENDING' ||
+            (marketRegime !== 'DOJI_CHOPPY' &&
+              marketRegime !== 'HIGH_VOLATILITY_SPIKE' &&
+              visionData.tradeQualityTier !== 'HIGH_RISK_DOJI');
+
+      // Weighted 10-point score
+      const rawPaScore =
+        typeof visionData.priceActionScore === 'number'
+          ? Math.min(5, Math.max(0, visionData.priceActionScore))
+          : Math.min(5, Math.max(1.5, Math.abs(directionalScore) * 0.55 + (hasRejection ? 1.5 : 0.8)));
+      const rawIndScore =
+        typeof visionData.indicatorMomentumScore === 'number'
+          ? Math.min(3, Math.max(0, visionData.indicatorMomentumScore))
+          : Math.min(3, Math.max(0.8, (bullishIndicators + bearishIndicators) * 1.1));
+      const rawTrendScore =
+        typeof visionData.trendAlignmentScore === 'number'
+          ? Math.min(2, Math.max(0, visionData.trendAlignmentScore))
+          : step3Passed
+          ? 1.8
+          : 0.7;
+
+      const computedTotalScore = Number(
+        (
+          typeof visionData.totalScore === 'number' && visionData.totalScore > 0
+            ? visionData.totalScore
+            : rawPaScore + rawIndScore + rawTrendScore
+        ).toFixed(1)
+      );
+
+      const hasClearDirection =
+        aiForecast !== 'WAIT' &&
+        (aiForecast === 'CALL' ? directionalScore > 0 : directionalScore < 0 || Math.abs(directionalScore) >= 3);
+
+      const step5Passed = Boolean(
+        (visionData.step5SetupConfirmed ?? (computedTotalScore >= 7.5 && hasClearDirection)) &&
+          filterPassed &&
+          step2Passed &&
+          computedTotalScore >= 7.0 &&
+          aiForecast !== 'WAIT'
+      );
+
+      const stepChecks = [
+        {
+          step: 1,
+          key: 'CHART' as const,
+          labelBn: 'চার্ট',
+          passed: step1Passed,
+          detailBn: `${assetName} · ${visionData.timeframe || '1m'}`,
+        },
+        {
+          step: 2,
+          key: 'CLOSED_CANDLE' as const,
+          labelBn: 'ক্লোজ ক্যান্ডেল',
+          passed: step2Passed,
+          detailBn: closedCandleLabelBn,
+        },
+        {
+          step: 3,
+          key: 'MTF_TREND' as const,
+          labelBn: 'মাল্টি-TF',
+          passed: step3Passed,
+          detailBn: mtfConfluence === 'ALIGNED' ? 'অ্যালাইন্ড' : hasRejection ? 'রিজেকশন জোন' : 'সতর্কতা',
+        },
+        {
+          step: 4,
+          key: 'MARKET_FILTER' as const,
+          labelBn: 'ফিল্টার',
+          passed: filterPassed,
+          detailBn: filterPassed ? 'ক্লিয়ার মার্কেট' : 'চপি/দোজি ফিল্টার্ড',
+        },
+        {
+          step: 5,
+          key: 'SETUP_SCORE' as const,
+          labelBn: 'স্কোর ও সেটআপ',
+          passed: step5Passed,
+          detailBn: `${computedTotalScore.toFixed(1)}/১০`,
+        },
+      ];
+
+      const confirmedPoints = stepChecks.filter((s) => s.passed).length;
+
+      // STRICT PRECISION RULE: Require >= 4/5 confirmed points, filterPassed, and non-WAIT AI forecast!
+      const canIssueTradeSignal =
+        confirmedPoints >= 4 &&
+        filterPassed &&
+        step2Passed &&
+        step5Passed &&
+        (aiForecast === 'CALL' || aiForecast === 'PUT');
+
+      if (!canIssueTradeSignal) {
         direction = 'WAIT';
-        confidence = 25;
+        confidence = Math.min(62, Math.max(20, Math.round(confirmedPoints * 12)));
         suggestedExpiry = 'অপেক্ষা করুন';
-        verdictTitle = `⏸ WAIT (${assetName} · ${profileLabelBn})`;
+        verdictTitle = `⏸ WAIT (${assetName} · ${confirmedPoints}/5 পয়েন্ট)`;
+        const failedStepNames = stepChecks.filter((s) => !s.passed).map((s) => s.labelBn).join(', ');
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `[${profileLabelBn}] অস্থির বা দোজি মার্কেট শনাক্ত হয়েছে—ভুল এন্ট্রি এড়াতে WAIT সিগন্যাল দেওয়া হয়েছে।`
+            `[${profileLabelBn}] ৫টির মধ্যে ${confirmedPoints}/৫ পয়েন্ট নিশ্চিত হয়েছে (${failedStepNames || 'কনফার্মেশন অপর্যাপ্ত'}) — নিরাপদ এন্ট্রির জন্য WAIT।`
         );
-      } else if (score > 0 || (score === 0 && (aiForecast === 'CALL' || visionData.chartStructure === 'UPTREND' || visionData.lastCandleDirection === 'BULLISH'))) {
+      } else if (aiForecast === 'CALL' || (directionalScore > 0 && aiForecast !== 'PUT')) {
         direction = 'UP';
-        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
+        confidence = Math.min(95, Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0))));
         verdictTitle = isSpotSlTp
-          ? `▲ LONG / BUY (${assetName} · ${profileLabelBn})`
-          : `▲ CALL / UP (${assetName} · ${profileLabelBn})`;
+          ? `▲ LONG / BUY (${assetName} · ${confirmedPoints}/5)`
+          : `▲ CALL / UP (${assetName} · ${confirmedPoints}/5)`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `[${profileLabelBn}] বুলিশ সিগন্যাল (${confidence}%): বায়ার্স মোমেন্টাম ও চার্ট স্ট্রাকচার পজিটিভ।`
+            `[${profileLabelBn}] বুলিশ সিগন্যাল (${confidence}% · ${confirmedPoints}/৫ পয়েন্ট): ক্লোজড ক্যান্ডেল ${closedCandleLabelBn} ও সেটআপ নিশ্চিত।`
         );
       } else {
         direction = 'DOWN';
-        confidence = Math.min(94, Math.max(85, 82 + Math.max(1, Math.abs(score)) * 2));
+        confidence = Math.min(95, Math.max(76, Math.round(64 + computedTotalScore * 3.0 + (confirmedPoints === 5 ? 3 : 0))));
         verdictTitle = isSpotSlTp
-          ? `▼ SHORT / SELL (${assetName} · ${profileLabelBn})`
-          : `▼ PUT / DOWN (${assetName} · ${profileLabelBn})`;
+          ? `▼ SHORT / SELL (${assetName} · ${confirmedPoints}/5)`
+          : `▼ PUT / DOWN (${assetName} · ${confirmedPoints}/5)`;
         reasoning.push(
           visionData.nextCandlePredictionReasonBn ||
-          `[${profileLabelBn}] বিয়ারিশ সিগন্যাল (${confidence}%): সেলার্স প্রেসার ও চার্ট স্ট্রাকচার ডাউনওয়ার্ড।`
+            `[${profileLabelBn}] বিয়ারিশ সিগন্যাল (${confidence}% · ${confirmedPoints}/৫ পয়েন্ট): ক্লোজড ক্যান্ডেল ${closedCandleLabelBn} ও সেটআপ নিশ্চিত।`
         );
       }
 
+      reasoning.push(`ক্লোজড ক্যান্ডেল (সম্পন্ন): ${closedCandleLabelBn}${visionData.formingCandleColor && visionData.formingCandleColor !== 'NONE' ? ` · রানিং: ${visionData.formingCandleColor === 'GREEN' ? 'সবুজ' : visionData.formingCandleColor === 'RED' ? 'লাল' : 'দোজি'}` : ''}`);
       if (visionData.candlestickPattern) {
         reasoning.push(`প্যাটার্ন: ${visionData.candlestickPattern}`);
       }
       if (visionData.visionSummary) {
         reasoning.push(`ভিজুয়াল সামারি: ${visionData.visionSummary}`);
       }
-      if (marketVerification.notes) {
-        reasoning.push(`ভেরিফিকেশন: ${marketVerification.notes}`);
-      }
+
+      signalFlow = {
+        confirmedPoints,
+        totalPoints: 5,
+        stepChecks,
+        chartVerification: {
+          isChartValid: step1Passed,
+          detectedAsset: assetName,
+          detectedTimeframe: visionData.timeframe || '1m',
+          candleBarsCount: 16,
+          notes: `${confirmedPoints}/৫ ধাপ নিশ্চিত`,
+        },
+        candleData: {
+          candleCount: 16,
+          closedCandle: {
+            type: closedCandleType,
+            bodySizePx: Math.round(bodyPct),
+            upperWickPx: Math.round(upperWickPct),
+            lowerWickPx: Math.round(lowerWickPct),
+            isRejection: hasRejection,
+            labelBn: closedCandleLabelBn,
+          },
+          runningCandle: {
+            isForming: visionData.formingCandleColor !== 'NONE',
+            intraBarBias:
+              visionData.formingCandleColor === 'GREEN'
+                ? 'BUYING'
+                : visionData.formingCandleColor === 'RED'
+                ? 'SELLING'
+                : 'NEUTRAL',
+          },
+          candleTimerSecondsLeft: visionData.candleTimerSecondsLeft ?? 0,
+        },
+        multiTimeframe: {
+          macroTrend15m,
+          secondaryTrend5m,
+          microTrend1m,
+          confluenceStatus: mtfConfluence,
+        },
+        marketFilter: {
+          regime: marketRegime,
+          passed: filterPassed,
+          blockReason: filterPassed ? undefined : 'চপি / সাইডওয়েজ বা দোজি সতর্কতা',
+        },
+        signalScoring: {
+          priceActionScore: Number(rawPaScore.toFixed(1)),
+          indicatorMomentumScore: Number(rawIndScore.toFixed(1)),
+          trendAlignmentScore: Number(rawTrendScore.toFixed(1)),
+          totalScore: computedTotalScore,
+          thresholdRequired: 7.5,
+          finalVerdict: direction === 'UP' ? 'CALL' : direction === 'DOWN' ? 'PUT' : 'WAIT',
+        },
+      };
     }
 
     return {
@@ -493,6 +765,7 @@ export class ScreenVerificationService {
       reasoning,
       visionData,
       marketVerification,
+      signalFlow,
       safetyDisclaimer:
         'লাইভ স্ক্রিন বিশ্লেষণ একটি এডুকেশনাল ডিসিশন এইড। কোনো অটোমেটেড অর্ডার প্লেস করা হয় না।',
       screenStatus: 'CHART_DETECTED',

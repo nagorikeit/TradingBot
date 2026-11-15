@@ -611,115 +611,154 @@ export const LiveScreenAnalyzer: React.FC = () => {
           </div>
 
           {/* 5-Step Audit Card */}
-          {result.signalFlow && (
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-xs">
-                <span className="font-bold text-white">৫-ধাপ সিগন্যাল অডিট</span>
-                <span
-                  className={`font-mono font-bold tabular-nums ${
-                    result.signalFlow.signalScoring.totalScore >= 7.5 ? 'text-emerald-400' : 'text-amber-400'
-                  }`}
-                >
-                  স্কোর: {result.signalFlow.signalScoring.totalScore.toFixed(1)}/১০
-                </span>
-              </div>
+          {result.signalFlow && (() => {
+            const flow = result.signalFlow!;
+            const stepChecks = flow.stepChecks;
+            const s1 = stepChecks?.[0]?.passed ?? flow.chartVerification.isChartValid;
+            const s2 =
+              stepChecks?.[1]?.passed ??
+              (result.visionData.closedCandleColor !== 'UNCERTAIN' &&
+                result.visionData.lastCandleDirection !== 'UNCERTAIN');
+            const s3 = stepChecks?.[2]?.passed ?? flow.multiTimeframe.confluenceStatus === 'ALIGNED';
+            const s4 = stepChecks?.[3]?.passed ?? flow.marketFilter.passed;
+            const s5 =
+              stepChecks?.[4]?.passed ??
+              (flow.signalScoring.finalVerdict === 'CALL' || flow.signalScoring.finalVerdict === 'PUT');
+            const confirmedPts =
+              typeof flow.confirmedPoints === 'number'
+                ? flow.confirmedPoints
+                : [s1, s2, s3, s4, s5].filter(Boolean).length;
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                    <span>১. চার্ট</span>
-                    <span className="text-emerald-400">নিশ্চিত</span>
-                  </div>
-                  <div className="text-white font-mono font-medium truncate">
-                    {result.signalFlow.chartVerification.detectedAsset || result.visionData.symbol}
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    {result.signalFlow.chartVerification.detectedTimeframe} · {result.signalFlow.chartVerification.candleBarsCount} ক্যান্ডেল
-                  </div>
-                </div>
+            const closedType = flow.candleData.closedCandle.type;
+            const closedLabel =
+              flow.candleData.closedCandle.labelBn ||
+              (closedType === 'BULLISH'
+                ? 'সবুজ (বুলিশ)'
+                : closedType === 'BEARISH'
+                ? 'লাল (বিয়ারিশ)'
+                : 'ডোজি (সিদ্ধান্তহীন)');
 
-                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                    <span>২. ক্যান্ডেল</span>
-                    <span className="text-cyan-400">OHLC</span>
-                  </div>
-                  <div className="text-white font-medium">
-                    {result.signalFlow.candleData.closedCandle.type === 'BULLISH' ? 'বুলিশ (সবুজ)' : 'বিয়ারিশ (লাল)'}
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    {result.signalFlow.candleData.closedCandle.isRejection ? 'উইক রিজেকশন' : 'সলিড বডি'}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                    <span>৩. মাল্টি-TF</span>
+            return (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2 text-xs">
+                  <span className="font-bold text-white">৫-ধাপ সিগন্যাল অডিট</span>
+                  <div className="flex items-center gap-2 font-mono font-bold tabular-nums">
+                    <span
+                      className={`px-2 py-0.5 rounded-full border text-[11px] ${
+                        confirmedPts >= 4
+                          ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                          : confirmedPts === 3
+                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                          : 'bg-rose-500/15 border-rose-500/50 text-rose-300'
+                      }`}
+                    >
+                      নিশ্চিত পয়েন্ট: {confirmedPts}/৫
+                    </span>
                     <span
                       className={
-                        result.signalFlow.multiTimeframe.confluenceStatus === 'ALIGNED'
-                          ? 'text-emerald-400'
-                          : 'text-amber-400'
+                        flow.signalScoring.totalScore >= 7.5 ? 'text-emerald-400' : 'text-amber-400'
                       }
                     >
-                      {result.signalFlow.multiTimeframe.confluenceStatus === 'ALIGNED' ? 'অ্যালাইন্ড' : 'সতর্কতা'}
+                      স্কোর: {flow.signalScoring.totalScore.toFixed(1)}/১০
                     </span>
-                  </div>
-                  <div className="text-white font-mono text-[11px]">
-                    15M:{result.signalFlow.multiTimeframe.macroTrend15m === 'UPTREND' ? 'UP' : result.signalFlow.multiTimeframe.macroTrend15m === 'DOWNTREND' ? 'DN' : 'RNG'} · 5M:{result.signalFlow.multiTimeframe.secondaryTrend5m === 'UPTREND' ? 'UP' : result.signalFlow.multiTimeframe.secondaryTrend5m === 'DOWNTREND' ? 'DN' : 'RNG'}
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    1M: {result.signalFlow.multiTimeframe.microTrend1m}
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                    <span>৪. ফিল্টার</span>
-                    <span className={result.signalFlow.marketFilter.passed ? 'text-emerald-400' : 'text-rose-400'}>
-                      {result.signalFlow.marketFilter.passed ? 'পাসড' : 'ফিল্টার্ড'}
-                    </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-xs">
+                  <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s1 ? 'border-emerald-500/40' : 'border-rose-500/40'}`}>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                      <span>১. চার্ট</span>
+                      <span className={s1 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {s1 ? '✓ নিশ্চিত' : '✕ অস্পষ্ট'}
+                      </span>
+                    </div>
+                    <div className="text-white font-mono font-medium truncate">
+                      {flow.chartVerification.detectedAsset || result.visionData.symbol}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {flow.chartVerification.detectedTimeframe} · {flow.chartVerification.candleBarsCount} ক্যান্ডেল
+                    </div>
                   </div>
-                  <div className="text-white font-medium text-[11px]">
-                    {result.signalFlow.marketFilter.regime === 'TRENDING'
-                      ? 'ট্রেন্ডিং'
-                      : result.signalFlow.marketFilter.regime === 'SIDEWAYS'
-                      ? 'সাইডওয়েজ'
-                      : 'ভোলাটাইল'}
-                  </div>
-                  <div className="text-[11px] text-slate-400 truncate">
-                    {result.signalFlow.marketFilter.blockReason || 'স্বাভাবিক মার্কেট'}
-                  </div>
-                </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                    <span>৫. ভার্ডিক্ট</span>
-                    <span className="text-amber-400 font-mono tabular-nums">
-                      {result.signalFlow.signalScoring.totalScore.toFixed(1)}/১০
-                    </span>
+                  <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s2 ? 'border-emerald-500/40' : 'border-rose-500/40'}`}>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                      <span>২. ক্লোজ ক্যান্ডেল</span>
+                      <span className={s2 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {s2 ? '✓ নিশ্চিত' : '✕ অস্পষ্ট'}
+                      </span>
+                    </div>
+                    <div className="text-white font-medium truncate">
+                      {closedLabel}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      বডি {flow.candleData.closedCandle.bodySizePx}% · {flow.candleData.closedCandle.isRejection ? 'উইক রিজেকশন' : 'স্বাভাবিক'}
+                    </div>
                   </div>
-                  <div
-                    className={`font-bold font-mono text-xs ${
-                      result.signalFlow.signalScoring.finalVerdict === 'CALL'
-                        ? 'text-emerald-400'
-                        : result.signalFlow.signalScoring.finalVerdict === 'PUT'
-                        ? 'text-rose-400'
-                        : 'text-amber-400'
-                    }`}
-                  >
-                    {result.signalFlow.signalScoring.finalVerdict === 'CALL'
-                      ? '▲ CALL'
-                      : result.signalFlow.signalScoring.finalVerdict === 'PUT'
-                      ? '▼ PUT'
-                      : '⏸ WAIT'}
+
+                  <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s3 ? 'border-emerald-500/40' : 'border-amber-500/40'}`}>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                      <span>৩. মাল্টি-TF</span>
+                      <span className={s3 ? 'text-emerald-400' : 'text-amber-400'}>
+                        {s3 ? '✓ অ্যালাইন্ড' : '✕ সতর্কতা'}
+                      </span>
+                    </div>
+                    <div className="text-white font-mono text-[11px]">
+                      15M:{flow.multiTimeframe.macroTrend15m === 'UPTREND' ? 'UP' : flow.multiTimeframe.macroTrend15m === 'DOWNTREND' ? 'DN' : 'RNG'} · 5M:{flow.multiTimeframe.secondaryTrend5m === 'UPTREND' ? 'UP' : flow.multiTimeframe.secondaryTrend5m === 'DOWNTREND' ? 'DN' : 'RNG'}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      1M: {flow.multiTimeframe.microTrend1m}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-                    PA {result.signalFlow.signalScoring.priceActionScore.toFixed(1)} · Ind {result.signalFlow.signalScoring.indicatorMomentumScore.toFixed(1)}
+
+                  <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s4 ? 'border-emerald-500/40' : 'border-rose-500/40'}`}>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                      <span>৪. ফিল্টার</span>
+                      <span className={s4 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {s4 ? '✓ পাসড' : '✕ ফিল্টার্ড'}
+                      </span>
+                    </div>
+                    <div className="text-white font-medium text-[11px]">
+                      {flow.marketFilter.regime === 'TRENDING'
+                        ? 'ট্রেন্ডিং'
+                        : flow.marketFilter.regime === 'SIDEWAYS'
+                        ? 'সাইডওয়েজ'
+                        : 'ভোলাটাইল / ডোজি'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {flow.marketFilter.blockReason || 'স্বাভাবিক মার্কেট'}
+                    </div>
+                  </div>
+
+                  <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s5 ? 'border-emerald-500/40' : 'border-amber-500/40'}`}>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                      <span>৫. ভার্ডিক্ট</span>
+                      <span className={s5 ? 'text-emerald-400' : 'text-amber-400'}>
+                        {s5 ? '✓ নিশ্চিত' : '✕ অপেক্ষা'}
+                      </span>
+                    </div>
+                    <div
+                      className={`font-bold font-mono text-xs ${
+                        flow.signalScoring.finalVerdict === 'CALL'
+                          ? 'text-emerald-400'
+                          : flow.signalScoring.finalVerdict === 'PUT'
+                          ? 'text-rose-400'
+                          : 'text-amber-400'
+                      }`}
+                    >
+                      {flow.signalScoring.finalVerdict === 'CALL'
+                        ? '▲ CALL'
+                        : flow.signalScoring.finalVerdict === 'PUT'
+                        ? '▼ PUT'
+                        : '⏸ WAIT'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono tabular-nums">
+                      PA {flow.signalScoring.priceActionScore.toFixed(1)} · Ind {flow.signalScoring.indicatorMomentumScore.toFixed(1)}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Column 1: Signal Verdict */}

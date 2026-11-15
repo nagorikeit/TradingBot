@@ -235,7 +235,7 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
               ) : isConnecting ? (
                 <div className="text-xs font-bold text-cyan-300 font-mono">কানেক্ট হচ্ছে...</div>
               ) : hasChartSignal && result ? (
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span
                       className={`text-sm font-black font-mono ${
@@ -305,6 +305,85 @@ export const FloatingLiveScreenController: React.FC<FloatingLiveScreenController
             </button>
           </div>
         </div>
+
+        {!isBusy && !scanStep && hasChartSignal && result && (() => {
+          const flow = result.signalFlow;
+          const stepChecks = flow?.stepChecks;
+          const pts =
+            typeof flow?.confirmedPoints === 'number'
+              ? flow.confirmedPoints
+              : typeof result.visionData?.confirmedPoints === 'number'
+              ? result.visionData.confirmedPoints
+              : stepChecks
+              ? stepChecks.filter((s) => s.passed).length
+              : result.direction !== 'WAIT'
+              ? 5
+              : 2;
+          const closedColor =
+            result.visionData?.closedCandleColor ||
+            (flow?.candleData?.closedCandle?.type === 'BULLISH'
+              ? 'GREEN'
+              : flow?.candleData?.closedCandle?.type === 'BEARISH'
+              ? 'RED'
+              : flow?.candleData?.closedCandle?.type === 'DOJI'
+              ? 'DOJI'
+              : 'UNCERTAIN');
+          const closedLabel =
+            closedColor === 'GREEN'
+              ? 'ক্লোজ: সবুজ'
+              : closedColor === 'RED'
+              ? 'ক্লোজ: লাল'
+              : closedColor === 'DOJI'
+              ? 'ক্লোজ: ডোজি'
+              : 'ক্লোজ: অস্পষ্ট';
+          const stepBools =
+            stepChecks && stepChecks.length === 5
+              ? stepChecks.map((s) => s.passed)
+              : [true, closedColor !== 'UNCERTAIN', flow?.multiTimeframe?.confluenceStatus === 'ALIGNED', Boolean(flow?.marketFilter?.passed), result.direction !== 'WAIT'];
+
+          return (
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold font-mono">
+                <span
+                  className={`px-2 py-0.5 rounded-full border ${
+                    pts >= 4
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                      : pts === 3
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                      : 'bg-rose-500/15 border-rose-500/50 text-rose-300'
+                  }`}
+                >
+                  পয়েন্ট: {pts}/৫
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full border ${
+                    closedColor === 'GREEN'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                      : closedColor === 'RED'
+                      ? 'bg-rose-500/15 border-rose-500/50 text-rose-300'
+                      : 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                  }`}
+                >
+                  {closedLabel}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {['১', '২', '৩', '৪', '৫'].map((lbl, idx) => (
+                  <div
+                    key={lbl}
+                    className={`text-center py-0.5 rounded text-[9px] font-bold border ${
+                      stepBools[idx]
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                        : 'bg-rose-500/10 border-rose-500/35 text-rose-300/80'
+                    }`}
+                  >
+                    {lbl} {stepBools[idx] ? '✓' : '✕'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {errorMessage && (
           <div className="px-2 py-1 rounded-lg bg-red-950/80 border border-red-700/50 flex items-center gap-1.5 text-[10px] text-red-200">

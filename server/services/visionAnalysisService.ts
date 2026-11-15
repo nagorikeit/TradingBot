@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { ScreenVisionParsedData } from '../types/screenAnalysisTypes';
 
 export class VisionAnalysisService {
@@ -27,19 +27,19 @@ export class VisionAnalysisService {
   }
 
   /**
-   * Analyzes an image frame (Base64 JPEG/PNG) using Gemini 3.8 Flash Multimodal
+   * Analyzes an image frame (Base64 JPEG/PNG) using Gemini 4 Hydrogen Multimodal Vision
    * Accurately recognizes and reads ANY screen (Trading Charts, Code Editor, YouTube, Webpage, Documents, Chats, Desktop)
    */
   private getProfileDirective(tradingProfile?: string): string {
     switch (tradingProfile) {
       case 'BINARY_OTC':
         return `ACTIVE TRADE MODE: BINARY OPTIONS — OTC MARKET (Quotex OTC, Pocket Option OTC, Binomo OTC).
-- Prioritize wick rejections (>= 35% upper/lower wick), Bollinger band mean-reversion touches, 3-candle exhaustion reversals, and support/resistance bounce.
+- Prioritize wick rejections (>= 35% upper/lower wick on the CLOSED candle), Bollinger band mean-reversion touches, 3-candle exhaustion reversals, and support/resistance bounce.
 - Strictly filter out Doji/tiny-body chop or flat horizontal consolidations with "WAIT".
 - Predict the NEXT 1–2 minute candle (CALL or PUT) with crisp Bengali reasoning.`;
       case 'BINARY_LIVE':
         return `ACTIVE TRADE MODE: BINARY OPTIONS — REAL / LIVE MARKET (Quotex Live, IQ Option, Olymp Trade).
-- Prioritize authentic market trend alignment (EMA 9/21 slope), dynamic S/R break & retest, and clean momentum candle continuation.
+- Prioritize authentic market trend alignment (EMA 9/21 slope), dynamic S/R break & retest, and clean momentum candle continuation based on the newly CLOSED candle.
 - Output direction as CALL (UP) or PUT (DOWN) for next 1–5 minute expiry, or WAIT if EMAs/candles conflict.`;
       case 'CRYPTO_SPOT':
         return `ACTIVE TRADE MODE: CRYPTO — SPOT & FUTURES (Binance, Bybit, OKX, Bitget).
@@ -87,127 +87,61 @@ export class VisionAnalysisService {
       });
     this.ai = ai;
 
-    const systemPrompt = `You are a universal AI Screen Inspector and Visual OCR Engine with high-precision vision capabilities.
-The user is sharing their screen. The user may switch to ANY screen or application window at any moment (e.g., Quotex, Binomo, Pocket Option, TradingView, VS Code / code editor, YouTube / media player, Google Chrome / browser tab, WhatsApp / messaging app, Mobile Phone Home Screen / Launcher, Photo Gallery / Wallpaper, or Settings).
+    const systemPrompt = `You are a high-precision quantitative Trading Chart Vision & Universal Screen Inspector AI.
+The user is sharing their screen and may view Quotex, Pocket Option, Binomo, Deriv, TradingView, Binance, Bybit, MT4/MT5, Exness, or non-trading apps.
 
 YOUR CORE DUTIES:
 1. UNIVERSAL SCREEN & APP IDENTIFICATION:
-   - Identify what application, website, or environment is currently on screen (e.g. "Quotex Trading Terminal", "Binomo", "Pocket Option", "TradingView", "Phone Home Screen / Launcher", "Visual Studio Code", "YouTube", "Google Chrome", "WhatsApp Web", "Telegram", "Desktop").
+   - Identify the exact application/platform on screen.
+   - NON-TRADING SCREENS (Phone home screen, wallpapers, widgets, WhatsApp/Telegram, YouTube, VS Code, browser articles, settings, OR the full TradePulse dashboard itself):
+     * Set "screenCategory" accurately (NEVER TRADING_CHART).
+     * Set "isClearTradingChart": false.
+     * Set "lastCandleDirection": "UNCERTAIN", "closedCandleColor": "UNCERTAIN", "chartStructure": "UNCLEAR", "predictedNextCandle": "WAIT".
+     * Set "step1ChartValid": false, "step2ClosedCandleValid": false, "step3TrendAligned": false, "step4FilterPassed": false, "step5SetupConfirmed": false, "confirmedPoints": 0, "totalScore": 0.
+   - WEB BROKER IN BROWSER & FLOATING HUD OVERLAY:
+     * Ignore any small floating TradePulse HUD bubble on top of the chart. Inspect the chart canvas beneath/beside it.
+     * If a real candlestick chart (4+ sequential vertical green/red candlesticks with bodies + wicks on a dark or light chart canvas, price axis, or broker controls) is visible -> set "screenCategory": "TRADING_CHART", "isClearTradingChart": true.
 
-   - MANDATORY STRICT DISTINCTION: PHONE HOME SCREEN, WALLPAPERS, WIDGETS & PHOTOS (NEVER A TRADING CHART):
-     * If the screen displays:
-       - Phone launcher/home screen with wallpaper, clock/calendar widgets, Islamic prayer times cards (Fajr, Dhuhr, Asr, Maghrib, Isha), weather cards.
-       - App icon grids (e.g., WhatsApp, Camera, Chrome, Phone, Play Store icons).
-       - Photo gallery images, scenic wallpapers, flowers, plants, books, or camera viewports.
-       - System settings, menus, notifications drawer, or advertisements.
-     * YOU MUST:
-       - Set "screenCategory": "DESKTOP" or "OTHER" (NEVER TRADING_CHART!).
-       - Set "detectedAppName": "Phone Home Screen" (or specific app name).
-       - Set "isClearTradingChart": false (CRITICAL MANDATORY REQUIREMENT: MUST BE FALSE!).
-       - Set "lastCandleDirection": "UNCERTAIN".
-       - Set "chartStructure": "UNCLEAR".
-       - Set "candlestickPattern": "নন-ট্রেডিং স্ক্রিন (হোমস্ক্রিন/ওয়ালপেপার/অন্যান্য অ্যাপ)".
-       - Set "confidenceScore": 0.0.
-       - Set "screenSummaryBn": "ফোনের হোমস্ক্রিন বা নন-ট্রেডিং অ্যাপ প্রদর্শিত হচ্ছে। কোনো ট্রেডিং চার্ট না থাকায় সিগন্যাল স্থগিত (WAIT) রাখা হয়েছে।"
+2. CRITICAL: DISTINGUISHING THE NEWLY CLOSED CANDLE FROM THE CURRENTLY FORMING LIVE CANDLE (HIGHEST PRIORITY!):
+   Never confuse the currently ticking/forming candle with the CLOSED candle! Follow this exact visual anatomy:
+   - Look at the rightmost end of the candlestick series near the vertical price scale on the right.
+   - On live broker charts (Quotex, Pocket Option, Binomo, TradingView, Binance, Exness):
+     * A horizontal current-price line/dashed line, pulsing current price pill, and/or candle countdown timer (e.g. "00:41", "00:14", "14s") marks the RIGHTMOST bar.
+     * THAT rightmost bar attached to the live price line / countdown timer is the STILL-FORMING live candle ("formingCandleColor": "GREEN" | "RED" | "DOJI"). Because it has NOT closed yet, its color/wick can still flip before expiry!
+     * Therefore, the **NEWLY CLOSED CANDLE** ("closedCandleColor", "lastCandleDirection") is the **last COMPLETED candle immediately to the LEFT of the forming candle** (2nd candle from the right!).
+     * Only if there is clearly NO live forming candle / no live price line (e.g. a paused/offline historical screenshot where the rightmost candle sits cleanly to the left of whitespace with no active tick line), then treat the rightmost candle as the closed candle ("formingCandleColor": "NONE").
+   - Measure the CLOSED candle carefully:
+     * "closedCandleColor": "GREEN" (bullish close > open), "RED" (bearish close < open), or "DOJI" (tiny/flat body < 18% of total high-to-low height).
+     * "lastCandleDirection": "BULLISH" if GREEN, "BEARISH" if RED, "DOJI" if DOJI.
+     * Estimate "closedCandleBodyPercent", "closedCandleUpperWickPercent", "closedCandleLowerWickPercent" (summing roughly to 100% of total height).
+     * "closedCandleRejection": "UPPER_REJECTION" if upper wick >= 35% of candle height (or >= 1.5x body), "LOWER_REJECTION" if lower wick >= 35% of candle height (or >= 1.5x body), else "NONE".
+     * Read any visible candle countdown timer into "candleTimerText" (e.g. "00:27") and "candleTimerSecondsLeft" (integer seconds).
 
-   - CRITICAL WEB BROKER IN MOBILE/DESKTOP BROWSER:
-     Many traders access broker web apps (Quotex mirrors like market-qx.info, qxbroker.com, qx.trade, Pocket Option, Binomo, Deriv, TradingView) inside mobile or desktop browsers (Brave, Chrome, Safari, Firefox).
-     Even though a browser URL bar or navigation bar is visible:
-     * If and ONLY IF the screen displays an ACTUAL candlestick chart (multiple sequential green/red candle bars with rectangular bodies and wicks on a price scale) along with broker assets or trade buttons:
-       - Set "screenCategory": "TRADING_CHART".
-       - Set "detectedAppName": "Quotex Web Trading Terminal" (or the respective broker name).
-       - Set "isClearTradingChart": true.
-       - Extract asset symbol (e.g. "ATOM/USD (Cosmos)"), payout percentage, timeframe, and candlestick direction!
-     * FLOATING HUD OVERLAY HANDLING: A floating TradePulse HUD overlay widget (showing "[⏹ স্ক্যান স্টপ]" or "[🔍 স্ক্যান শুরু করুন]", "TradePulse", etc.) is often positioned on top of the screen. Look beneath/around the floating widget. Do NOT confuse the floating overlay itself with the underlying content.
+3. HIGH-PRECISION PRICE ACTION, STRUCTURE & INDICATOR READING:
+   - Carefully inspect the last 10–25 candles, visible moving averages (EMA/SMA/Bollinger Bands), RSI/MACD/Stochastic sub-panels, and nearest horizontal Support / Resistance swing levels.
+   - WICK REJECTION: Long upper wick (>= 35% / Shooting Star) at resistance or upper band -> sellers rejected buyers -> bias PUT/DOWN. Long lower wick (>= 35% / Hammer) at support or lower band -> buyers rejected sellers -> bias CALL/UP.
+   - EXHAUSTION vs CONTINUATION:
+     * 3–4+ extended same-color candles hitting Bollinger outer band or major S/R with weakening/long-wick final closed candle -> high exhaustion reversal probability (never chase into major S/R!).
+     * Clean healthy trend breakout or pullback retest aligned with EMA slope & non-overbought/oversold RSI -> trend continuation.
+   - SIDEWAYS / DOJI / CHOP FILTER:
+     * Alternating red-green-red-green small candles, tight horizontal box range, multiple Dojis, or erratic oversized news spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY" or "HIGH_VOLATILITY_SPIKE", "step4FilterPassed": false, and "predictedNextCandle": "WAIT"! NEVER guess or force CALL/PUT in chop!
 
-   - CRITICAL TRADEPULSE APP DETECTION (SELF-CAPTURE GUARD): If the screen is the FULL TradePulse app itself:
-     * Set "screenCategory": "OTHER"
-     * Set "detectedAppName": "TradePulse App (Self-Capture)"
-     * Set "isClearTradingChart": false
-     * Set "screenSummaryBn": "ট্রেডপাল্স অ্যাপ শনাক্ত হয়েছে। চার্ট বিশ্লেষণের জন্য অ্যাপটি মিনিমাইজ করে আপনার ব্রোকার অ্যাপ (যেমন Quotex বা Pocket Option) ওপেন করুন।"
-     * Set "lastCandleDirection": "UNCERTAIN"
-     * Set "candlestickPattern": "ট্রেডপাল্স নিজস্ব ইন্টারফেস"
-     * Set "confidenceScore": 0.0
+4. STRICT 5-STEP / 5-POINT INSTITUTIONAL AUDIT (MUST MATCH YOUR DECISION):
+   Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (exact count of true values, 0 to 5):
+   - Step 1 ("step1ChartValid"): Trading chart verified, asset symbol & timeframe clearly readable, >= 6 sequential candles.
+   - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (to the left of forming candle) cleanly identified with clear bullish/bearish body or decisive pin-bar rejection (false if obscured/uncertain or weak ambiguous tiny doji).
+   - Step 3 ("step3TrendAligned"): Multi-timeframe slope ("macroTrend15m", "secondaryTrend5m", "microTrend1m") aligns with setup OR high-conviction S/R / Bollinger extreme reversal confluence exists.
+   - Step 4 ("step4FilterPassed"): Market condition filter passes (trending or clean structure at S/R; FALSE if sideways chop, doji cluster, or abnormal spike).
+   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 7.5 out of 10 AND unambiguous direction.
+   CRITICAL CONSISTENCY RULE:
+   - "confirmedPoints" MUST equal (step1?1:0) + (step2?1:0) + (step3?1:0) + (step4?1:0) + (step5?1:0).
+   - Only emit "predictedNextCandle": "CALL" or "PUT" when "confirmedPoints" >= 4 AND "step4FilterPassed" === true AND "totalScore" >= 7.5. Otherwise emit "WAIT".
+   - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
-2. ৪টি অপরিহার্য রিকোয়ারমেন্ট (4 MANDATORY REQUIREMENTS FOR CANDLESTICK TRADING CHART):
-   NEVER classify an image as a trading chart simply because it contains red or green colors!
-   To set "isClearTradingChart": true, the image MUST SIMULTANEOUSLY SATISFY ALL 4 OF THE FOLLOWING REQUIREMENTS:
-
-   * রিকোয়ারমেন্ট ১ (চার্ট ফ্রেম ও সমসত্ত্ব সলিড ক্যানভাস - Chart Frame & Uniform Solid Canvas):
-     A distinct, uniform solid trading canvas (dark navy, black, or clean white broker canvas).
-     REJECT: Natural photos, wallpapers, flowers, plants, clothes, home screen app grids, or complex backgrounds.
-
-   * রিকোয়ারমেন্ট ২ (খাঁটি ক্যান্ডেলস্টিক কালার স্যাচুরেশন - Authentic Bullish Green / Bearish Red Candles):
-     Standard trading candle hues (bright emerald/neon green and solid broker red).
-     REJECT: Muted natural greens, brown earth tones, skin tones, or colored icons.
-
-   * রিকোয়ারমেন্ট ৩ (লম্বালম্বি হতে হবে উপর থেকে নিচের দিকে + উইক/ছায়া - Strict Vertical Orientation & Central Wicks):
-     Candlesticks MUST be vertically elongated from top to bottom (height strictly greater than width).
-     Central wicks/shadow lines (thin vertical projections extending above and/or below the rectangular body) MUST be visible.
-     REJECT: Square buttons, horizontal banners, wide cards, round icons, or notification pills.
-
-   * রিকোয়ারমেন্ট ৪ (অনুভূমিক টাইমলাইন ক্রম ও প্রাইস ভ্যারিয়েন্স - Horizontal Time Series & Price Scale):
-     A chronological series of at least 4 to 8 sequential candles arranged from left to right across time.
-     Visible vertical price movement across the scale (not a flat horizontal line).
-     Presence of price scale, time indicators, or broker trading controls (Quotex, Binomo, Pocket Option, TradingView).
-
-   IF ANY OF THESE 4 REQUIREMENTS IS MISSING:
-   You MUST set:
-   * "isClearTradingChart": false
-   * "lastCandleDirection": "UNCERTAIN"
-   * "chartStructure": "UNCLEAR"
-   * "confidenceScore": 0.0
-   * "candlestickPattern": "চার্ট মেলেনি (৪টি রিকোয়ারমেন্ট পূরণ হয়নি)"
-   * "screenSummaryBn": Explanation in Bengali of what is actually on screen and which chart requirement was missing.
-
-3. OCR & TEXT EXTRACTION:
-   - Read prominent visible text, asset names, numbers, payout %, labels, tabs, or document paragraphs on the screen.
-   - Return 3 to 10 key extracted text items in "extractedText" array.
-   - Set "isReadable": true if any text/UI elements are readable.
-
-4. DUAL-LANGUAGE SUMMARIZATION:
-   - Provide "screenSummaryBn": A clear, informative 1-2 sentence explanation in Bengali explaining what screen the user is currently viewing, what app is open, and what content was read.
-   - Provide "screenSummaryEn": The same in English.
-
-5. PROFESSIONAL CANDLESTICK PRICE ACTION & NEXT-CANDLE FORECAST (HIGH ACCURACY):
-   When analyzing a candlestick trading chart (Quotex, Pocket Option, Binomo, TradingView, etc.):
-   
-   RULE 1 - WICK / SHADOW REJECTIONS (Most Powerful Binary Options Signal):
-   - LONG UPPER WICK (Upper shadow >= 40% of candle height, e.g. Shooting Star, Bearish Pin Bar, Inverted Hammer):
-     -> SELLERS OVERWHELMED BUYERS. Even if previous candles were green, the NEXT candle has high probability of closing RED (PUT / DOWN)!
-   - LONG LOWER WICK (Lower shadow >= 40% of candle height, e.g. Hammer, Bullish Pin Bar):
-     -> BUYERS REJECTED SELLERS. Even if previous candles were red, the NEXT candle has high probability of closing GREEN (CALL / UP)!
-   
-   RULE 2 - CONSECUTIVE EXHAUSTION vs RETRACEMENT (Avoid entering at the very top or bottom):
-   - 3 or more consecutive GREEN candles hitting resistance or upper boundary:
-     -> EXHAUSTION! Buyers are out of breath. A RED pullback/reversal candle is imminent! Set "predictedNextCandle": "PUT", "priceActionSetup": "3-Candle Bullish Exhaustion (Red Pullback Expected)"!
-   - 3 or more consecutive RED candles hitting support or lower boundary:
-     -> EXHAUSTION! Sellers are out of breath. A GREEN bounce/reversal candle is imminent! Set "predictedNextCandle": "CALL", "priceActionSetup": "3-Candle Bearish Exhaustion (Green Bounce Expected)"!
-   
-   RULE 3 - ENGULFING & MOMENTUM EXPANSION:
-   - Bearish Engulfing: Fresh solid red candle completely engulfing previous green body -> Next candle is RED (PUT / DOWN).
-   - Bullish Engulfing: Fresh solid green candle completely engulfing previous red body -> Next candle is GREEN (CALL / UP).
-   
-   RULE 4 - HEALTHY TREND CONTINUATION:
-   - Clean solid body with minimal opposing wicks (1st or 2nd candle of an EMA cross or support bounce) -> Next candle follows trend direction.
-   
-   RULE 5 - 5-STEP INSTITUTIONAL SIGNAL FLOW & QUALITY FILTER:
-   To prevent 50% loss rates caused by choppy sideways consolidation or false signals, strictly enforce this 5-step institutional flow:
-   - Step 1 (Chart Verification): Verify the chart asset, 1M timeframe, and clean candlestick data.
-   - Step 2 (Candle Data Collection): Measure body vs wick ratio. If upper wick >= 40%, sellers rejected; if lower wick >= 40%, buyers defended.
-   - Step 3 (Multi-Timeframe Trend Confluence): Confirm trend direction across visible macro slope (15m equivalent) and secondary slope (5m equivalent).
-   - Step 4 (Market Condition Filter): If the chart is in SIDEWAYS consolidation (alternating green-red candles, dojis, tight range) or abnormal volatility spikes, DO NOT FORCE TRADES! Set "predictedNextCandle": "WAIT", "tradeQualityTier": "HIGH_RISK_DOJI", "chartStructure": "RANGING", and explain why in reasoning.
-   - Step 5 (Signal Scoring Threshold): Combine Price Action (0-5) + Indicators/Momentum (0-3) + Trend Confluence (0-2).
-     * If Total Score >= 7.5: Issue high-confidence "CALL" or "PUT" with "HIGH_PROBABILITY".
-     * If Total Score < 7.5 or market is choppy/unclear: Set "predictedNextCandle": "WAIT", "tradeQualityTier": "MODERATE" or "HIGH_RISK_DOJI".
-
-6. SAFETY & PRIVACY:
-   - Standard broker account labels or demo tags are not private. Only flag "containsSensitivePrivateData": true if passwords or bank card details are visibly exposed.
-
-7. STRICT PLATFORM-SPECIFIC RULE ISOLATION (APPLY ONLY SELECTED PROFILE RULES):
-CRITICAL RULE: Apply ONLY the rules defined below for the active mode (${tradingProfile || 'BINARY_OTC'}). DO NOT apply rules from any other trade option (e.g., never mix OTC rules into Forex/Crypto, or Binary rules into Spot SL/TP).
+5. STRICT PLATFORM-SPECIFIC RULE ISOLATION:
+Active Mode (${tradingProfile || 'BINARY_OTC'}):
 ${this.getProfileDirective(tradingProfile)}
-${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHORT-LOCKED):\n${activeProfileRules}` : ''}`;
+${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProfileRules}` : ''}`;
 
     try {
       let response = null;
@@ -216,11 +150,11 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           const userPromptText = customPrompt
-            ? `Analyze this screen frame (${tradingProfile || 'GENERAL'} mode). The user asked: "${customPrompt}". Specifically identify the application, read visible text/content, and answer the user query in customPromptAnswer.`
-            : `Analyze this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules using the 5-step institutional signal flow. If it is a trading chart, verify chart, measure candle OHLC & wicks, align trend, filter out sideways chop or news spikes with WAIT, and score setup (>= 7.5 score required for CALL/PUT, otherwise WAIT).`;
+            ? `Analyze this screen frame (${tradingProfile || 'GENERAL'} mode). The user asked: "${customPrompt}". Answer in customPromptAnswer and also inspect chart/closed candle & 5-step points if a chart is visible.`
+            : `Inspect this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules. First distinguish the rightmost FORMING candle from the immediately preceding newly CLOSED candle, measure the closed candle's color/body/wick percentages, evaluate all 5 steps (step1ChartValid..step5SetupConfirmed), compute confirmedPoints (0-5) and totalScore (0-10), and output CALL, PUT, or WAIT with crisp Bengali reasoning.`;
 
           response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: 'gemini-4-hydrogen',
             contents: [
               {
                 role: 'user',
@@ -240,8 +174,9 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
             config: {
               systemInstruction: systemPrompt,
               responseMimeType: 'application/json',
-              temperature: 0.1,
-              maxOutputTokens: 1000,
+              thinkingConfig: {
+                thinkingLevel: ThinkingLevel.MEDIUM,
+              },
               responseSchema: {
                 type: Type.OBJECT,
                 properties: {
@@ -249,42 +184,90 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
                     type: Type.STRING,
                     description: 'TRADING_CHART, DOCUMENT, BROWSER, CODE_IDE, CHAT_MESSENGER, VIDEO_STREAM, DESKTOP, SYSTEM_SETTINGS, or OTHER',
                   },
-                  detectedAppName: { type: Type.STRING, description: 'Specific application or website name e.g. Quotex, YouTube, VS Code, Google Chrome' },
+                  detectedAppName: { type: Type.STRING, description: 'Specific application or website name e.g. Quotex, Pocket Option, TradingView, Binance' },
                   screenTitle: { type: Type.STRING, description: 'Window title, tab name, or document heading' },
                   extractedText: {
                     type: Type.ARRAY,
                     items: { type: Type.STRING },
-                    description: 'Key legible text phrases, code, labels, or numbers read from the screen',
+                    description: 'Key legible text phrases, asset tickers, timer, payout %, or numbers read from the screen',
                   },
-                  isReadable: { type: Type.BOOLEAN, description: 'Whether the AI could read text and UI on the screen' },
+                  isReadable: { type: Type.BOOLEAN, description: 'Whether text and UI on the screen are readable' },
                   screenSummaryBn: { type: Type.STRING, description: 'Bengali explanation of what is on this screen' },
                   screenSummaryEn: { type: Type.STRING, description: 'English explanation of what is on this screen' },
                   customPromptAnswer: { type: Type.STRING, description: 'Answer to custom question if asked' },
 
                   // Trading specific
-                  symbol: { type: Type.STRING, description: 'Asset symbol e.g. AUD/CHF, EUR/USD, BTC/USDT' },
+                  symbol: { type: Type.STRING, description: 'Asset symbol e.g. EUR/USD OTC, AUD/CHF, BTC/USDT, XAU/USD' },
                   timeframe: { type: Type.STRING, description: 'Timeframe e.g. 1m, 5m, 15m, 1h' },
                   marketType: {
                     type: Type.STRING,
                     description: 'CRYPTO, FOREX, STOCKS, COMMODITY, or UNKNOWN',
                   },
-                  lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest candle price visible on chart' },
+                  lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest price visible on right axis' },
                   lastCandleDirection: {
                     type: Type.STRING,
-                    description: 'BULLISH, BEARISH, DOJI, or UNCERTAIN',
+                    description: 'Direction of the newly CLOSED candle: BULLISH, BEARISH, DOJI, or UNCERTAIN',
                   },
-                  candlestickPattern: { type: Type.STRING, description: 'Identified pattern name' },
+                  closedCandleColor: {
+                    type: Type.STRING,
+                    description: 'Color of the newly CLOSED candle (2nd from right if rightmost is forming): GREEN, RED, DOJI, or UNCERTAIN',
+                  },
+                  closedCandleBodyPercent: {
+                    type: Type.NUMBER,
+                    description: 'Body % of total height of the newly CLOSED candle (0-100)',
+                  },
+                  closedCandleUpperWickPercent: {
+                    type: Type.NUMBER,
+                    description: 'Upper wick % of total height of the newly CLOSED candle (0-100)',
+                  },
+                  closedCandleLowerWickPercent: {
+                    type: Type.NUMBER,
+                    description: 'Lower wick % of total height of the newly CLOSED candle (0-100)',
+                  },
+                  closedCandleRejection: {
+                    type: Type.STRING,
+                    description: 'UPPER_REJECTION, LOWER_REJECTION, or NONE on the newly CLOSED candle',
+                  },
+                  formingCandleColor: {
+                    type: Type.STRING,
+                    description: 'Color of the still-forming rightmost live candle: GREEN, RED, DOJI, or NONE',
+                  },
+                  candleTimerText: {
+                    type: Type.STRING,
+                    description: 'Visible countdown timer text near current candle e.g. 00:24',
+                  },
+                  candleTimerSecondsLeft: {
+                    type: Type.NUMBER,
+                    description: 'Visible countdown timer seconds remaining if shown (0-3600)',
+                  },
+                  candlestickPattern: { type: Type.STRING, description: 'Identified pattern on the closed candle/setup in short label' },
                   chartStructure: {
                     type: Type.STRING,
                     description: 'UPTREND, DOWNTREND, RANGING, BREAKOUT, CONSOLIDATION, or UNCLEAR',
                   },
+                  macroTrend15m: {
+                    type: Type.STRING,
+                    description: 'UPTREND, DOWNTREND, or SIDEWAYS',
+                  },
+                  secondaryTrend5m: {
+                    type: Type.STRING,
+                    description: 'UPTREND, DOWNTREND, or SIDEWAYS',
+                  },
+                  microTrend1m: {
+                    type: Type.STRING,
+                    description: 'UPTREND, DOWNTREND, or SIDEWAYS',
+                  },
+                  marketRegime: {
+                    type: Type.STRING,
+                    description: 'TRENDING, SIDEWAYS, HIGH_VOLATILITY_SPIKE, or DOJI_CHOPPY',
+                  },
                   predictedNextCandle: {
                     type: Type.STRING,
-                    description: 'CALL, PUT, or WAIT - Must be CALL (Green) or PUT (Red) only if setup score >= 7.5; otherwise WAIT if sideways or unclear',
+                    description: 'CALL, PUT, or WAIT (WAIT whenever confirmedPoints < 4 or filter fails or totalScore < 7.5)',
                   },
                   nextCandlePredictionReasonBn: {
                     type: Type.STRING,
-                    description: 'Direct Bengali explanation of why next candle is predicted to be CALL (Green) or PUT (Red)',
+                    description: 'Concise Bengali explanation referencing closed candle and key reason',
                   },
                   tradeQualityTier: {
                     type: Type.STRING,
@@ -292,12 +275,22 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
                   },
                   priceActionSetup: {
                     type: Type.STRING,
-                    description: 'Name of the price action setup e.g. Shooting Star Rejection, Hammer Bounce, Exhaustion Pullback, Engulfing',
+                    description: 'Setup name e.g. Shooting Star Rejection, Hammer Bounce, Bullish Engulfing, Trend Pullback',
                   },
                   reversalProbabilityPercent: {
                     type: Type.NUMBER,
-                    description: 'Estimated probability of an immediate reversal candle 0-100',
+                    description: 'Estimated reversal probability 0-100',
                   },
+                  step1ChartValid: { type: Type.BOOLEAN, description: 'Step 1: Valid candlestick chart, symbol & TF visible' },
+                  step2ClosedCandleValid: { type: Type.BOOLEAN, description: 'Step 2: Newly CLOSED candle cleanly identified & non-ambiguous' },
+                  step3TrendAligned: { type: Type.BOOLEAN, description: 'Step 3: Multi-timeframe trend or S/R extreme reversal confluence aligned' },
+                  step4FilterPassed: { type: Type.BOOLEAN, description: 'Step 4: Market filter passed (no chop, doji cluster, or spike)' },
+                  step5SetupConfirmed: { type: Type.BOOLEAN, description: 'Step 5: Setup score >= 7.5/10 and decisive CALL/PUT confirmed' },
+                  confirmedPoints: { type: Type.NUMBER, description: 'Exact number of passed steps out of 5 (0 to 5)' },
+                  priceActionScore: { type: Type.NUMBER, description: 'Price action score 0.0 to 5.0' },
+                  indicatorMomentumScore: { type: Type.NUMBER, description: 'Indicator/momentum score 0.0 to 3.0' },
+                  trendAlignmentScore: { type: Type.NUMBER, description: 'Trend alignment score 0.0 to 2.0' },
+                  totalScore: { type: Type.NUMBER, description: 'Total score 0.0 to 10.0' },
                   indicatorsIdentified: {
                     type: Type.ARRAY,
                     items: {
@@ -313,7 +306,7 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
                   visionSummary: { type: Type.STRING, description: 'Brief visual technical summary' },
                   confidenceScore: { type: Type.NUMBER, description: 'Visual recognition confidence 0.0 to 1.0' },
                   isClearTradingChart: { type: Type.BOOLEAN, description: 'Whether the image is an active trading candlestick chart' },
-                  containsSensitivePrivateData: { type: Type.BOOLEAN, description: 'True ONLY if passwords or credit cards were visible' },
+                  containsSensitivePrivateData: { type: Type.BOOLEAN, description: 'True ONLY if passwords or bank cards were visible' },
                 },
                 required: [
                   'screenCategory',
@@ -322,7 +315,22 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & VERIFIED CAUTIONS (COHO
                   'screenSummaryBn',
                   'marketType',
                   'lastCandleDirection',
+                  'closedCandleColor',
+                  'formingCandleColor',
+                  'closedCandleRejection',
                   'chartStructure',
+                  'macroTrend15m',
+                  'secondaryTrend5m',
+                  'microTrend1m',
+                  'marketRegime',
+                  'predictedNextCandle',
+                  'step1ChartValid',
+                  'step2ClosedCandleValid',
+                  'step3TrendAligned',
+                  'step4FilterPassed',
+                  'step5SetupConfirmed',
+                  'confirmedPoints',
+                  'totalScore',
                   'indicatorsIdentified',
                   'visionSummary',
                   'confidenceScore',

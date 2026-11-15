@@ -78,10 +78,17 @@
     .direction.down { color: #fb7185; }
     .direction.wait { color: #fbbf24; font-size: 15px; }
     .meta { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .audit-row { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; }
+    .pill.ok { border-color: rgba(16,185,129,0.65); background: rgba(16,185,129,0.16); color: #34d399; }
+    .pill.warn { border-color: rgba(245,158,11,0.65); background: rgba(245,158,11,0.16); color: #fbbf24; }
+    .pill.bad { border-color: rgba(244,63,94,0.65); background: rgba(244,63,94,0.16); color: #fb7185; }
     .reason { font-size: 11px; color: #cbd5e1; margin-top: 6px; line-height: 1.4; }
-    .steps { display: flex; gap: 4px; margin: 8px 0; }
-    .step { flex: 1; height: 4px; border-radius: 4px; background: rgba(51, 65, 85, 0.8); }
-    .step.active { background: #22d3ee; }
+    .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 8px 0; }
+    .step { padding: 3px 2px; border-radius: 5px; background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(51, 65, 85, 0.8); color: #94a3b8; font-size: 9px; font-weight: 700; text-align: center; }
+    .step.active { background: rgba(34, 211, 238, 0.25); border-color: #22d3ee; color: #67e8f9; }
+    .step.passed { background: rgba(16, 185, 129, 0.22); border-color: rgba(16, 185, 129, 0.7); color: #34d399; }
+    .step.failed { background: rgba(244, 63, 94, 0.14); border-color: rgba(244, 63, 94, 0.45); color: #fda4af; }
     .scan-btn {
       width: 100%;
       padding: 10px;
@@ -135,12 +142,16 @@
       <div class="signal-box">
         <div id="tp-dir" class="direction wait">স্ক্যান করতে প্রস্তুত</div>
         <div id="tp-meta" class="meta">চার্ট খুলে নিচে ক্লিক করুন</div>
+        <div id="tp-audit" class="audit-row hidden">
+          <span id="tp-points" class="pill">পয়েন্ট: ০/৫</span>
+          <span id="tp-candle" class="pill">ক্লোজ: --</span>
+        </div>
         <div id="tp-steps" class="steps hidden">
-          <div class="step" data-s="1"></div>
-          <div class="step" data-s="2"></div>
-          <div class="step" data-s="3"></div>
-          <div class="step" data-s="4"></div>
-          <div class="step" data-s="5"></div>
+          <div class="step" data-s="1">১.চার্ট</div>
+          <div class="step" data-s="2">২.ক্লোজ</div>
+          <div class="step" data-s="3">৩.TF</div>
+          <div class="step" data-s="4">৪.ফিল্টার</div>
+          <div class="step" data-s="5">৫.স্কোর</div>
         </div>
         <div id="tp-reason" class="reason"></div>
       </div>
@@ -157,6 +168,9 @@
   const dragEl = shadow.getElementById('tp-drag');
   const dirEl = shadow.getElementById('tp-dir');
   const metaEl = shadow.getElementById('tp-meta');
+  const auditEl = shadow.getElementById('tp-audit');
+  const pointsEl = shadow.getElementById('tp-points');
+  const candleEl = shadow.getElementById('tp-candle');
   const reasonEl = shadow.getElementById('tp-reason');
   const stepsEl = shadow.getElementById('tp-steps');
   const scanBtn = shadow.getElementById('tp-scan');
@@ -295,6 +309,7 @@
     scanBtn.disabled = true;
     scanBtn.textContent = '⏳ বিশ্লেষণ চলছে...';
     stepsEl.classList.remove('hidden');
+    auditEl.classList.add('hidden');
     cardEl.className = 'card';
     dirEl.className = 'direction wait';
     dirEl.textContent = '৫-ধাপ এনালাইসিস চলছে...';
@@ -306,6 +321,7 @@
       if (currentStep < 5) currentStep++;
       shadow.querySelectorAll('.step').forEach((el) => {
         const s = Number(el.getAttribute('data-s'));
+        el.classList.remove('passed', 'failed');
         el.classList.toggle('active', s <= currentStep);
       });
     }, 550);
@@ -315,9 +331,10 @@
       isScanning = false;
       scanBtn.disabled = false;
       scanBtn.textContent = '⚡ ১-ক্লিক স্ক্যান (Scan)';
-      stepsEl.classList.add('hidden');
 
       if (!res || !res.ok || !res.data) {
+        stepsEl.classList.add('hidden');
+        auditEl.classList.add('hidden');
         dirEl.className = 'direction wait';
         dirEl.textContent = 'স্ক্যান ব্যর্থ';
         metaEl.textContent = res && res.error ? res.error : 'সার্ভারের সাথে সংযোগ হয়নি';
@@ -326,6 +343,7 @@
 
       const data = res.data;
       const vision = data.visionData || data;
+      const flow = data.signalFlow;
       const dir = (data.direction || vision.direction || 'WAIT').toUpperCase();
       const conf = Number(data.confidence || vision.confidence || 0);
       const symbol = vision.symbol || data.symbol || 'LIVE CHART';
@@ -333,21 +351,62 @@
         ? data.reasoning[0]
         : (data.verdictTitle || vision.summaryBn || '');
 
-      if (dir === 'UP' || dir === 'CALL') {
-        cardEl.className = 'card up';
-        dirEl.className = 'direction up';
-        dirEl.textContent = `▲ CALL (UP) · ${conf}%`;
-        speakBn(`সিগন্যাল আপ, অর্থাৎ কল। কনফিডেন্স ${conf} শতাংশ।`);
-      } else if (dir === 'DOWN' || dir === 'PUT') {
-        cardEl.className = 'card down';
-        dirEl.className = 'direction down';
-        dirEl.textContent = `▼ PUT (DOWN) · ${conf}%`;
-        speakBn(`সিগন্যাল ডাউন, অর্থাৎ পুট। কনফিডেন্স ${conf} শতাংশ।`);
+      const stepChecks = flow && Array.isArray(flow.stepChecks) ? flow.stepChecks : null;
+      const pts = (flow && typeof flow.confirmedPoints === 'number')
+        ? flow.confirmedPoints
+        : (typeof vision.confirmedPoints === 'number')
+        ? vision.confirmedPoints
+        : stepChecks
+        ? stepChecks.filter((s) => s.passed).length
+        : (dir === 'UP' || dir === 'DOWN' ? 5 : 2);
+
+      const closedType = flow && flow.candleData && flow.candleData.closedCandle
+        ? flow.candleData.closedCandle.type
+        : null;
+      const closedColor = vision.closedCandleColor ||
+        (closedType === 'BULLISH' ? 'GREEN' : closedType === 'BEARISH' ? 'RED' : closedType === 'DOJI' ? 'DOJI' : 'UNCERTAIN');
+      const closedLabel = closedColor === 'GREEN'
+        ? 'ক্লোজ: সবুজ'
+        : closedColor === 'RED'
+        ? 'ক্লোজ: লাল'
+        : closedColor === 'DOJI'
+        ? 'ক্লোজ: ডোজি'
+        : 'ক্লোজ: অস্পষ্ট';
+
+      if (vision.isClearTradingChart || flow) {
+        auditEl.classList.remove('hidden');
+        pointsEl.textContent = `পয়েন্ট: ${pts}/৫`;
+        pointsEl.className = `pill ${pts >= 4 ? 'ok' : pts === 3 ? 'warn' : 'bad'}`;
+        candleEl.textContent = closedLabel;
+        candleEl.className = `pill ${closedColor === 'GREEN' ? 'ok' : closedColor === 'RED' ? 'bad' : 'warn'}`;
+
+        stepsEl.classList.remove('hidden');
+        shadow.querySelectorAll('.step').forEach((el) => {
+          const s = Number(el.getAttribute('data-s'));
+          const passed = stepChecks && stepChecks[s - 1]
+            ? Boolean(stepChecks[s - 1].passed)
+            : (s === 1 ? Boolean(vision.isClearTradingChart) : s === 2 ? closedColor !== 'UNCERTAIN' : (dir === 'UP' || dir === 'DOWN'));
+          el.classList.remove('active');
+          el.classList.toggle('passed', passed);
+          el.classList.toggle('failed', !passed);
+        });
+      } else {
+        auditEl.classList.add('hidden');
+        stepsEl.classList.add('hidden');
+      }
+
+      if (dir === 'UP' || dir === 'DOWN') {
+        cardEl.className = dir === 'UP' ? 'card up' : 'card down';
+        dirEl.className = dir === 'UP' ? 'direction up' : 'direction down';
+        dirEl.textContent = dir === 'UP' ? `▲ CALL · ${conf}%` : `▼ PUT · ${conf}%`;
+        speakBn(dir === 'UP'
+          ? `সিগন্যাল আপ, কল। পয়েন্ট ${pts}।`
+          : `সিগন্যাল ডাউন, পুট। পয়েন্ট ${pts}।`);
       } else {
         cardEl.className = 'card wait';
         dirEl.className = 'direction wait';
-        dirEl.textContent = '⏸ অপেক্ষা করুন (WAIT)';
-        speakBn('এখন নিরাপদ এন্ট্রি নেই, অনুগ্রহ করে অপেক্ষা করুন।');
+        dirEl.textContent = `⏸ WAIT (${pts}/৫)`;
+        speakBn(`পয়েন্ট ৫ এর মধ্যে ${pts}। অপেক্ষা করুন।`);
       }
 
       metaEl.textContent = `${symbol} · ${new Date().toLocaleTimeString()}`;

@@ -15,6 +15,14 @@ export interface ScreenVisionParsedData {
   marketType: 'CRYPTO' | 'FOREX' | 'STOCKS' | 'COMMODITY' | 'UNKNOWN';
   lastVisiblePrice?: number;
   lastCandleDirection: 'BULLISH' | 'BEARISH' | 'DOJI' | 'UNCERTAIN';
+  closedCandleColor?: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN';
+  closedCandleBodyPercent?: number;
+  closedCandleUpperWickPercent?: number;
+  closedCandleLowerWickPercent?: number;
+  closedCandleRejection?: 'UPPER_REJECTION' | 'LOWER_REJECTION' | 'NONE';
+  formingCandleColor?: 'GREEN' | 'RED' | 'DOJI' | 'NONE';
+  candleTimerText?: string;
+  candleTimerSecondsLeft?: number;
   candlestickPattern?: string;
   indicatorsIdentified: {
     name: string;
@@ -22,6 +30,10 @@ export interface ScreenVisionParsedData {
     bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   }[];
   chartStructure: 'UPTREND' | 'DOWNTREND' | 'RANGING' | 'BREAKOUT' | 'CONSOLIDATION' | 'UNCLEAR';
+  macroTrend15m?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+  secondaryTrend5m?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+  microTrend1m?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+  marketRegime?: 'TRENDING' | 'SIDEWAYS' | 'HIGH_VOLATILITY_SPIKE' | 'DOJI_CHOPPY';
   keyLevels?: {
     support?: number;
     resistance?: number;
@@ -31,6 +43,16 @@ export interface ScreenVisionParsedData {
   tradeQualityTier?: 'HIGH_PROBABILITY' | 'MODERATE' | 'HIGH_RISK_DOJI';
   priceActionSetup?: string;
   reversalProbabilityPercent?: number;
+  step1ChartValid?: boolean;
+  step2ClosedCandleValid?: boolean;
+  step3TrendAligned?: boolean;
+  step4FilterPassed?: boolean;
+  step5SetupConfirmed?: boolean;
+  confirmedPoints?: number;
+  priceActionScore?: number;
+  indicatorMomentumScore?: number;
+  trendAlignmentScore?: number;
+  totalScore?: number;
   visionSummary: string;
   confidenceScore: number;
   isClearTradingChart: boolean;
@@ -73,7 +95,18 @@ export interface ScreenAnalysisFinalResult {
   signalFlow?: InstitutionalSignalFlow;
 }
 
+export interface SignalStepCheck {
+  step: number;
+  key: 'CHART' | 'CLOSED_CANDLE' | 'MTF_TREND' | 'MARKET_FILTER' | 'SETUP_SCORE';
+  labelBn: string;
+  passed: boolean;
+  detailBn?: string;
+}
+
 export interface InstitutionalSignalFlow {
+  confirmedPoints?: number;
+  totalPoints?: number;
+  stepChecks?: SignalStepCheck[];
   // ১. Chart Verification
   chartVerification: {
     isChartValid: boolean;
@@ -92,6 +125,7 @@ export interface InstitutionalSignalFlow {
       upperWickPx: number;
       lowerWickPx: number;
       isRejection: boolean;
+      labelBn?: string;
     };
     runningCandle: {
       isForming: boolean;

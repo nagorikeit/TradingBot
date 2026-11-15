@@ -14,6 +14,12 @@ export interface FloatingOverlayData {
   reasonText: string;
   latencyMs: number;
   symbol?: string;
+  confirmedPoints?: number;
+  totalPoints?: number;
+  stepResults?: boolean[];
+  closedCandleColor?: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN';
+  closedCandleLabel?: string;
+  tradingProfile?: string;
   isStale?: boolean;
   frameCount?: number;
   lastFrameTime?: string;
@@ -61,6 +67,7 @@ export interface TradePulseNativeScreenPlugin {
     targetHeight?: number;
     quality?: number;
     backendUrl?: string;
+    tradingProfile?: string;
   }): Promise<{ success: boolean; message?: string }>;
 
   /**

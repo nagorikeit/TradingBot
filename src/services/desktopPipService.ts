@@ -75,8 +75,8 @@ class DesktopPipService {
         .documentPictureInPicture;
 
       const pipWin = await api.requestWindow({
-        width: 325,
-        height: 360,
+        width: 345,
+        height: 415,
       });
 
       this.pipWindow = pipWin;
@@ -224,26 +224,55 @@ class DesktopPipService {
         font-family: monospace;
         margin-bottom: 6px;
       }
+      .audit-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 7px;
+      }
+      .pill {
+        font-size: 10px;
+        font-weight: 800;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid #334155;
+        background: #1e293b;
+        color: #cbd5e1;
+      }
+      .pill.ok { border-color: rgba(16,185,129,0.65); background: rgba(16,185,129,0.18); color: #34d399; }
+      .pill.warn { border-color: rgba(245,158,11,0.65); background: rgba(245,158,11,0.18); color: #fbbf24; }
+      .pill.bad { border-color: rgba(244,63,94,0.65); background: rgba(244,63,94,0.18); color: #fb7185; }
       .reason {
         font-size: 11px;
         color: #e2e8f0;
-        line-height: 1.45;
-        max-height: 68px;
+        line-height: 1.4;
+        max-height: 54px;
         overflow-y: auto;
       }
       .steps {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
         gap: 4px;
         width: 100%;
-        margin: 8px 0 4px;
+        margin: 6px 0 8px;
       }
       .step {
-        flex: 1;
-        height: 4px;
-        border-radius: 4px;
+        padding: 4px 2px;
+        border-radius: 6px;
         background: #1e293b;
+        border: 1px solid #334155;
+        color: #94a3b8;
+        font-size: 9px;
+        font-weight: 700;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
       }
-      .step.active { background: #22d3ee; }
+      .step.active { background: rgba(34, 211, 238, 0.25); border-color: #22d3ee; color: #67e8f9; }
+      .step.passed { background: rgba(16, 185, 129, 0.22); border-color: rgba(16, 185, 129, 0.7); color: #34d399; }
+      .step.failed { background: rgba(244, 63, 94, 0.14); border-color: rgba(244, 63, 94, 0.45); color: #fda4af; }
       .scan-btn {
         width: 100%;
         padding: 11px;
@@ -276,12 +305,16 @@ class DesktopPipService {
       <div id="pip-hero" class="hero">
         <div id="pip-dir" class="dir wait">প্রস্তুত</div>
         <div id="pip-meta" class="meta">অপেক্ষায়</div>
+        <div id="pip-audit" class="audit-row" style="display:none;">
+          <span id="pip-points" class="pill">নিশ্চিত: ০/৫</span>
+          <span id="pip-candle" class="pill">ক্লোজ: --</span>
+        </div>
         <div id="pip-steps" class="steps" style="display:none;">
-          <div class="step" data-step="1"></div>
-          <div class="step" data-step="2"></div>
-          <div class="step" data-step="3"></div>
-          <div class="step" data-step="4"></div>
-          <div class="step" data-step="5"></div>
+          <div class="step" data-step="1">১.চার্ট</div>
+          <div class="step" data-step="2">২.ক্লোজ</div>
+          <div class="step" data-step="3">৩.TF</div>
+          <div class="step" data-step="4">৪.ফিল্টার</div>
+          <div class="step" data-step="5">৫.স্কোর</div>
         </div>
         <div id="pip-reason" class="reason"></div>
       </div>
@@ -345,6 +378,9 @@ class DesktopPipService {
     const heroEl = doc.getElementById('pip-hero');
     const dirEl = doc.getElementById('pip-dir');
     const metaEl = doc.getElementById('pip-meta');
+    const auditEl = doc.getElementById('pip-audit');
+    const pointsEl = doc.getElementById('pip-points');
+    const candleEl = doc.getElementById('pip-candle');
     const stepsEl = doc.getElementById('pip-steps');
     const reasonEl = doc.getElementById('pip-reason');
     const scanBtn = doc.getElementById('pip-scan') as HTMLButtonElement | null;
@@ -363,7 +399,7 @@ class DesktopPipService {
       } else if (state !== 'STREAMING' && state !== 'PAUSED') {
         scanBtn.disabled = false;
         scanBtn.textContent = 'স্ক্রিন কানেক্ট';
-      } else if (isBusy) {
+      } else if (isBusy || scanStep) {
         scanBtn.disabled = true;
         scanBtn.textContent = scanStep ? `⏳ ধাপ ${scanStep.step}/5` : '⏳ স্ক্যান...';
       } else {
@@ -372,15 +408,73 @@ class DesktopPipService {
       }
     }
 
+    const flow = result?.signalFlow;
+    const stepChecks = flow?.stepChecks;
+    const hasChartResult = Boolean(result && result.visionData?.isClearTradingChart);
+
     if (stepsEl) {
-      if (isBusy && scanStep) {
-        stepsEl.style.display = 'flex';
+      if ((isBusy || scanStep) && scanStep) {
+        stepsEl.style.display = 'grid';
         stepsEl.querySelectorAll('.step').forEach((el) => {
           const s = Number(el.getAttribute('data-step'));
+          el.classList.remove('passed', 'failed');
           el.classList.toggle('active', s <= scanStep.step);
+        });
+      } else if (hasChartResult && stepChecks && stepChecks.length === 5) {
+        stepsEl.style.display = 'grid';
+        stepsEl.querySelectorAll('.step').forEach((el) => {
+          const s = Number(el.getAttribute('data-step'));
+          const item = stepChecks[s - 1];
+          el.classList.remove('active');
+          el.classList.toggle('passed', Boolean(item?.passed));
+          el.classList.toggle('failed', !item?.passed);
         });
       } else {
         stepsEl.style.display = 'none';
+      }
+    }
+
+    if (auditEl && pointsEl && candleEl) {
+      if (!isBusy && !scanStep && hasChartResult && result) {
+        const pts =
+          typeof flow?.confirmedPoints === 'number'
+            ? flow.confirmedPoints
+            : typeof result.visionData?.confirmedPoints === 'number'
+            ? result.visionData.confirmedPoints
+            : stepChecks
+            ? stepChecks.filter((s) => s.passed).length
+            : result.direction !== 'WAIT'
+            ? 5
+            : 2;
+
+        const closedColor =
+          result.visionData?.closedCandleColor ||
+          (flow?.candleData?.closedCandle?.type === 'BULLISH'
+            ? 'GREEN'
+            : flow?.candleData?.closedCandle?.type === 'BEARISH'
+            ? 'RED'
+            : flow?.candleData?.closedCandle?.type === 'DOJI'
+            ? 'DOJI'
+            : 'UNCERTAIN');
+
+        const candleShort =
+          closedColor === 'GREEN'
+            ? 'ক্লোজ: সবুজ'
+            : closedColor === 'RED'
+            ? 'ক্লোজ: লাল'
+            : closedColor === 'DOJI'
+            ? 'ক্লোজ: ডোজি'
+            : 'ক্লোজ: অস্পষ্ট';
+
+        auditEl.style.display = 'flex';
+        pointsEl.textContent = `পয়েন্ট: ${pts}/৫`;
+        pointsEl.className = `pill ${pts >= 4 ? 'ok' : pts === 3 ? 'warn' : 'bad'}`;
+        candleEl.textContent = candleShort;
+        candleEl.className = `pill ${
+          closedColor === 'GREEN' ? 'ok' : closedColor === 'RED' ? 'bad' : 'warn'
+        }`;
+      } else {
+        auditEl.style.display = 'none';
       }
     }
 
@@ -403,7 +497,7 @@ class DesktopPipService {
         return;
       }
 
-      if (isBusy && scanStep) {
+      if ((isBusy || scanStep) && scanStep) {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
         dirEl.textContent = `ধাপ ${scanStep.step}/5`;
@@ -433,7 +527,7 @@ class DesktopPipService {
         }
 
         metaEl.textContent = `${sym}${countdown}`;
-        reasonEl.textContent = result.visionData?.candlestickPattern || '';
+        reasonEl.textContent = result.visionData?.candlestickPattern || result.reasoning?.[0] || '';
       } else {
         heroEl.className = 'hero';
         dirEl.className = 'dir wait';
