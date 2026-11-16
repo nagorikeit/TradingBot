@@ -164,4 +164,16 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
     }
     return { success: true };
   }
+
+  public async openGoogleAuthInBrowser(options: { url: string }): Promise<{ opened: boolean }> {
+    if (typeof window !== 'undefined' && options?.url) {
+      window.location.href = options.url;
+      return { opened: true };
+    }
+    return { opened: false };
+  }
+
+  public async consumePendingAuthCallback(): Promise<{ url: string }> {
+    return { url: '' };
+  }
 }

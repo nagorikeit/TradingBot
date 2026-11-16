@@ -11,6 +11,10 @@ import {
 } from '../types/authTypes';
 import {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signInWithCredential,
+  GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -30,8 +34,10 @@ import {
   Timestamp,
   Unsubscribe,
 } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
-import { getApiUrl } from './apiConfig';
+import { getApiUrl, MOBILE_GOOGLE_AUTH_BRIDGE_URL } from './apiConfig';
+import { TradePulseNativeScreen } from '../plugins/TradePulseNativeScreen';
 
 export const ADMIN_EMAILS = ['nagorikeitsheba@gmail.com', 'admin@tradepulse.io'];
 
@@ -276,6 +282,7 @@ class AuthService {
   private planDocUnsub: Unsubscribe | null = null;
   private scanWriteQueue: Promise<unknown> = Promise.resolve();
   private keepTerminalUnlockedUntilNextClick: boolean = false;
+  private nativeAuthResolver: ((res: { success: boolean; error?: string; user?: User }) => void) | null = null;
 
   constructor() {
     this.init();
@@ -318,6 +325,29 @@ class AuthService {
         }
       }
     });
+
+    if (Capacitor.isNativePlatform()) {
+      TradePulseNativeScreen.addListener('onGoogleAuthCallback', ({ url }) => {
+        this.handleNativeGoogleCallbackUrl(url);
+      }).catch(() => {});
+
+      TradePulseNativeScreen.consumePendingAuthCallback()
+        .then(({ url }) => {
+          if (url) {
+            this.handleNativeGoogleCallbackUrl(url);
+          }
+        })
+        .catch(() => {});
+    } else {
+      getRedirectResult(auth)
+        .then(async (res) => {
+          if (res?.user) {
+            const user = await this.ensureFirestoreUserDoc(res.user);
+            this.setCurrentUserSession(user, 'firebase_google_auth');
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   private async fetchBackendPlanSettings(): Promise<PlanSettingsConfig> {
@@ -853,9 +883,149 @@ class AuthService {
 
   // --- 1-CLICK GMAIL / GOOGLE AUTHENTICATION ---
 
-  public async loginWithGoogle(): Promise<{ success: boolean; error?: string; user?: User }> {
+  private async handleNativeGoogleCallbackUrl(callbackUrl: string): Promise<void> {
+    if (!callbackUrl || !callbackUrl.startsWith('tradepulse://auth-callback')) {
+      return;
+    }
+    const resolvePending = this.nativeAuthResolver;
+    this.nativeAuthResolver = null;
+
     try {
-      this.keepTerminalUnlockedUntilNextClick = false;
+      const queryIndex = callbackUrl.indexOf('?');
+      const params = new URLSearchParams(queryIndex >= 0 ? callbackUrl.slice(queryIndex + 1) : '');
+      const errParam = params.get('error');
+      if (errParam) {
+        resolvePending?.({ success: false, error: 'Google লগইন ব্যর্থ হয়েছে: ' + errParam });
+        return;
+      }
+
+      const idToken = params.get('idToken') || '';
+      const accessToken = params.get('accessToken') || '';
+      if (!idToken && !accessToken) {
+        resolvePending?.({ success: false, error: 'Google টোকেন পাওয়া যায়নি। আবার চেষ্টা করুন।' });
+        return;
+      }
+
+      const credential = GoogleAuthProvider.credential(idToken || undefined, accessToken || undefined);
+      const result = await signInWithCredential(auth, credential);
+      const user = await this.ensureFirestoreUserDoc(result.user);
+      this.setCurrentUserSession(user, 'firebase_google_auth');
+      resolvePending?.({ success: true, user });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      resolvePending?.({ success: false, error: 'মোবাইল Google লগইন ব্যর্থ হয়েছে: ' + msg });
+    }
+  }
+
+  public async loginWithGoogle(): Promise<{ success: boolean; error?: string; user?: User }> {
+    this.keepTerminalUnlockedUntilNextClick = false;
+
+    // On Capacitor Android APK, WebView blocks Google OAuth popups (403 disallowed_useragent).
+    // Open system Chrome Custom Tab bridge -> deep-link back with Google OAuth credential.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const bridgeUrl = MOBILE_GOOGLE_AUTH_BRIDGE_URL;
+
+        const authPromise = new Promise<{ success: boolean; error?: string; user?: User }>((resolve) => {
+          this.nativeAuthResolver = resolve;
+
+          let pollTimer: ReturnType<typeof setInterval> | null = null;
+          let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+          let cancelAfterReturnTimer: ReturnType<typeof setTimeout> | null = null;
+          let wasHidden = false;
+
+          const cleanup = () => {
+            if (pollTimer) clearInterval(pollTimer);
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            if (cancelAfterReturnTimer) clearTimeout(cancelAfterReturnTimer);
+            if (typeof document !== 'undefined') {
+              document.removeEventListener('visibilitychange', checkPendingOnFocus);
+            }
+          };
+
+          const checkPendingOnFocus = async () => {
+            if (typeof document === 'undefined') return;
+            if (document.visibilityState === 'hidden') {
+              wasHidden = true;
+              return;
+            }
+            if (document.visibilityState === 'visible') {
+              try {
+                const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+                if (url) {
+                  cleanup();
+                  await this.handleNativeGoogleCallbackUrl(url);
+                  return;
+                }
+              } catch {}
+
+              if (wasHidden && !cancelAfterReturnTimer) {
+                cancelAfterReturnTimer = setTimeout(async () => {
+                  if (this.nativeAuthResolver !== resolve) return;
+                  try {
+                    const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+                    if (url) {
+                      cleanup();
+                      await this.handleNativeGoogleCallbackUrl(url);
+                      return;
+                    }
+                  } catch {}
+                  this.nativeAuthResolver = null;
+                  cleanup();
+                  resolve({
+                    success: false,
+                    error:
+                      'ব্রাউজারে Google লগইন সম্পন্ন হওয়ার আগেই ফিরে এসেছেন। আবার চেষ্টা করুন অথবা ইমেইল-পাসওয়ার্ড দিয়ে প্রবেশ করুন।',
+                  });
+                }, 2500);
+              }
+            }
+          };
+
+          if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', checkPendingOnFocus);
+          }
+
+          pollTimer = setInterval(async () => {
+            if (!this.nativeAuthResolver) {
+              cleanup();
+              return;
+            }
+            try {
+              const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+              if (url) {
+                cleanup();
+                await this.handleNativeGoogleCallbackUrl(url);
+              }
+            } catch {}
+          }, 900);
+
+          timeoutTimer = setTimeout(() => {
+            if (this.nativeAuthResolver === resolve) {
+              this.nativeAuthResolver = null;
+              cleanup();
+              resolve({
+                success: false,
+                error:
+                  'ব্রাউজার থেকে Google লগইন সম্পন্ন হয়নি। অনুগ্রহ করে ব্রাউজারে লগইন শেষে "TradePulse অ্যাপে ফিরে যান" চাপুন অথবা ইমেইল দিয়ে প্রবেশ করুন।',
+              });
+            }
+          }, 120000);
+        });
+
+        await TradePulseNativeScreen.openGoogleAuthInBrowser({ url: bridgeUrl });
+        return await authPromise;
+      } catch (error: unknown) {
+        this.nativeAuthResolver = null;
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          error: 'মোবাইল ব্রাউজার দিয়ে Google লগইন শুরু করা যায়নি: ' + msg,
+        };
+      }
+    }
+
+    try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
       const user = await this.ensureFirestoreUserDoc(fbUser);
@@ -863,6 +1033,26 @@ class AuthService {
       return { success: true, user };
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
+      const isMobileWeb =
+        typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+      if (isMobileWeb && (msg.includes('popup-blocked') || msg.includes('operation-not-supported'))) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return { success: false, error: 'Google পেজে রিডাইরেক্ট হচ্ছে...' };
+        } catch (redirectErr: unknown) {
+          return {
+            success: false,
+            error: 'মোবাইল ব্রাউজার Google লগইন ব্যর্থ হয়েছে: ' + (redirectErr instanceof Error ? redirectErr.message : String(redirectErr)),
+          };
+        }
+      }
+      if (msg.includes('unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        return {
+          success: false,
+          error: `Firebase Authentication-এ "${host}" ডোমেইনটি Authorized Domains-এ যুক্ত নেই। Firebase Console (forward-invention-bggh3) -> Authentication -> Settings -> Authorized domains-এ যুক্ত করুন।`,
+        };
+      }
       if (msg.includes('popup-closed-by-user')) {
         return { success: false, error: 'জিমেইল লগইন পপআপটি বন্ধ করা হয়েছে। আবার চেষ্টা করুন।' };
       }

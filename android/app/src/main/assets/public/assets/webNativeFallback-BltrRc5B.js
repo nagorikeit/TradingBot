@@ -1,4 +1,4 @@
-import { t as WebPlugin } from "./index-C57hRS12.js";
+import { t as WebPlugin } from "./index-D2qEELNa.js";
 //#region src/plugins/webNativeFallback.ts
 var TradePulseNativeScreenWeb = class extends WebPlugin {
 	constructor(..._args) {
@@ -125,6 +125,16 @@ var TradePulseNativeScreenWeb = class extends WebPlugin {
 	async stopSpeaking() {
 		if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
 		return { success: true };
+	}
+	async openGoogleAuthInBrowser(options) {
+		if (typeof window !== "undefined" && options?.url) {
+			window.location.href = options.url;
+			return { opened: true };
+		}
+		return { opened: false };
+	}
+	async consumePendingAuthCallback() {
+		return { url: "" };
 	}
 };
 //#endregion

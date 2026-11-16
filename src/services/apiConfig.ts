@@ -2,8 +2,11 @@ import { Capacitor } from '@capacitor/core';
 
 const STORAGE_KEY_BACKEND_URL = 'tradepulse_backend_api_url';
 
-// Default hosted backend URL - automatically used by Android APK
+// Default hosted backend URL - automatically used by Android APK for AI/Vision API calls
 export const DEFAULT_HOSTED_BACKEND_URL = 'https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app';
+
+// Public Firebase-authorized GitHub Pages bridge for Capacitor Android Google Sign-In
+export const MOBILE_GOOGLE_AUTH_BRIDGE_URL = 'https://nagorikeit.github.io/TradingBot/?mobileGoogleAuth=1';
 
 /**
  * Returns the base URL for API requests.

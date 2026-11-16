@@ -176,6 +176,24 @@ export interface TradePulseNativeScreenPlugin {
    * Stops any currently playing native audio speech
    */
   stopSpeaking(): Promise<{ success: boolean }>;
+
+  /**
+   * Opens Google Sign-In flow in system Chrome Custom Tab (outside WebView)
+   */
+  openGoogleAuthInBrowser(options: { url: string }): Promise<{ opened: boolean }>;
+
+  /**
+   * Consumes any pending tradepulse://auth-callback deep-link URL received by MainActivity
+   */
+  consumePendingAuthCallback(): Promise<{ url: string }>;
+
+  /**
+   * Subscribes to tradepulse://auth-callback deep-link delivery events
+   */
+  addListener(
+    eventName: 'onGoogleAuthCallback',
+    listenerFunc: (data: { url: string }) => void
+  ): Promise<{ remove: () => void }>;
 }
 
 export const TradePulseNativeScreen = registerPlugin<TradePulseNativeScreenPlugin>(

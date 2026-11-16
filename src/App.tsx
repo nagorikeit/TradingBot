@@ -29,6 +29,7 @@ import { authService } from './services/authService';
 import { User, EffectiveScanQuotaStatus } from './types/authTypes';
 import { scannerService } from './services/scannerService';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { MobileGoogleAuthBridge } from './components/MobileGoogleAuthBridge';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'live-screen' | 'terminal' | 'scanner' | 'backtest' | 'history' | 'strategy' | 'agent' | 'knowledge' | 'admin'>('live-screen');
@@ -145,6 +146,14 @@ export default function App() {
   const stats = computeSignalStatistics(signalHistory);
   const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
   const previousCandle = candles.length > 1 ? candles[candles.length - 2] : null;
+
+  const isMobileGoogleAuthBridge =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('mobileGoogleAuth') === '1';
+
+  if (isMobileGoogleAuthBridge) {
+    return <MobileGoogleAuthBridge />;
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans">

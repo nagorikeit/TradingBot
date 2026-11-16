@@ -4,6 +4,7 @@ import {
   ScreenAnalysisFinalResult,
 } from '../types/screenAnalysisTypes';
 import { visionAnalysisService } from './visionAnalysisService';
+import { inspectChartPixels } from './pixelCandleInspector';
 
 export class ScreenVerificationService {
   private static instance: ScreenVerificationService;
@@ -360,8 +361,8 @@ export class ScreenVerificationService {
       };
     }
 
-    // SAFETY GUARD 3: High Latency / Stale Frame Guard (> 18s)
-    if (latencyMs > 18000) {
+    // SAFETY GUARD 3: High Latency / Stale Frame Guard (> 12s)
+    if (latencyMs > 12000) {
       return {
         analysisId,
         timestamp: now,
@@ -378,7 +379,7 @@ export class ScreenVerificationService {
         marketVerification: {
           isVerified: false,
           status: 'STALE_DATA',
-          notes: `Processing delay of ${latencyMs}ms exceeds 18000ms threshold.`,
+          notes: `Processing delay of ${latencyMs}ms exceeds 12000ms threshold.`,
         },
         safetyDisclaimer: 'Stale frames are held in WAIT to protect against slippage.',
         screenStatus: 'CHART_DETECTED',
@@ -395,26 +396,79 @@ export class ScreenVerificationService {
     const assetName = visionData.symbol || 'ASSET';
     let verdictTitle = `WAIT / NEUTRAL (${assetName})`;
 
-    // Normalize Closed Candle info from Vision AI
+    // Deterministic pixel cross-check of rightmost closed vs forming candles
+    const pixelAudit = inspectChartPixels(imageBase64);
+
+    // Normalize Closed Candle info from Vision AI + Pixel Cross-Verification
     const rawClosedColor = visionData.closedCandleColor;
-    const closedCandleType: 'BULLISH' | 'BEARISH' | 'DOJI' =
+    const visionClosedColor: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN' =
       rawClosedColor === 'GREEN' || visionData.lastCandleDirection === 'BULLISH'
-        ? 'BULLISH'
+        ? 'GREEN'
         : rawClosedColor === 'RED' || visionData.lastCandleDirection === 'BEARISH'
+        ? 'RED'
+        : rawClosedColor === 'DOJI' || visionData.lastCandleDirection === 'DOJI'
+        ? 'DOJI'
+        : 'UNCERTAIN';
+
+    // Detect if Vision confused the currently forming candle with the newly closed candle
+    const pixelConfirmedOpposite =
+      pixelAudit &&
+      pixelAudit.candleCount >= 5 &&
+      pixelAudit.bodyPct >= 30 &&
+      ((visionClosedColor === 'GREEN' && pixelAudit.closedColor === 'RED') ||
+        (visionClosedColor === 'RED' && pixelAudit.closedColor === 'GREEN'));
+
+    const visionMatchedFormingInstead =
+      Boolean(pixelConfirmedOpposite) &&
+      pixelAudit !== null &&
+      pixelAudit.formingColor !== 'NONE' &&
+      pixelAudit.formingColor !== 'DOJI' &&
+      visionClosedColor === pixelAudit.formingColor;
+
+    const effectiveClosedColor: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN' =
+      visionClosedColor === 'UNCERTAIN' && pixelAudit && pixelAudit.candleCount >= 5
+        ? pixelAudit.closedColor
+        : visionMatchedFormingInstead && pixelAudit
+        ? pixelAudit.closedColor
+        : visionClosedColor;
+
+    const closedCandleType: 'BULLISH' | 'BEARISH' | 'DOJI' =
+      effectiveClosedColor === 'GREEN'
+        ? 'BULLISH'
+        : effectiveClosedColor === 'RED'
         ? 'BEARISH'
         : 'DOJI';
 
-    const upperWickPct = Number(visionData.closedCandleUpperWickPercent ?? 0);
-    const lowerWickPct = Number(visionData.closedCandleLowerWickPercent ?? 0);
-    const bodyPct = Number(visionData.closedCandleBodyPercent ?? (closedCandleType === 'DOJI' ? 12 : 55));
-    const hasRejection =
-      visionData.closedCandleRejection === 'UPPER_REJECTION' ||
-      visionData.closedCandleRejection === 'LOWER_REJECTION' ||
-      upperWickPct >= 35 ||
-      lowerWickPct >= 35;
+    const upperWickPct = Number(
+      visionData.closedCandleUpperWickPercent ?? pixelAudit?.upperWickPct ?? 0
+    );
+    const lowerWickPct = Number(
+      visionData.closedCandleLowerWickPercent ?? pixelAudit?.lowerWickPct ?? 0
+    );
+    const bodyPct = Number(
+      visionData.closedCandleBodyPercent ?? pixelAudit?.bodyPct ?? (closedCandleType === 'DOJI' ? 12 : 55)
+    );
+
+    const isSpinningTop =
+      (upperWickPct >= 28 && lowerWickPct >= 28 && bodyPct < 35) ||
+      Boolean(pixelAudit && pixelAudit.candleCount >= 5 && pixelAudit.isSpinningTop && bodyPct < 38);
+
+    const hasUpperPinBar =
+      !isSpinningTop &&
+      ((upperWickPct >= 38 && lowerWickPct <= 22 && upperWickPct >= Math.max(25, lowerWickPct * 1.7)) ||
+        (visionData.closedCandleRejection === 'UPPER_REJECTION' && lowerWickPct <= 24));
+
+    const hasLowerPinBar =
+      !isSpinningTop &&
+      ((lowerWickPct >= 38 && upperWickPct <= 22 && lowerWickPct >= Math.max(25, upperWickPct * 1.7)) ||
+        (visionData.closedCandleRejection === 'LOWER_REJECTION' && upperWickPct <= 24));
+
+    const hasRejection = hasUpperPinBar || hasLowerPinBar;
 
     const closedCandleLabelBn =
-      closedCandleType === 'BULLISH'
+      isSpinningTop
+        ? 'স্পিনিং টপ (দ্বিমুখী উইক)'
+        : closedCandleType === 'BULLISH'
         ? `সবুজ${hasRejection ? ' (উইক রিজেকশন)' : ' (বুলিশ বডি)'}`
         : closedCandleType === 'BEARISH'
         ? `লাল${hasRejection ? ' (উইক রিজেকশন)' : ' (বিয়ারিশ বডি)'}`
@@ -507,62 +561,78 @@ export class ScreenVerificationService {
           indicatorMomentumScore: 0.5,
           trendAlignmentScore: 0,
           totalScore: 2.0,
-          thresholdRequired: 7.5,
+          thresholdRequired: 8.0,
           finalVerdict: 'WAIT',
         },
       };
     } else {
-      // 3. High-Precision Consensus Scoring + 5-Step Verification Gate
+      // 3. High-Precision Consensus Scoring + 5-Step Verification Gate (Zero Self-Inflation)
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
       const aiForecast = visionData.predictedNextCandle || 'WAIT';
       const setup = (visionData.priceActionSetup || '').toLowerCase();
       const pattern = (visionData.candlestickPattern || '').toLowerCase();
 
+      // Objective directional score based on measurable evidence (not aiForecast voting for itself)
       let directionalScore = 0;
 
-      if (aiForecast === 'CALL') directionalScore += 4;
-      if (aiForecast === 'PUT') directionalScore -= 4;
+      if (aiForecast === 'CALL') directionalScore += 1.5;
+      if (aiForecast === 'PUT') directionalScore -= 1.5;
 
       const isBearishRejection =
-        visionData.closedCandleRejection === 'UPPER_REJECTION' ||
-        setup.includes('shooting star') ||
-        pattern.includes('shooting star') ||
-        (pattern.includes('pin bar') && closedCandleType === 'BULLISH');
+        !isSpinningTop &&
+        (hasUpperPinBar ||
+          (setup.includes('shooting star') && lowerWickPct <= 24) ||
+          (pattern.includes('shooting star') && lowerWickPct <= 24));
       const isBullishRejection =
-        visionData.closedCandleRejection === 'LOWER_REJECTION' ||
-        setup.includes('hammer') ||
-        pattern.includes('hammer') ||
-        (pattern.includes('pin bar') && closedCandleType === 'BEARISH');
+        !isSpinningTop &&
+        (hasLowerPinBar ||
+          (setup.includes('hammer') && upperWickPct <= 24) ||
+          (pattern.includes('hammer') && upperWickPct <= 24));
 
-      if (isBearishRejection) directionalScore -= 3;
-      if (isBullishRejection) directionalScore += 3;
+      if (isBearishRejection) directionalScore -= 3.0;
+      if (isBullishRejection) directionalScore += 3.0;
 
-      directionalScore += bullishIndicators * 1.5;
-      directionalScore -= bearishIndicators * 1.5;
+      directionalScore += Math.min(2, bullishIndicators) * 1.25;
+      directionalScore -= Math.min(2, bearishIndicators) * 1.25;
 
-      if (!isBearishRejection && macroTrend15m === 'UPTREND') directionalScore += 2;
-      if (!isBullishRejection && macroTrend15m === 'DOWNTREND') directionalScore -= 2;
+      if (!isBearishRejection && macroTrend15m === 'UPTREND' && (!pixelAudit || pixelAudit.slope12 !== 'DOWN')) {
+        directionalScore += 1.5;
+      }
+      if (!isBullishRejection && macroTrend15m === 'DOWNTREND' && (!pixelAudit || pixelAudit.slope12 !== 'UP')) {
+        directionalScore -= 1.5;
+      }
 
-      if (pattern.includes('bullish engulfing')) directionalScore += 3;
-      if (pattern.includes('bearish engulfing')) directionalScore -= 3;
+      if (pattern.includes('bullish engulfing') && closedCandleType === 'BULLISH') directionalScore += 2.5;
+      if (pattern.includes('bearish engulfing') && closedCandleType === 'BEARISH') directionalScore -= 2.5;
 
-      if (closedCandleType === 'BULLISH' && !isBearishRejection) directionalScore += 1;
-      if (closedCandleType === 'BEARISH' && !isBullishRejection) directionalScore -= 1;
+      if (closedCandleType === 'BULLISH' && !isBearishRejection && bodyPct >= 25) directionalScore += 1.5;
+      if (closedCandleType === 'BEARISH' && !isBullishRejection && bodyPct >= 25) directionalScore -= 1.5;
 
       const step1Passed = Boolean(visionData.step1ChartValid ?? visionData.isClearTradingChart);
 
-      // Step 2 MUST fail if closed candle is uncertain or a tiny Doji (<18% body) without a clear >=35% pin-bar wick!
-      const isWeakAmbiguousDoji = closedCandleType === 'DOJI' || (bodyPct < 18 && !hasRejection);
+      // Step 2 MUST fail if closed candle is uncertain, Doji, Spinning Top, or Vision vs Pixel clearly disagreed!
+      const isWeakAmbiguousDoji = closedCandleType === 'DOJI' || isSpinningTop || (bodyPct < 20 && !hasRejection);
+      const closedCandleMismatch = Boolean(pixelConfirmedOpposite);
       const step2Passed = Boolean(
-        rawClosedColor !== 'UNCERTAIN' &&
-          visionData.lastCandleDirection !== 'UNCERTAIN' &&
+        effectiveClosedColor !== 'UNCERTAIN' &&
+          !closedCandleMismatch &&
           !isWeakAmbiguousDoji &&
           (visionData.step2ClosedCandleValid !== false)
       );
 
+      // Check real visible chart slope via pixelAudit if available
+      const isFlatVisualRange = Boolean(
+        pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          pixelAudit.slope12 === 'FLAT' &&
+          !hasRejection
+      );
+
       const mtfConfluence: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL' =
-        macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
+        isFlatVisualRange
+          ? 'NEUTRAL'
+          : macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
           ? 'ALIGNED'
           : macroTrend15m === 'SIDEWAYS' && secondaryTrend5m === 'SIDEWAYS'
           ? 'NEUTRAL'
@@ -582,25 +652,56 @@ export class ScreenVerificationService {
         ((aiForecast === 'CALL' && drawingInteraction === 'BLOCKED_AT_RESISTANCE') ||
           (aiForecast === 'PUT' && drawingInteraction === 'BLOCKED_AT_SUPPORT'));
 
-      // Enforce genuine alignment: if 15m & 5m directly conflict, allow ONLY with a genuine >=35% wick rejection reversal or verified drawing bounce/retest!
+      if (isDrawingConfirmed) {
+        directionalScore += aiForecast === 'CALL' ? 2.0 : -2.0;
+      }
+
+      // Enforce genuine alignment: disallow hallucinated 15M/5M alignment when 1m visual structure is flat without true pin-bar or drawing bounce!
       const step3Passed = Boolean(
         !isBlockedByDrawing &&
+          !isFlatVisualRange &&
           (mtfConfluence === 'ALIGNED' ||
             isDrawingConfirmed ||
-            (hasRejection && mtfConfluence !== 'CONFLICT') ||
-            (hasRejection && visionData.step3TrendAligned === true && (upperWickPct >= 38 || lowerWickPct >= 38)))
+            (hasRejection && mtfConfluence !== 'CONFLICT'))
       );
 
-      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / HIGH_VOLATILITY_SPIKE unless explicit high-wick S/R bounce in sideways range
+      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / SPINNING TOP / PIXEL CHOP / EXHAUSTION CHASING
+      const isPixelChoppy = Boolean(pixelAudit && pixelAudit.candleCount >= 6 && pixelAudit.alternatingFlips >= 4);
+      const isBinaryMode = !isSpotSlTp;
+      const isExhaustedCallChase = Boolean(
+        isBinaryMode &&
+          aiForecast === 'CALL' &&
+          !isDrawingConfirmed &&
+          !isBullishRejection &&
+          pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'GREEN') ||
+            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 2))
+      );
+      const isExhaustedPutChase = Boolean(
+        isBinaryMode &&
+          aiForecast === 'PUT' &&
+          !isDrawingConfirmed &&
+          !isBearishRejection &&
+          pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'RED') ||
+            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 2))
+      );
+      const isExhaustionChase = isExhaustedCallChase || isExhaustedPutChase;
+
       const isUnsafeMarketRegime =
         marketRegime === 'DOJI_CHOPPY' ||
         marketRegime === 'HIGH_VOLATILITY_SPIKE' ||
-        visionData.tradeQualityTier === 'HIGH_RISK_DOJI';
+        visionData.tradeQualityTier === 'HIGH_RISK_DOJI' ||
+        isSpinningTop ||
+        isPixelChoppy;
       const isSidewaysNoRejection = marketRegime === 'SIDEWAYS' && !hasRejection && !isDrawingConfirmed;
       const filterPassed = Boolean(
         !isUnsafeMarketRegime &&
           !isSidewaysNoRejection &&
           !isBlockedByDrawing &&
+          !isExhaustionChase &&
           (visionData.step4FilterPassed !== false)
       );
 
@@ -608,44 +709,43 @@ export class ScreenVerificationService {
       const rawPaScore =
         typeof visionData.priceActionScore === 'number'
           ? Math.min(5, Math.max(0, visionData.priceActionScore))
-          : Math.min(5, Math.max(1.5, Math.abs(directionalScore) * 0.55 + (hasRejection ? 1.5 : 0.8)));
+          : Math.min(5, Math.max(1.2, Math.abs(directionalScore) * 0.6 + (hasRejection ? 1.5 : 0.6)));
       const rawIndScore =
         typeof visionData.indicatorMomentumScore === 'number'
           ? Math.min(3, Math.max(0, visionData.indicatorMomentumScore))
-          : Math.min(3, Math.max(0.8, (bullishIndicators + bearishIndicators) * 1.1));
+          : Math.min(3, Math.max(0.6, (bullishIndicators + bearishIndicators) * 1.0));
       const rawTrendScore =
         typeof visionData.trendAlignmentScore === 'number'
           ? Math.min(2, Math.max(0, visionData.trendAlignmentScore))
           : step3Passed
           ? 1.8
-          : 0.7;
+          : 0.5;
 
       const baseScore =
         typeof visionData.totalScore === 'number' && visionData.totalScore > 0
           ? visionData.totalScore
           : rawPaScore + rawIndScore + rawTrendScore;
+      const penalty = (closedCandleMismatch ? 2.5 : 0) + (isExhaustionChase ? 2.5 : 0) + (isSpinningTop ? 2.0 : 0);
       const computedTotalScore = Number(
-        Math.min(10, Math.max(0, baseScore + (isDrawingConfirmed ? 0.3 : 0))).toFixed(1)
+        Math.min(10, Math.max(0, baseScore + (isDrawingConfirmed ? 0.3 : 0) - penalty)).toFixed(1)
       );
 
-      // CLOSED-CANDLE CONSISTENCY & ANTI-COUNTER-TREND GUARD (Prevents wrong entries!)
-      // 1) Do NOT enter CALL if closed candle is strong RED body (>=35%) with NO lower-wick Hammer rejection, unless extreme exhaustion (>=8.5/10)
+      // STRICT CLOSED-CANDLE CONSISTENCY & ANTI-COUNTER-TREND GUARD (Prevents wrong entries!)
+      // 1) Do NOT enter CALL if closed candle is BEARISH (>=22% body) without a true Hammer lower-wick rejection or drawing bounce
       const isContradictoryCall =
         aiForecast === 'CALL' &&
         closedCandleType === 'BEARISH' &&
         !isBullishRejection &&
-        lowerWickPct < 30 &&
-        bodyPct >= 35 &&
-        computedTotalScore < 8.6;
-      // 2) Do NOT enter PUT if closed candle is strong GREEN body (>=35%) with NO upper-wick Shooting Star rejection, unless extreme exhaustion (>=8.5/10)
+        !isDrawingConfirmed &&
+        bodyPct >= 22;
+      // 2) Do NOT enter PUT if closed candle is BULLISH (>=22% body) without a true Shooting Star upper-wick rejection or drawing rejection
       const isContradictoryPut =
         aiForecast === 'PUT' &&
         closedCandleType === 'BULLISH' &&
         !isBearishRejection &&
-        upperWickPct < 30 &&
-        bodyPct >= 35 &&
-        computedTotalScore < 8.6;
-      // 3) Do NOT guess against aligned 15m+5m macro trend without a decisive >=35% rejection wick or explicit drawing level bounce
+        !isDrawingConfirmed &&
+        bodyPct >= 22;
+      // 3) Do NOT guess against aligned 15m+5m macro trend without a decisive true rejection wick or explicit drawing level bounce
       const isBlindCounterTrend =
         !isDrawingConfirmed &&
         ((aiForecast === 'CALL' && macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND' && !isBullishRejection) ||
@@ -653,18 +753,21 @@ export class ScreenVerificationService {
 
       const hasClearDirection =
         aiForecast !== 'WAIT' &&
+        !closedCandleMismatch &&
         !isBlockedByDrawing &&
+        !isExhaustionChase &&
         !isContradictoryCall &&
         !isContradictoryPut &&
         !isBlindCounterTrend &&
-        (aiForecast === 'CALL' ? directionalScore > 0 : directionalScore < 0 || Math.abs(directionalScore) >= 3);
+        (aiForecast === 'CALL' ? directionalScore >= 2.5 : directionalScore <= -2.5);
 
       const step5Passed = Boolean(
         (visionData.step5SetupConfirmed !== false) &&
           hasClearDirection &&
           filterPassed &&
           step2Passed &&
-          computedTotalScore >= 7.5
+          step3Passed &&
+          computedTotalScore >= 8.0
       );
 
       const stepChecks = [
@@ -680,7 +783,7 @@ export class ScreenVerificationService {
           key: 'CLOSED_CANDLE' as const,
           labelBn: 'ক্লোজ ক্যান্ডেল',
           passed: step2Passed,
-          detailBn: closedCandleLabelBn,
+          detailBn: closedCandleMismatch ? 'রং অসঙ্গতি (পিক্সেল)' : closedCandleLabelBn,
         },
         {
           step: 3,
@@ -693,9 +796,9 @@ export class ScreenVerificationService {
             ? 'ড্রয়িং ম্যাচ'
             : mtfConfluence === 'ALIGNED'
             ? 'অ্যালাইন্ড'
-            : hasRejection
+            : hasRejection && step3Passed
             ? 'রিজেকশন জোন'
-            : 'সতর্কতা',
+            : 'রেঞ্জ/দুর্বল',
         },
         {
           step: 4,
@@ -704,6 +807,8 @@ export class ScreenVerificationService {
           passed: filterPassed,
           detailBn: isBlockedByDrawing
             ? 'ড্রয়িং দেয়াল ব্লক'
+            : isExhaustionChase
+            ? 'এক্সহশন/S-R ব্লক'
             : filterPassed
             ? 'ক্লিয়ার মার্কেট'
             : 'চপি/দোজি ফিল্টার্ড',
@@ -719,11 +824,12 @@ export class ScreenVerificationService {
 
       const confirmedPoints = stepChecks.filter((s) => s.passed).length;
 
-      // STRICT PRECISION RULE: Require >= 4/5 confirmed points, filterPassed, step2Passed, step5Passed, and zero contradiction!
+      // STRICT PRECISION RULE: Require all 5 steps (or 4/5 with >= 8.2 score & mandatory step2/step4/step5), zero contradictions!
       const canIssueTradeSignal =
-        confirmedPoints >= 4 &&
+        (confirmedPoints === 5 || (confirmedPoints >= 4 && computedTotalScore >= 8.2)) &&
         filterPassed &&
         step2Passed &&
+        step3Passed &&
         step5Passed &&
         hasClearDirection &&
         (aiForecast === 'CALL' || aiForecast === 'PUT');
@@ -734,7 +840,13 @@ export class ScreenVerificationService {
         suggestedExpiry = 'অপেক্ষা করুন';
         verdictTitle = `⏸ WAIT (${assetName} · ${confirmedPoints}/5 পয়েন্ট)`;
         const failedStepNames = stepChecks.filter((s) => !s.passed).map((s) => s.labelBn).join(', ');
-        const blockNote = isBlockedByDrawing
+        const blockNote = closedCandleMismatch
+          ? `[${profileLabelBn}] ক্লোজড ক্যান্ডেল যাচাই অমিল (AI: ${visionClosedColor} বনাম চার্ট পিক্সেল: ${pixelAudit?.closedColor}) — ভুল সিগন্যাল এড়াতে WAIT।`
+          : isExhaustionChase
+          ? `[${profileLabelBn}] টানা ${pixelAudit?.sameColorStreak || 3}+ একই রঙের ক্যান্ডেল বা S/R দেয়ালের কাছে এক্সহশন ঝুঁকি — বিপরীত ক্যান্ডেল এড়াতে WAIT।`
+          : isSpinningTop
+          ? `[${profileLabelBn}] উভয়মুখী উইক স্পিনিং টপ (${upperWickPct}%/${lowerWickPct}%) — সিদ্ধান্তহীন মার্কেট (WAIT)।`
+          : isBlockedByDrawing
           ? `[${profileLabelBn}] ড্রয়িং সুরক্ষা: ${
               visionData.drawingNoteBn ||
               (drawingInteraction === 'BLOCKED_AT_RESISTANCE'
@@ -792,12 +904,25 @@ export class ScreenVerificationService {
       }
 
       reasoning.push(`ক্লোজড ক্যান্ডেল (সম্পন্ন): ${closedCandleLabelBn}${visionData.formingCandleColor && visionData.formingCandleColor !== 'NONE' ? ` · রানিং: ${visionData.formingCandleColor === 'GREEN' ? 'সবুজ' : visionData.formingCandleColor === 'RED' ? 'লাল' : 'দোজি'}` : ''}`);
+      if (
+        !isSpotSlTp &&
+        typeof visionData.candleTimerSecondsLeft === 'number' &&
+        visionData.candleTimerSecondsLeft >= 1 &&
+        visionData.candleTimerSecondsLeft <= 4
+      ) {
+        reasoning.push(
+          `টাইমার সতর্কতা: ক্যান্ডেল ক্লোজ হতে ${visionData.candleTimerSecondsLeft}s বাকি — নতুন ক্যান্ডেল ওপেন হওয়ার সাথে সাথে এন্ট্রি নিশ্চিত করুন।`
+        );
+      }
       if (visionData.candlestickPattern) {
         reasoning.push(`প্যাটার্ন: ${visionData.candlestickPattern}`);
       }
       if (visionData.visionSummary) {
         reasoning.push(`ভিজুয়াল সামারি: ${visionData.visionSummary}`);
       }
+
+      // Sync corrected closedCandleColor onto returned visionData so HUD & logs match pixel verification
+      visionData.closedCandleColor = effectiveClosedColor;
 
       signalFlow = {
         confirmedPoints,
@@ -807,11 +932,11 @@ export class ScreenVerificationService {
           isChartValid: step1Passed,
           detectedAsset: assetName,
           detectedTimeframe: visionData.timeframe || '1m',
-          candleBarsCount: 16,
+          candleBarsCount: pixelAudit?.candleCount ?? 16,
           notes: `${confirmedPoints}/৫ ধাপ নিশ্চিত`,
         },
         candleData: {
-          candleCount: 16,
+          candleCount: pixelAudit?.candleCount ?? 16,
           closedCandle: {
             type: closedCandleType,
             bodySizePx: Math.round(bodyPct),
@@ -821,7 +946,7 @@ export class ScreenVerificationService {
             labelBn: closedCandleLabelBn,
           },
           runningCandle: {
-            isForming: visionData.formingCandleColor !== 'NONE',
+            isForming: (pixelAudit ? pixelAudit.formingColor : visionData.formingCandleColor) !== 'NONE',
             intraBarBias:
               visionData.formingCandleColor === 'GREEN'
                 ? 'BUYING'
@@ -840,14 +965,14 @@ export class ScreenVerificationService {
         marketFilter: {
           regime: marketRegime,
           passed: filterPassed,
-          blockReason: filterPassed ? undefined : 'চপি / সাইডওয়েজ বা দোজি সতর্কতা',
+          blockReason: filterPassed ? undefined : 'চপি / সাইডওয়েজ / এক্সহশন সতর্কতা',
         },
         signalScoring: {
           priceActionScore: Number(rawPaScore.toFixed(1)),
           indicatorMomentumScore: Number(rawIndScore.toFixed(1)),
           trendAlignmentScore: Number(rawTrendScore.toFixed(1)),
           totalScore: computedTotalScore,
-          thresholdRequired: 7.5,
+          thresholdRequired: 8.0,
           finalVerdict: direction === 'UP' ? 'CALL' : direction === 'DOWN' ? 'PUT' : 'WAIT',
         },
       };

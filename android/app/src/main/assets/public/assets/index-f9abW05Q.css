@@ -2178,6 +2178,10 @@
     background-color: oklab(42.3679% -.079919 .00782001 / .8);
   }
 
+  .bg-\[\#070b14\] {
+    background-color: #070b14;
+  }
+
   .bg-\[\#070b14\]\/90 {
     background-color: oklab(14.9994% -.00205025 -.0207038 / .9);
   }
@@ -2631,6 +2635,16 @@
   @supports (color: color-mix(in lab, red, red)) {
     .bg-emerald-950\/40 {
       background-color: color-mix(in oklab, var(--color-emerald-950) 40%, transparent);
+    }
+  }
+
+  .bg-emerald-950\/50 {
+    background-color: #002c2280;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-emerald-950\/50 {
+      background-color: color-mix(in oklab, var(--color-emerald-950) 50%, transparent);
     }
   }
 

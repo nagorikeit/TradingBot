@@ -16,6 +16,7 @@ import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -124,6 +125,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean isAnalyzingNativeFrame = new AtomicBoolean(false);
     private volatile boolean isTradePulseActivityInForeground = true;
+    private static java.lang.ref.WeakReference<TradePulseNativeScreenPlugin> activeInstanceRef = null;
+    private static volatile String pendingAuthCallbackUri = null;
 
     @Override
     protected void handleOnResume() {
@@ -140,6 +143,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+        activeInstanceRef = new java.lang.ref.WeakReference<>(this);
         Context context = getContext();
         projectionManager = (MediaProjectionManager) context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
@@ -548,21 +552,21 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 return null;
             }
             boolean isPortrait = h > w;
-            int sx = (int) (w * (isPortrait ? 0.34f : 0.46f));
+            int sx = (int) (w * (isPortrait ? 0.44f : 0.54f));
             int sy = (int) (h * (isPortrait ? 0.16f : 0.08f));
-            int sw = Math.max(80, Math.min(w - sx, (int) (w * (isPortrait ? 0.64f : 0.52f))));
+            int sw = Math.max(80, Math.min(w - sx, (int) (w * (isPortrait ? 0.54f : 0.44f))));
             int sh = Math.max(80, Math.min(h - sy, (int) (h * (isPortrait ? 0.58f : 0.80f))));
 
             Bitmap cropped = Bitmap.createBitmap(src, sx, sy, sw, sh);
             src.recycle();
 
-            int outW = Math.min(1080, Math.max(sw, Math.round(sw * 1.8f)));
+            int outW = Math.min(1200, Math.max(sw, Math.round(sw * 2.2f)));
             int outH = Math.max(80, Math.round(((float) sh / (float) sw) * outW));
             Bitmap scaled = (outW == sw) ? cropped : Bitmap.createScaledBitmap(cropped, outW, outH, true);
             if (scaled != cropped) cropped.recycle();
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            scaled.compress(Bitmap.CompressFormat.JPEG, 90, baos);
+            scaled.compress(Bitmap.CompressFormat.JPEG, 92, baos);
             scaled.recycle();
             return "data:image/jpeg;base64," + Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
         } catch (Exception e) {
@@ -801,51 +805,66 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int[] colMaxY = new int[width];
             java.util.Arrays.fill(colMinY, 9999);
 
-            // Sample pixels across ROI for candle colors, checking EVERY column (x++)
-            for (int y = startY; y < endY; y += 2) {
-                for (int x = startX; x < endX; x++) {
-                    // MASK: Skip any pixel belonging to the floating HUD overlay widget itself!
-                    if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
-                        continue;
+            // Sample pixels per column with vertical continuity check so thin horizontal EMA/Bollinger lines
+            // (height < 4px at step=2) don't bridge adjacent candles or create phantom bands.
+            for (int x = startX; x < endX; x++) {
+                int runLen = 0;
+                int runGreen = 0;
+                int runRed = 0;
+                int runMinY = 9999;
+                int runMaxY = 0;
+
+                for (int y = startY; y <= endY; y += 2) {
+                    boolean inOverlay = ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10;
+                    int hitType = 0; // 1 = green, 2 = red
+                    if (y < endY && !inOverlay) {
+                        int pixel = bitmap.getPixel(x, y);
+                        int r = (pixel >> 16) & 0xff;
+                        int g = (pixel >> 8) & 0xff;
+                        int b = pixel & 0xff;
+
+                        int max = Math.max(r, Math.max(g, b));
+                        int min = Math.min(r, Math.min(g, b));
+                        int delta = max - min;
+
+                        if (delta >= 14 && max >= 50) {
+                            float hue;
+                            if (max == r) {
+                                hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
+                            } else if (max == g) {
+                                hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
+                            } else {
+                                hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
+                            }
+                            float sat = (float) delta / (float) max;
+
+                            boolean isGreen = (g >= 48 && g > r + 8 && g >= b - 18 && hue >= 100f && hue <= 195f && sat >= 0.12f);
+                            boolean isRed = (r >= 55 && r > g + 16 && r > b + 12 && (hue >= 335f || hue <= 25f) && sat >= 0.14f);
+                            if (isGreen) hitType = 1;
+                            else if (isRed) hitType = 2;
+                        }
                     }
 
-                    int pixel = bitmap.getPixel(x, y);
-                    int r = (pixel >> 16) & 0xff;
-                    int g = (pixel >> 8) & 0xff;
-                    int b = pixel & 0xff;
-
-                    int max = Math.max(r, Math.max(g, b));
-                    int min = Math.min(r, Math.min(g, b));
-                    int delta = max - min;
-
-                    // Exclude near-grayscale background, grid lines, and text
-                    if (delta >= 14 && max >= 50) {
-                        float hue;
-                        if (max == r) {
-                            hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
-                        } else if (max == g) {
-                            hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
-                        } else {
-                            hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
+                    if (hitType > 0) {
+                        runLen++;
+                        if (hitType == 1) runGreen++;
+                        else runRed++;
+                        if (y < runMinY) runMinY = y;
+                        if (y > runMaxY) runMaxY = y;
+                    } else {
+                        if (runLen >= 3) {
+                            greenPixels += runGreen;
+                            redPixels += runRed;
+                            colGreen[x] += runGreen;
+                            colRed[x] += runRed;
+                            if (runMinY < colMinY[x]) colMinY[x] = runMinY;
+                            if (runMaxY > colMaxY[x]) colMaxY[x] = runMaxY;
                         }
-                        float sat = (float) delta / (float) max;
-
-                        // Green Candlestick: Emerald, Teal, Neon, Mint (Quotex, Pocket Option, Binomo, MT4)
-                        boolean isGreen = (g >= 48 && g > r + 8 && g >= b - 18 && hue >= 100f && hue <= 195f && sat >= 0.12f);
-                        // Red Candlestick: Crimson, Ruby, Coral (strictly requires Red dominance to avoid orange UI icons)
-                        boolean isRed = (r >= 55 && r > g + 16 && r > b + 12 && (hue >= 335f || hue <= 25f) && sat >= 0.14f);
-
-                        if (isGreen) {
-                            greenPixels++;
-                            colGreen[x]++;
-                            if (y < colMinY[x]) colMinY[x] = y;
-                            if (y > colMaxY[x]) colMaxY[x] = y;
-                        } else if (isRed) {
-                            redPixels++;
-                            colRed[x]++;
-                            if (y < colMinY[x]) colMinY[x] = y;
-                            if (y > colMaxY[x]) colMaxY[x] = y;
-                        }
+                        runLen = 0;
+                        runGreen = 0;
+                        runRed = 0;
+                        runMinY = 9999;
+                        runMaxY = 0;
                     }
                 }
             }
@@ -1134,6 +1153,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // =========================================================================
 
             // Strip right-edge floating price pill/badge if it slipped into bands (wider or far outside regular candle pitch)
+            int medianW = 8;
+            int medianStep = 14;
             if (bands.size() >= 5) {
                 int sampleCount = Math.min(8, bands.size() - 1);
                 int sampleStart = bands.size() - 1 - sampleCount;
@@ -1143,10 +1164,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     sampleWidths[i] = Math.max(1, sb.endX - sb.startX + 1);
                 }
                 java.util.Arrays.sort(sampleWidths);
-                int medianW = sampleWidths[sampleWidths.length / 2];
+                medianW = sampleWidths[sampleWidths.length / 2];
 
                 int gapCount = Math.max(0, sampleCount - 1);
-                int medianStep = Math.max(8, (int) (medianW * 1.5f));
+                medianStep = Math.max(8, (int) (medianW * 1.5f));
                 if (gapCount > 0) {
                     int[] sampleGaps = new int[gapCount];
                     for (int i = 0; i < gapCount; i++) {
@@ -1156,12 +1177,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     medianStep = Math.max(6, sampleGaps[sampleGaps.length / 2]);
                 }
 
-                CandleBand tailBand = bands.get(bands.size() - 1);
-                CandleBand prevTailBand = bands.get(bands.size() - 2);
-                int tailWidth = tailBand.endX - tailBand.startX + 1;
-                int tailGap = tailBand.centerX - prevTailBand.centerX;
-                if (tailGap > Math.max((int) (medianStep * 2.4f), 42) || tailWidth > Math.max((int) (medianW * 2.4f), 34)) {
-                    bands.remove(bands.size() - 1);
+                while (bands.size() >= 5) {
+                    CandleBand tailBand = bands.get(bands.size() - 1);
+                    CandleBand prevTailBand = bands.get(bands.size() - 2);
+                    int tailWidth = tailBand.endX - tailBand.startX + 1;
+                    int tailGap = tailBand.centerX - prevTailBand.centerX;
+                    if (tailGap > Math.max((int) (medianStep * 2.25f), 38) || tailWidth > Math.max((int) (medianW * 2.3f), 30)) {
+                        bands.remove(bands.size() - 1);
+                    } else {
+                        break;
+                    }
                 }
             }
 
@@ -1171,171 +1196,190 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int currentSec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND);
             int candleSecondsLeft = 60 - currentSec;
 
-            // ধাপ ২: Candle Data Collection & Precise Closed Candle Identification
+            // ধাপ ২: Candle Data Collection & Precise Closed Candle Identification (with infant open-tick check)
             CandleBand rightmost = bands.get(candleCount - 1);
-            CandleBand penultimate = (candleCount >= 2) ? bands.get(candleCount - 2) : rightmost;
-            CandleBand antepenultimate = (candleCount >= 3) ? bands.get(candleCount - 3) : null;
+            boolean hasInfantTickRight = false;
+            if (candleCount >= 4) {
+                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, (int) (medianStep * 0.45f)));
+                int tEnd = Math.min(endX - 1, rightmost.centerX + (int) (medianStep * 1.55f));
+                int tickCols = 0;
+                for (int tx = tStart; tx <= tEnd; tx++) {
+                    if (colGreen[tx] + colRed[tx] >= 2) tickCols++;
+                }
+                int rWidth = rightmost.endX - rightmost.startX + 1;
+                if (tickCols >= 1 && tickCols <= 2 && rWidth >= Math.max(3, (int) (medianW * 0.75f))) {
+                    hasInfantTickRight = true;
+                }
+            }
 
-            CandleBand runningCandle = rightmost;
-            CandleBand closedSignalCandle = (candleCount >= 2) ? penultimate : rightmost;
-            CandleBand prevCandle = antepenultimate;
+            int closedIndex = hasInfantTickRight ? (candleCount - 1) : Math.max(0, candleCount - 2);
+            CandleBand runningCandle = hasInfantTickRight ? null : rightmost;
+            CandleBand closedSignalCandle = bands.get(closedIndex);
+            CandleBand prevCandle = (closedIndex >= 1) ? bands.get(closedIndex - 1) : null;
 
             // For compatibility with JSObject flow reporting
             CandleBand lastClosedCandle = closedSignalCandle;
 
-            // ধাপ ৩: Multi-Timeframe Trend Calculation (১৫M + ৫M + ১M Trend Alignment)
-            // Macro Trend (15M proxy across last 20 candles)
-            int macroStart = Math.max(0, candleCount - 20);
+            // ধাপ ৩: Multi-Timeframe Trend Calculation across closed candles (up to closedIndex)
+            int closedPoolSize = closedIndex + 1;
+            int macroStart = Math.max(0, closedPoolSize - 16);
             int macroGreen = 0, macroRed = 0;
-            for (int i = macroStart; i < candleCount; i++) {
+            for (int i = macroStart; i < closedPoolSize; i++) {
                 if (bands.get(i).isGreen) macroGreen++;
                 else macroRed++;
             }
-            String macroTrend15M = (macroGreen >= macroRed + 2) ? "UPTREND" : (macroRed >= macroGreen + 2) ? "DOWNTREND" : "SIDEWAYS";
+            boolean macroSlopeUp = closedPoolSize >= 4 && bands.get(closedIndex).minY < bands.get(macroStart).minY;
+            boolean macroSlopeDown = closedPoolSize >= 4 && bands.get(closedIndex).maxY > bands.get(macroStart).maxY;
+            String macroTrend15M = (macroGreen >= macroRed + 2 && macroSlopeUp) ? "UPTREND" : (macroRed >= macroGreen + 2 && macroSlopeDown) ? "DOWNTREND" : "SIDEWAYS";
 
-            // Secondary Trend (5M proxy across last 8 candles)
-            int secStart = Math.max(0, candleCount - 8);
+            int secStart = Math.max(0, closedPoolSize - 7);
             int secGreen = 0, secRed = 0;
-            for (int i = secStart; i < candleCount; i++) {
+            for (int i = secStart; i < closedPoolSize; i++) {
                 if (bands.get(i).isGreen) secGreen++;
                 else secRed++;
             }
-            String secTrend5M = (secGreen > secRed) ? "UPTREND" : (secRed > secGreen) ? "DOWNTREND" : "SIDEWAYS";
+            String secTrend5M = (secGreen >= secRed + 2) ? "UPTREND" : (secRed >= secGreen + 2) ? "DOWNTREND" : "SIDEWAYS";
 
-            // Micro Trend (1M immediate momentum across last 4 candles volume)
-            int microStart = Math.max(0, candleCount - 4);
+            int microStart = Math.max(0, closedPoolSize - 4);
             int microGreenVol = 0, microRedVol = 0;
-            for (int i = microStart; i < candleCount; i++) {
+            for (int i = microStart; i < closedPoolSize; i++) {
                 microGreenVol += bands.get(i).greenCount;
                 microRedVol += bands.get(i).redCount;
             }
             int microTotalVol = microGreenVol + microRedVol;
             int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
             int microRedPct = 100 - microGreenPct;
-            String microTrend1M = (microGreenPct > microRedPct + 8) ? "UPTREND" : (microRedPct > microGreenPct + 8) ? "DOWNTREND" : "SIDEWAYS";
+            String microTrend1M = (microGreenPct > microRedPct + 10) ? "UPTREND" : (microRedPct > microGreenPct + 10) ? "DOWNTREND" : "SIDEWAYS";
 
-            // ধাপ ৪: Market Condition Filter (Chop, Doji, Volatility, Spike Kill-Switches)
-            boolean isDojiIndecision = (closedSignalCandle.isDoji || closedSignalCandle.bodyHeight <= 4 
-                || (closedSignalCandle.bodyHeight < (closedSignalCandle.height * 0.16f)));
+            // ধাপ ৪: Market Condition Filter (Chop, Doji, Spinning Top, Volatility, Exhaustion & S/R Wall Guard)
+            int totalClosedSpan = Math.max(1, closedSignalCandle.bodyHeight + closedSignalCandle.upperWickPx + closedSignalCandle.lowerWickPx);
+            int bodyPct = Math.round(100f * closedSignalCandle.bodyHeight / totalClosedSpan);
+            int upWickPct = Math.round(100f * closedSignalCandle.upperWickPx / totalClosedSpan);
+            int downWickPct = Math.round(100f * closedSignalCandle.lowerWickPx / totalClosedSpan);
+
+            boolean isSpinningTop = (upWickPct >= 28 && downWickPct >= 28 && bodyPct < 35);
+            boolean isDojiIndecision = (closedSignalCandle.isDoji || bodyPct <= 18 || isSpinningTop);
 
             boolean isAlternatingChop = false;
-            if (candleCount >= 4) {
-                boolean c1 = bands.get(candleCount - 1).isGreen;
-                boolean c2 = bands.get(candleCount - 2).isGreen;
-                boolean c3 = bands.get(candleCount - 3).isGreen;
-                boolean c4 = bands.get(candleCount - 4).isGreen;
+            if (closedPoolSize >= 4) {
+                boolean c1 = bands.get(closedIndex).isGreen;
+                boolean c2 = bands.get(closedIndex - 1).isGreen;
+                boolean c3 = bands.get(closedIndex - 2).isGreen;
+                boolean c4 = bands.get(closedIndex - 3).isGreen;
                 if ((c1 != c2) && (c2 != c3) && (c3 != c4)) {
                     isAlternatingChop = true;
                 }
             }
 
-            boolean isSpinningTop = (closedSignalCandle.upperWickPx >= closedSignalCandle.bodyHeight * 1.5f 
-                && closedSignalCandle.lowerWickPx >= closedSignalCandle.bodyHeight * 1.5f);
+            // Same-color streak & local S/R range edge check (prevents chasing tops/bottoms!)
+            int sameColorStreak = 1;
+            for (int i = closedIndex - 1; i >= 0; i--) {
+                if (bands.get(i).isGreen == closedSignalCandle.isGreen) sameColorStreak++;
+                else break;
+            }
+            int srStart = Math.max(0, closedPoolSize - 14);
+            int srMinY = 9999, srMaxY = 0;
+            for (int i = srStart; i < closedPoolSize; i++) {
+                CandleBand b = bands.get(i);
+                if (b.minY < srMinY) srMinY = b.minY;
+                if (b.maxY > srMaxY) srMaxY = b.maxY;
+            }
+            int srSpan = Math.max(20, srMaxY - srMinY);
+            boolean nearTop = closedSignalCandle.minY <= srMinY + (int)(srSpan * 0.14f);
+            boolean nearBottom = closedSignalCandle.maxY >= srMaxY - (int)(srSpan * 0.14f);
 
             int prevBodiesSum = 0;
             int prevBodiesCount = 0;
-            int avgStart = Math.max(0, candleCount - 5);
-            for (int i = avgStart; i < candleCount - 1; i++) {
+            int avgStart = Math.max(0, closedPoolSize - 5);
+            for (int i = avgStart; i < closedIndex; i++) {
                 prevBodiesSum += bands.get(i).bodyHeight;
                 prevBodiesCount++;
             }
             int avgPrevBody = prevBodiesCount > 0 ? (prevBodiesSum / prevBodiesCount) : 15;
             boolean isExhaustionSpike = (closedSignalCandle.bodyHeight >= Math.max(32, avgPrevBody * 3.2f));
 
-            // ধাপ ৫: High-Probability Institutional Setup Matching (Zero Guessing / Zero Blind Signals)
+            boolean isTrueHammer = !isSpinningTop && downWickPct >= 38 && upWickPct <= 22 && downWickPct >= (int)(upWickPct * 1.7f) && closedSignalCandle.lowerWickPx >= 8;
+            boolean isTrueShootingStar = !isSpinningTop && upWickPct >= 38 && downWickPct <= 22 && upWickPct >= (int)(downWickPct * 1.7f) && closedSignalCandle.upperWickPx >= 8;
+
+            // ধাপ ৫: Conservative Offline CV Setup Matching (Zero Chasing / Strict Anti-Loss Filter)
             String proposedDirection = "WAIT";
             int confidence = 0;
-            String verdictTitle = "⏸ ফিল্টার্ড (WAIT)";
+            String verdictTitle = "⏸ ফিল্টার্ড [অফলাইন CV] (WAIT)";
             String finalReason = "";
 
-            if (isDojiIndecision) {
-                finalReason = "[৪/৫ ফিল্টার] ডোজি ক্যান্ডেল (সিদ্ধান্তহীনতা) — কোনো অনুমান নয়, ট্রেড পরিহার করুন";
+            if (isSpinningTop) {
+                finalReason = "[অফলাইন CV · ফিল্টার] স্পিনিং টপ (দ্বিমুখী উইক) — সিদ্ধান্তহীন মার্কেট, এন্ট্রি বন্ধ (WAIT)";
+            } else if (isDojiIndecision) {
+                finalReason = "[অফলাইন CV · ফিল্টার] ডোজি ক্যান্ডেল (সিদ্ধান্তহীনতা) — কোনো অনুমান নয় (WAIT)";
             } else if (isAlternatingChop) {
-                finalReason = "[৪/৫ ফিল্টার] সাইডওয়েজ চপি রেঞ্জ — ফেকআউট ঝুঁকি (ট্রেড বন্ধ রাখুন)";
-            } else if (isSpinningTop) {
-                finalReason = "[৪/৫ ফিল্টার] উভয়মুখী উইক স্পাইক — মার্কেট অস্থির (WAIT)";
+                finalReason = "[অফলাইন CV · ফিল্টার] সাইডওয়েজ চপি রেঞ্জ — ফেকআউট ঝুঁকি (WAIT)";
             } else if (isExhaustionSpike) {
-                finalReason = "[৪/৫ ফিল্টার] এক্সহশন ক্লাইম্যাক্স স্পাইক — পুলব্যাক বা বিপরীত ক্যান্ডেলের ঝুঁকি";
+                finalReason = "[অফলাইন CV · ফিল্টার] এক্সহশন ক্লাইম্যাক্স স্পাইক — রিভার্সাল ঝুঁকি (WAIT)";
             } else {
-                // NON-VIOLABLE TREND RULES:
-                // CALL is ONLY permitted if Macro is NOT DOWNTREND!
-                boolean callPermitted = !"DOWNTREND".equals(macroTrend15M) && ("UPTREND".equals(secTrend5M) || microGreenPct >= 56);
-                // PUT is ONLY permitted if Macro is NOT UPTREND!
-                boolean putPermitted = !"UPTREND".equals(macroTrend15M) && ("DOWNTREND".equals(secTrend5M) || microRedPct >= 56);
+                boolean callPermitted = !"DOWNTREND".equals(macroTrend15M) && ("UPTREND".equals(secTrend5M) || isTrueHammer);
+                boolean putPermitted = !"UPTREND".equals(macroTrend15M) && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar);
 
-                // Setup 1: Support / Resistance Wick Rejection (Pinbar / Hammer / Shooting Star)
-                if (callPermitted && closedSignalCandle.lowerWickPx >= closedSignalCandle.bodyHeight * 1.8f 
-                    && closedSignalCandle.upperWickPx <= closedSignalCandle.bodyHeight * 0.6f && closedSignalCandle.lowerWickPx >= 8) {
-                    proposedDirection = "UP";
-                    confidence = 92;
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    finalReason = "সাপোর্ট রিজেকশন হ্যামার (নিচের বাউন্স শক্তিশালী) • আপট্রেন্ড কনফার্ম";
-                } else if (putPermitted && closedSignalCandle.upperWickPx >= closedSignalCandle.bodyHeight * 1.8f 
-                    && closedSignalCandle.lowerWickPx <= closedSignalCandle.bodyHeight * 0.6f && closedSignalCandle.upperWickPx >= 8) {
-                    proposedDirection = "DOWN";
-                    confidence = 92;
-                    verdictTitle = "▼ PUT (লাল)";
-                    finalReason = "রেজিস্ট্যান্স রিজেকশন শুটিং স্টার (সেলার প্রেসার) • ডাউনট্রেন্ড কনফার্ম";
-                }
-                // Setup 2: Institutional Engulfing Reversal
-                else if (callPermitted && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen 
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f)) {
-                    proposedDirection = "UP";
-                    confidence = 89;
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    finalReason = "বুলিশ এনগালফিং (বায়ারদের শক্তিশালী আধিপত্য) • আপট্রেন্ড কনফার্ম";
-                } else if (putPermitted && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen 
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f)) {
-                    proposedDirection = "DOWN";
-                    confidence = 89;
-                    verdictTitle = "▼ PUT (লাল)";
-                    finalReason = "বিয়ারিশ এনগালফিং (সেলারদের শক্তিশালী আধিপত্য) • ডাউনট্রেন্ড কনফার্ম";
-                }
-                // Setup 3: Multi-Timeframe Momentum Continuation (Healthy Consecutive Bodies)
-                else if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && microGreenPct >= 65 
-                    && closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen 
-                    && closedSignalCandle.bodyHeight >= 8 && prevCandle.bodyHeight >= 8) {
-                    proposedDirection = "UP";
-                    confidence = 88;
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    finalReason = "বুলিশ ট্রেন্ড মোমেন্টাম ধারাবাহিকতা • ১৫M + ৫M ট্রেন্ড কনফার্ম";
-                } else if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && microRedPct >= 65 
-                    && !closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen 
-                    && closedSignalCandle.bodyHeight >= 8 && prevCandle.bodyHeight >= 8) {
-                    proposedDirection = "DOWN";
-                    confidence = 88;
-                    verdictTitle = "▼ PUT (লাল)";
-                    finalReason = "বিয়ারিশ ট্রেন্ড মোমেন্টাম ধারাবাহিকতা • ১৫M + ৫M ট্রেন্ড কনফার্ম";
-                }
-                // Setup 4: Breakout / Breakdown of Recent 5 Candles High/Low
-                else if (callPermitted && closedSignalCandle.isGreen && closedSignalCandle.bodyHeight >= 12 
-                    && isRecentHighBreakout(bands, candleCount, closedSignalCandle)) {
+                // Setup 1: True Single-Sided S/R Wick Rejection (Hammer / Shooting Star)
+                if (callPermitted && isTrueHammer) {
                     proposedDirection = "UP";
                     confidence = 87;
-                    verdictTitle = "▲ CALL (সবুজ)";
-                    finalReason = "বুলিশ রেজিস্ট্যান্স ব্রেকআউট • বায়ার ভলিউম কনফার্ম";
-                } else if (putPermitted && !closedSignalCandle.isGreen && closedSignalCandle.bodyHeight >= 12 
-                    && isRecentLowBreakdown(bands, candleCount, closedSignalCandle)) {
+                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] সাপোর্ট হ্যামার উইক রিজেকশন (নিচের বাউন্স নিশ্চিত)";
+                } else if (putPermitted && isTrueShootingStar) {
                     proposedDirection = "DOWN";
                     confidence = 87;
-                    verdictTitle = "▼ PUT (লাল)";
-                    finalReason = "বিয়ারিশ সাপোর্ট ব্রেকডাউন • সেলার ভলিউম কনফার্ম";
-                } else {
-                    // ZERO GUESSWORK: If no high-probability setup met, output WAIT!
+                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার রিজেকশন (সেলার প্রেসার)";
+                }
+                // Setup 2: Aligned Trend Engulfing (Never at range extreme)
+                else if ("UPTREND".equals(macroTrend15M) && !nearTop && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f) && bodyPct >= 35) {
+                    proposedDirection = "UP";
+                    confidence = 85;
+                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] আপট্রেন্ড বুলিশ এনগালফিং নিশ্চিত";
+                } else if ("DOWNTREND".equals(macroTrend15M) && !nearBottom && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f) && bodyPct >= 35) {
+                    proposedDirection = "DOWN";
+                    confidence = 85;
+                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
+                }
+                // Setup 3: Healthy Pullback Continuation (Strictly blocked after 3+ consecutive candles or at S/R extremes!)
+                else if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && microGreenPct >= 65
+                    && sameColorStreak <= 2 && !nearTop && bodyPct >= 40
+                    && closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
+                    proposedDirection = "UP";
+                    confidence = 83;
+                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
+                } else if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && microRedPct >= 65
+                    && sameColorStreak <= 2 && !nearBottom && bodyPct >= 40
+                    && !closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
+                    proposedDirection = "DOWN";
+                    confidence = 83;
+                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                    finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
+                } else if (sameColorStreak >= 3 || nearTop || nearBottom) {
                     proposedDirection = "WAIT";
                     confidence = 0;
-                    verdictTitle = "⏸ ফিল্টার্ড (WAIT)";
-                    finalReason = "কোনো নিশ্চিত কনফার্মেশন নেই — মার্কেট সাইডওয়েজ (ট্রেড এড়িয়ে চলুন)";
+                    verdictTitle = "⏸ এক্সহশন/S-R গার্ড (WAIT)";
+                    finalReason = "[অফলাইন CV] টানা " + sameColorStreak + "x ক্যান্ডেল বা S/R দেয়ালের কাছে ঝুঁকি — WAIT";
+                } else {
+                    proposedDirection = "WAIT";
+                    confidence = 0;
+                    verdictTitle = "⏸ ফিল্টার্ড [অফলাইন CV] (WAIT)";
+                    finalReason = "[অফলাইন CV] শক্তিশালী ৫-ধাপ কনফার্মেশন নেই — নিরাপদ WAIT";
                 }
             }
 
             String direction = proposedDirection;
 
             boolean step1Passed = isAuthenticChart;
-            boolean step2Passed = (lastClosedCandle != null);
-            boolean step3Passed = !"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M);
-            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike;
-            boolean step5Passed = !"WAIT".equals(direction);
+            boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision);
+            boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M)) || isTrueHammer || isTrueShootingStar;
+            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike && sameColorStreak < 3;
+            boolean step5Passed = !"WAIT".equals(direction) && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
 
             String closedTypeStr = (lastClosedCandle != null && lastClosedCandle.isDoji)
@@ -1419,7 +1463,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cScore.put("indicatorMomentumScore", microGreenPct >= 60 || microRedPct >= 60 ? 2.8 : 1.5);
             cScore.put("trendAlignmentScore", step3Passed ? 1.8 : 0.6);
             cScore.put("totalScore", confidence > 0 ? (confidence / 10.0f) : ((confirmedPoints / 5.0f) * 8.0f));
-            cScore.put("thresholdRequired", 7.5);
+            cScore.put("thresholdRequired", 8.0);
             cScore.put("finalVerdict", "UP".equals(direction) ? "CALL" : ("DOWN".equals(direction) ? "PUT" : "WAIT"));
             flowObj.put("signalScoring", cScore);
 
@@ -2725,5 +2769,60 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 updateOverlayAuditWidgets(0, new boolean[]{false,false,false,false,false}, "ক্লোজ: --", "UNCERTAIN");
             }
         }
+    }
+
+    public static void deliverAuthCallbackUri(Uri uri) {
+        if (uri == null) return;
+        final String uriStr = uri.toString();
+        pendingAuthCallbackUri = uriStr;
+        TradePulseNativeScreenPlugin instance = activeInstanceRef != null ? activeInstanceRef.get() : null;
+        if (instance != null) {
+            JSObject payload = new JSObject();
+            payload.put("url", uriStr);
+            instance.notifyListeners("onGoogleAuthCallback", payload);
+        }
+    }
+
+    @PluginMethod
+    public void openGoogleAuthInBrowser(PluginCall call) {
+        final String url = call.getString("url", "");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("Auth URL is required");
+            return;
+        }
+        pendingAuthCallbackUri = null;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            // Request Chrome Custom Tabs presentation when supported without external AndroidX dependency
+            Bundle customTabsExtras = new Bundle();
+            customTabsExtras.putBinder("android.support.customtabs.extra.SESSION", null);
+            intent.putExtras(customTabsExtras);
+            intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR", 0xFF0F172A);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getActivity().startActivity(intent);
+            JSObject res = new JSObject();
+            res.put("opened", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            try {
+                Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(fallback);
+                JSObject res = new JSObject();
+                res.put("opened", true);
+                call.resolve(res);
+            } catch (Exception ex) {
+                call.reject("ব্রাউজার খোলা যায়নি: " + ex.getMessage());
+            }
+        }
+    }
+
+    @PluginMethod
+    public void consumePendingAuthCallback(PluginCall call) {
+        JSObject res = new JSObject();
+        res.put("url", pendingAuthCallbackUri != null ? pendingAuthCallbackUri : "");
+        pendingAuthCallbackUri = null;
+        call.resolve(res);
     }
 }

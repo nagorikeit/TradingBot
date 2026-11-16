@@ -1,14 +1,25 @@
 package com.tradepulse.bot;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 import com.tradepulse.bot.plugins.TradePulseNativeScreenPlugin;
 
 public class MainActivity extends BridgeActivity {
+    private void handleAuthCallbackIntent(Intent intent) {
+        if (intent == null) return;
+        Uri data = intent.getData();
+        if (data != null && "tradepulse".equals(data.getScheme())) {
+            TradePulseNativeScreenPlugin.deliverAuthCallbackUri(data);
+        }
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TradePulseNativeScreenPlugin.class);
         super.onCreate(savedInstanceState);
+        handleAuthCallbackIntent(getIntent());
         
         try {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -20,6 +31,13 @@ public class MainActivity extends BridgeActivity {
                 settings.setMediaPlaybackRequiresUserGesture(false);
             }
         } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleAuthCallbackIntent(intent);
     }
 
     /**

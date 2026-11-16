@@ -13714,6 +13714,7 @@ registerPlugin("SystemBars", { web: () => new SystemBarsPluginWeb() });
 //#region src/services/apiConfig.ts
 var STORAGE_KEY_BACKEND_URL = "tradepulse_backend_api_url";
 var DEFAULT_HOSTED_BACKEND_URL = "https://ais-dev-2mn2ktc74egyugovwwvzoy-634716608323.asia-east1.run.app";
+var MOBILE_GOOGLE_AUTH_BRIDGE_URL = "https://nagorikeit.github.io/TradingBot/?mobileGoogleAuth=1";
 /**
 * Returns the base URL for API requests.
 * On Web, always uses relative path ('') which routes to Express server on port 3000.
@@ -16204,6 +16205,19 @@ var ArrowDownRight = createLucideIcon("arrow-down-right", [["path", {
 }], ["path", {
 	d: "M17 7v10H7",
 	key: "6fjiku"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var ArrowLeft = createLucideIcon("arrow-left", [["path", {
+	d: "m12 19-7-7 7-7",
+	key: "1l729n"
+}], ["path", {
+	d: "M19 12H5",
+	key: "x3x0zl"
 }]]);
 /**
 * @license lucide-react v0.546.0 - ISC
@@ -28374,6 +28388,23 @@ async function _signInWithCredential(auth, credential, bypassAuthState = false) 
 	return userCredential;
 }
 /**
+* Asynchronously signs in with the given credentials.
+*
+* @remarks
+* An {@link AuthProvider} can be used to generate the credential.
+*
+* This method is not supported by {@link Auth} instances created with a
+* {@link @firebase/app#FirebaseServerApp}.
+*
+* @param auth - The {@link Auth} instance.
+* @param credential - The auth credential.
+*
+* @public
+*/
+async function signInWithCredential(auth, credential) {
+	return _signInWithCredential(_castAuth(auth), credential);
+}
+/**
 * @license
 * Copyright 2020 Google LLC
 *
@@ -30401,6 +30432,9 @@ async function _getAndClearPendingRedirectStatus(resolver, auth) {
 	await persistence._remove(key);
 	return hasPendingRedirect;
 }
+async function _setPendingRedirectStatus(resolver, auth) {
+	return resolverPersistence(resolver)._set(pendingRedirectKey(auth), "true");
+}
 function _overrideRedirectResult(auth, result) {
 	redirectOutcomeMap.set(auth._key(), result);
 }
@@ -30426,6 +30460,107 @@ function pendingRedirectKey(auth) {
 * See the License for the specific language governing permissions and
 * limitations under the License.
 */
+/**
+* Authenticates a Firebase client using a full-page redirect flow.
+*
+* @remarks
+* To handle the results and errors for this operation, refer to {@link getRedirectResult}.
+* Follow the {@link https://firebase.google.com/docs/auth/web/redirect-best-practices
+* | best practices} when using {@link signInWithRedirect}.
+*
+* This method does not work in a Node.js environment or with {@link Auth} instances created with a
+* {@link @firebase/app#FirebaseServerApp}.
+*
+* @example
+* ```javascript
+* // Sign in using a redirect.
+* const provider = new FacebookAuthProvider();
+* // You can add additional scopes to the provider:
+* provider.addScope('user_birthday');
+* // Start a sign in process for an unauthenticated user.
+* await signInWithRedirect(auth, provider);
+* // This will trigger a full page redirect away from your app
+*
+* // After returning from the redirect when your app initializes you can obtain the result
+* const result = await getRedirectResult(auth);
+* if (result) {
+*   // This is the signed-in user
+*   const user = result.user;
+*   // This gives you a Facebook Access Token.
+*   const credential = provider.credentialFromResult(auth, result);
+*   const token = credential.accessToken;
+* }
+* // As this API can be used for sign-in, linking and reauthentication,
+* // check the operationType to determine what triggered this redirect
+* // operation.
+* const operationType = result.operationType;
+* ```
+*
+* @param auth - The {@link Auth} instance.
+* @param provider - The provider to authenticate. The provider has to be an {@link OAuthProvider}.
+* Non-OAuth providers like {@link EmailAuthProvider} will throw an error.
+* @param resolver - An instance of {@link PopupRedirectResolver}, optional
+* if already supplied to {@link initializeAuth} or provided by {@link getAuth}.
+*
+* @public
+*/
+function signInWithRedirect(auth, provider, resolver) {
+	return _signInWithRedirect(auth, provider, resolver);
+}
+async function _signInWithRedirect(auth, provider, resolver) {
+	if (_isFirebaseServerApp(auth.app)) return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth));
+	const authInternal = _castAuth(auth);
+	_assertInstanceOf(auth, provider, FederatedAuthProvider);
+	await authInternal._initializationPromise;
+	const resolverInternal = _withDefaultResolver(authInternal, resolver);
+	await _setPendingRedirectStatus(resolverInternal, authInternal);
+	return resolverInternal._openRedirect(authInternal, provider, "signInViaRedirect");
+}
+/**
+* Returns a {@link UserCredential} from the redirect-based sign-in flow.
+*
+* @remarks
+* If sign-in succeeded, returns the signed in user. If sign-in was unsuccessful, fails with an
+* error. If no redirect operation was called, returns `null`.
+*
+* This method does not work in a Node.js environment or with {@link Auth} instances created with a
+* {@link @firebase/app#FirebaseServerApp}.
+*
+* @example
+* ```javascript
+* // Sign in using a redirect.
+* const provider = new FacebookAuthProvider();
+* // You can add additional scopes to the provider:
+* provider.addScope('user_birthday');
+* // Start a sign in process for an unauthenticated user.
+* await signInWithRedirect(auth, provider);
+* // This will trigger a full page redirect away from your app
+*
+* // After returning from the redirect when your app initializes you can obtain the result
+* const result = await getRedirectResult(auth);
+* if (result) {
+*   // This is the signed-in user
+*   const user = result.user;
+*   // This gives you a Facebook Access Token.
+*   const credential = provider.credentialFromResult(auth, result);
+*   const token = credential.accessToken;
+* }
+* // As this API can be used for sign-in, linking and reauthentication,
+* // check the operationType to determine what triggered this redirect
+* // operation.
+* const operationType = result.operationType;
+* ```
+*
+* @param auth - The {@link Auth} instance.
+* @param resolver - An instance of {@link PopupRedirectResolver}, optional
+* if already supplied to {@link initializeAuth} or provided by {@link getAuth}.
+*
+* @public
+*/
+async function getRedirectResult(auth, resolver) {
+	await _castAuth(auth)._initializationPromise;
+	return _getRedirectResult(auth, resolver, false);
+}
 async function _getRedirectResult(auth, resolverExtern, bypassAuthState = false) {
 	if (_isFirebaseServerApp(auth.app)) return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth));
 	const authInternal = _castAuth(auth);
@@ -58837,6 +58972,9 @@ async function testConnection() {
 }
 testConnection();
 //#endregion
+//#region src/plugins/TradePulseNativeScreen.ts
+var TradePulseNativeScreen = registerPlugin("TradePulseNativeScreen", { web: () => __vitePreload(() => import("./webNativeFallback-BltrRc5B.js").then((m) => new m.TradePulseNativeScreenWeb()), [], import.meta.url) });
+//#endregion
 //#region src/services/authService.ts
 var ADMIN_EMAILS = ["nagorikeitsheba@gmail.com", "admin@tradepulse.io"];
 var DEFAULT_PLAN_SETTINGS = {
@@ -59045,6 +59183,7 @@ var AuthService = class {
 		this.planDocUnsub = null;
 		this.scanWriteQueue = Promise.resolve();
 		this.keepTerminalUnlockedUntilNextClick = false;
+		this.nativeAuthResolver = null;
 		this.init();
 	}
 	init() {
@@ -59071,6 +59210,19 @@ var AuthService = class {
 				else if (this.currentUser) this.refreshProfile().catch(() => {});
 			}
 		});
+		if (Capacitor.isNativePlatform()) {
+			TradePulseNativeScreen.addListener("onGoogleAuthCallback", ({ url }) => {
+				this.handleNativeGoogleCallbackUrl(url);
+			}).catch(() => {});
+			TradePulseNativeScreen.consumePendingAuthCallback().then(({ url }) => {
+				if (url) this.handleNativeGoogleCallbackUrl(url);
+			}).catch(() => {});
+		} else getRedirectResult(auth).then(async (res) => {
+			if (res?.user) {
+				const user = await this.ensureFirestoreUserDoc(res.user);
+				this.setCurrentUserSession(user, "firebase_google_auth");
+			}
+		}).catch(() => {});
 	}
 	async fetchBackendPlanSettings() {
 		try {
@@ -59482,9 +59634,130 @@ var AuthService = class {
 			};
 		}
 	}
-	async loginWithGoogle() {
+	async handleNativeGoogleCallbackUrl(callbackUrl) {
+		if (!callbackUrl || !callbackUrl.startsWith("tradepulse://auth-callback")) return;
+		const resolvePending = this.nativeAuthResolver;
+		this.nativeAuthResolver = null;
 		try {
-			this.keepTerminalUnlockedUntilNextClick = false;
+			const queryIndex = callbackUrl.indexOf("?");
+			const params = new URLSearchParams(queryIndex >= 0 ? callbackUrl.slice(queryIndex + 1) : "");
+			const errParam = params.get("error");
+			if (errParam) {
+				resolvePending?.({
+					success: false,
+					error: "Google লগইন ব্যর্থ হয়েছে: " + errParam
+				});
+				return;
+			}
+			const idToken = params.get("idToken") || "";
+			const accessToken = params.get("accessToken") || "";
+			if (!idToken && !accessToken) {
+				resolvePending?.({
+					success: false,
+					error: "Google টোকেন পাওয়া যায়নি। আবার চেষ্টা করুন।"
+				});
+				return;
+			}
+			const result = await signInWithCredential(auth, GoogleAuthProvider.credential(idToken || void 0, accessToken || void 0));
+			const user = await this.ensureFirestoreUserDoc(result.user);
+			this.setCurrentUserSession(user, "firebase_google_auth");
+			resolvePending?.({
+				success: true,
+				user
+			});
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			resolvePending?.({
+				success: false,
+				error: "মোবাইল Google লগইন ব্যর্থ হয়েছে: " + msg
+			});
+		}
+	}
+	async loginWithGoogle() {
+		this.keepTerminalUnlockedUntilNextClick = false;
+		if (Capacitor.isNativePlatform()) try {
+			const bridgeUrl = MOBILE_GOOGLE_AUTH_BRIDGE_URL;
+			const authPromise = new Promise((resolve) => {
+				this.nativeAuthResolver = resolve;
+				let pollTimer = null;
+				let timeoutTimer = null;
+				let cancelAfterReturnTimer = null;
+				let wasHidden = false;
+				const cleanup = () => {
+					if (pollTimer) clearInterval(pollTimer);
+					if (timeoutTimer) clearTimeout(timeoutTimer);
+					if (cancelAfterReturnTimer) clearTimeout(cancelAfterReturnTimer);
+					if (typeof document !== "undefined") document.removeEventListener("visibilitychange", checkPendingOnFocus);
+				};
+				const checkPendingOnFocus = async () => {
+					if (typeof document === "undefined") return;
+					if (document.visibilityState === "hidden") {
+						wasHidden = true;
+						return;
+					}
+					if (document.visibilityState === "visible") {
+						try {
+							const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+							if (url) {
+								cleanup();
+								await this.handleNativeGoogleCallbackUrl(url);
+								return;
+							}
+						} catch {}
+						if (wasHidden && !cancelAfterReturnTimer) cancelAfterReturnTimer = setTimeout(async () => {
+							if (this.nativeAuthResolver !== resolve) return;
+							try {
+								const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+								if (url) {
+									cleanup();
+									await this.handleNativeGoogleCallbackUrl(url);
+									return;
+								}
+							} catch {}
+							this.nativeAuthResolver = null;
+							cleanup();
+							resolve({
+								success: false,
+								error: "ব্রাউজারে Google লগইন সম্পন্ন হওয়ার আগেই ফিরে এসেছেন। আবার চেষ্টা করুন অথবা ইমেইল-পাসওয়ার্ড দিয়ে প্রবেশ করুন।"
+							});
+						}, 2500);
+					}
+				};
+				if (typeof document !== "undefined") document.addEventListener("visibilitychange", checkPendingOnFocus);
+				pollTimer = setInterval(async () => {
+					if (!this.nativeAuthResolver) {
+						cleanup();
+						return;
+					}
+					try {
+						const { url } = await TradePulseNativeScreen.consumePendingAuthCallback();
+						if (url) {
+							cleanup();
+							await this.handleNativeGoogleCallbackUrl(url);
+						}
+					} catch {}
+				}, 900);
+				timeoutTimer = setTimeout(() => {
+					if (this.nativeAuthResolver === resolve) {
+						this.nativeAuthResolver = null;
+						cleanup();
+						resolve({
+							success: false,
+							error: "ব্রাউজার থেকে Google লগইন সম্পন্ন হয়নি। অনুগ্রহ করে ব্রাউজারে লগইন শেষে \"TradePulse অ্যাপে ফিরে যান\" চাপুন অথবা ইমেইল দিয়ে প্রবেশ করুন।"
+						});
+					}
+				}, 12e4);
+			});
+			await TradePulseNativeScreen.openGoogleAuthInBrowser({ url: bridgeUrl });
+			return await authPromise;
+		} catch (error) {
+			this.nativeAuthResolver = null;
+			return {
+				success: false,
+				error: "মোবাইল ব্রাউজার দিয়ে Google লগইন শুরু করা যায়নি: " + (error instanceof Error ? error.message : String(error))
+			};
+		}
+		try {
 			const fbUser = (await signInWithPopup(auth, googleProvider)).user;
 			const user = await this.ensureFirestoreUserDoc(fbUser);
 			this.setCurrentUserSession(user, "firebase_google_auth");
@@ -59494,6 +59767,22 @@ var AuthService = class {
 			};
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
+			if (typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && (msg.includes("popup-blocked") || msg.includes("operation-not-supported"))) try {
+				await signInWithRedirect(auth, googleProvider);
+				return {
+					success: false,
+					error: "Google পেজে রিডাইরেক্ট হচ্ছে..."
+				};
+			} catch (redirectErr) {
+				return {
+					success: false,
+					error: "মোবাইল ব্রাউজার Google লগইন ব্যর্থ হয়েছে: " + (redirectErr instanceof Error ? redirectErr.message : String(redirectErr))
+				};
+			}
+			if (msg.includes("unauthorized-domain")) return {
+				success: false,
+				error: `Firebase Authentication-এ "${typeof window !== "undefined" ? window.location.hostname : "localhost"}" ডোমেইনটি Authorized Domains-এ যুক্ত নেই। Firebase Console (forward-invention-bggh3) -> Authentication -> Settings -> Authorized domains-এ যুক্ত করুন।`
+			};
 			if (msg.includes("popup-closed-by-user")) return {
 				success: false,
 				error: "জিমেইল লগইন পপআপটি বন্ধ করা হয়েছে। আবার চেষ্টা করুন।"
@@ -64521,9 +64810,6 @@ var AgentCommandCenter = () => {
 		]
 	});
 };
-//#endregion
-//#region src/plugins/TradePulseNativeScreen.ts
-var TradePulseNativeScreen = registerPlugin("TradePulseNativeScreen", { web: () => __vitePreload(() => import("./webNativeFallback-S7R9GSd6.js").then((m) => new m.TradePulseNativeScreenWeb()), [], import.meta.url) });
 var voiceAssistantService = class VoiceAssistantService {
 	constructor() {
 		this.isEnabled = true;
@@ -65786,12 +66072,12 @@ var liveScreenService = class LiveScreenService {
 						const h = img.naturalHeight || img.height || 0;
 						if (w < 120 || h < 120) return resolve(void 0);
 						const isPortrait = h > w;
-						const sx = Math.floor(w * (isPortrait ? .34 : .46));
+						const sx = Math.floor(w * (isPortrait ? .44 : .54));
 						const sy = Math.floor(h * (isPortrait ? .16 : .08));
-						const sw = Math.max(80, Math.floor(w * (isPortrait ? .64 : .52)));
+						const sw = Math.max(80, Math.floor(w * (isPortrait ? .54 : .44)));
 						const sh = Math.max(80, Math.floor(h * (isPortrait ? .58 : .8)));
 						const cropCanvas = document.createElement("canvas");
-						const outW = Math.min(1080, Math.max(sw, Math.round(sw * 1.8)));
+						const outW = Math.min(1200, Math.max(sw, Math.round(sw * 2.2)));
 						const outH = Math.round(sh / sw * outW);
 						cropCanvas.width = outW;
 						cropCanvas.height = outH;
@@ -65800,7 +66086,7 @@ var liveScreenService = class LiveScreenService {
 						cCtx.imageSmoothingEnabled = true;
 						cCtx.imageSmoothingQuality = "high";
 						cCtx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
-						resolve(cropCanvas.toDataURL("image/jpeg", .9));
+						resolve(cropCanvas.toDataURL("image/jpeg", .92));
 					} catch {
 						resolve(void 0);
 					}
@@ -65956,9 +66242,18 @@ var liveScreenService = class LiveScreenService {
 						const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 						const colCounts = new Int32Array(targetWidth);
 						for (let x = xStart; x < xEnd; x++) {
-							let count = 0;
-							for (let y = yStart; y < yEnd; y++) if (candlePixelGrid[y * targetWidth + x] > 0) count++;
-							colCounts[x] = count;
+							let runLen = 0;
+							let runStart = yStart;
+							let verticalCount = 0;
+							for (let y = yStart; y <= yEnd; y++) if ((y < yEnd ? candlePixelGrid[y * targetWidth + x] : 0) > 0) {
+								if (runLen === 0) runStart = y;
+								runLen++;
+							} else {
+								if (runLen >= 4) verticalCount += runLen;
+								else if (runLen > 0) for (let ry = runStart; ry < runStart + runLen; ry++) candlePixelGrid[ry * targetWidth + x] = 0;
+								runLen = 0;
+							}
+							colCounts[x] = verticalCount;
 						}
 						const candleBands = [];
 						let inBand = false;
@@ -65983,7 +66278,7 @@ var liveScreenService = class LiveScreenService {
 							}
 						} else if (inBand) {
 							const width = x - bandStart;
-							if (width >= 3 && width <= 95) {
+							if (width >= 3 && width <= 60) {
 								let minY = 9999;
 								let maxY = 0;
 								let maxColPx = 0;
@@ -66068,19 +66363,27 @@ var liveScreenService = class LiveScreenService {
 							}
 							inBand = false;
 						}
-						const rawCandles = candleBands.filter((b) => (b.height >= b.width * 1.05 || (b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * .85) && b.height >= 12);
-						let verifiedCandles = rawCandles;
+						const rawCandles = candleBands.filter((b) => {
+							const fillDensity = b.pixelMass / Math.max(1, b.width * b.height);
+							return !(b.width > 20 && fillDensity < .28) && (b.height >= b.width * 1.05 || (b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * .85) && b.height >= 12;
+						});
+						let verifiedCandles = [...rawCandles];
+						let medianStep = 12;
+						let medianW = 8;
 						if (rawCandles.length >= 5) {
 							const sample = rawCandles.slice(-Math.min(8, rawCandles.length - 1), -1);
 							const widths = sample.map((c) => c.width).sort((a, b) => a - b);
-							const medianW = widths[Math.floor(widths.length / 2)] || 10;
+							medianW = widths[Math.floor(widths.length / 2)] || 8;
 							const gaps = [];
 							for (let i = 1; i < sample.length; i++) gaps.push(sample[i].centerX - sample[i - 1].centerX);
 							gaps.sort((a, b) => a - b);
-							const medianStep = gaps.length > 0 ? gaps[Math.floor(gaps.length / 2)] : medianW * 1.5;
-							const tail = rawCandles[rawCandles.length - 1];
-							const prev = rawCandles[rawCandles.length - 2];
-							if (tail.centerX - prev.centerX > Math.max(medianStep * 2.4, 38) || tail.width > Math.max(medianW * 2.4, 28)) verifiedCandles = rawCandles.slice(0, -1);
+							medianStep = gaps.length > 0 ? Math.max(5, gaps[Math.floor(gaps.length / 2)]) : Math.round(medianW * 1.5);
+							while (verifiedCandles.length >= 5) {
+								const tail = verifiedCandles[verifiedCandles.length - 1];
+								const prev = verifiedCandles[verifiedCandles.length - 2];
+								if (tail.centerX - prev.centerX > Math.max(medianStep * 2.25, 34) || tail.width > Math.max(medianW * 2.3, 28)) verifiedCandles.pop();
+								else break;
+							}
 						}
 						const distinctCandleBars = verifiedCandles.length;
 						let verifiedWicksCount = 0;
@@ -66149,78 +66452,104 @@ var liveScreenService = class LiveScreenService {
 						}
 						diagnostic.recommendedAction = "সক্রিয় ক্যান্ডেলস্টিক চার্ট নিশ্চিত। ক্লোজড ক্যান্ডেল ও ট্রেন্ড বিশ্লেষণ কার্যকর।";
 						const rightmost = verifiedCandles[verifiedCandles.length - 1];
-						const penultimate = verifiedCandles.length >= 2 ? verifiedCandles[verifiedCandles.length - 2] : rightmost;
-						const prevPrev = verifiedCandles.length >= 3 ? verifiedCandles[verifiedCandles.length - 3] : null;
-						const closedTradeCandle = verifiedCandles.length >= 2 ? penultimate : rightmost;
+						let hasInfantTickRight = false;
+						if (verifiedCandles.length >= 4) {
+							const tStart = Math.min(589, rightmost.end + Math.max(2, Math.round(medianStep * .45)));
+							const tEnd = Math.min(589, rightmost.centerX + Math.round(medianStep * 1.55));
+							let tickCols = 0;
+							for (let tx = tStart; tx <= tEnd; tx++) if (colCounts[tx] >= 2) tickCols++;
+							if (tickCols >= 1 && tickCols <= 2 && rightmost.width >= Math.max(3, Math.round(medianW * .75))) hasInfantTickRight = true;
+						}
+						const closedTradeCandle = hasInfantTickRight ? rightmost : verifiedCandles.length >= 2 ? verifiedCandles[verifiedCandles.length - 2] : rightmost;
+						const closedIdx = hasInfantTickRight ? verifiedCandles.length - 1 : Math.max(0, verifiedCandles.length - 2);
+						const prevPrev = closedIdx >= 1 ? verifiedCandles[closedIdx - 1] : null;
 						const totalClosedSpan = Math.max(1, closedTradeCandle.bodyHeight + closedTradeCandle.upperWickPx + closedTradeCandle.lowerWickPx);
 						const bodyPercent = Math.round(closedTradeCandle.bodyHeight / totalClosedSpan * 100);
 						const upperWickPercent = Math.round(closedTradeCandle.upperWickPx / totalClosedSpan * 100);
 						const lowerWickPercent = Math.round(closedTradeCandle.lowerWickPx / totalClosedSpan * 100);
-						const isClosedDoji = bodyPercent <= 18 && (upperWickPercent >= 25 || lowerWickPercent >= 25);
-						const isClosedUpperRejection = upperWickPercent >= 35 && upperWickPercent > lowerWickPercent * 1.5;
-						const isClosedLowerRejection = lowerWickPercent >= 35 && lowerWickPercent > upperWickPercent * 1.5;
+						const isSpinningTop = upperWickPercent >= 28 && lowerWickPercent >= 28 && bodyPercent < 35;
+						const isClosedDoji = isSpinningTop || bodyPercent <= 18 && (upperWickPercent >= 22 || lowerWickPercent >= 22);
+						const isClosedUpperRejection = !isSpinningTop && upperWickPercent >= 38 && lowerWickPercent <= 22 && upperWickPercent > lowerWickPercent * 1.7;
+						const isClosedLowerRejection = !isSpinningTop && lowerWickPercent >= 38 && upperWickPercent <= 22 && lowerWickPercent > upperWickPercent * 1.7;
 						const lastClosedCandleColor = isClosedDoji ? "DOJI" : closedTradeCandle.color;
-						const formingCandleColor = verifiedCandles.length >= 2 ? rightmost.color : "NONE";
-						const closedPool = verifiedCandles.length >= 2 ? verifiedCandles.slice(0, -1) : verifiedCandles;
+						const formingCandleColor = hasInfantTickRight ? "DOJI" : verifiedCandles.length >= 2 ? rightmost.color : "NONE";
+						const closedPool = verifiedCandles.slice(0, closedIdx + 1);
 						const macroSlice = closedPool.slice(-16);
 						const secSlice = closedPool.slice(-7);
 						const microSlice = closedPool.slice(-3);
 						const calcTrend = (arr) => {
-							if (arr.length < 2) return "SIDEWAYS";
+							if (arr.length < 3) return "SIDEWAYS";
 							let g = 0;
 							let r = 0;
 							arr.forEach((c) => {
 								if (c.color === "GREEN") g++;
 								else r++;
 							});
-							const slopeUp = arr[arr.length - 1].minY < arr[0].minY;
-							const slopeDown = arr[arr.length - 1].maxY > arr[0].maxY;
-							if (g >= r + 1 && slopeUp) return "UPTREND";
-							if (r >= g + 1 && slopeDown) return "DOWNTREND";
+							const slopeUp = arr[arr.length - 1].minY < arr[0].minY && arr[arr.length - 1].maxY <= arr[0].maxY;
+							const slopeDown = arr[arr.length - 1].maxY > arr[0].maxY && arr[arr.length - 1].minY >= arr[0].minY;
+							if (g >= r + 2 && slopeUp) return "UPTREND";
+							if (r >= g + 2 && slopeDown) return "DOWNTREND";
 							return "SIDEWAYS";
 						};
 						const macroTrend = calcTrend(macroSlice);
 						const secondaryTrend = calcTrend(secSlice);
 						const microTrend = calcTrend(microSlice);
 						const isAlternatingChop = closedPool.length >= 4 && closedPool[closedPool.length - 1].color !== closedPool[closedPool.length - 2].color && closedPool[closedPool.length - 2].color !== closedPool[closedPool.length - 3].color && closedPool[closedPool.length - 3].color !== closedPool[closedPool.length - 4].color;
+						let streak = 1;
+						for (let i = closedPool.length - 2; i >= 0; i--) if (closedPool[i].color === closedTradeCandle.color) streak++;
+						else break;
+						const srPool = closedPool.slice(-14);
+						let srMinY = 9999;
+						let srMaxY = 0;
+						srPool.forEach((c) => {
+							if (c.minY < srMinY) srMinY = c.minY;
+							if (c.maxY > srMaxY) srMaxY = c.maxY;
+						});
+						const srSpan = Math.max(20, srMaxY - srMinY);
+						const nearTop = closedTradeCandle.minY <= srMinY + srSpan * .14;
+						const nearBottom = closedTradeCandle.maxY >= srMaxY - srSpan * .14;
 						let dir = "WAIT";
 						let pattern = "স্পষ্ট সেটআপ মেলেনি (WAIT)";
-						let confidence = 45;
+						let confidence = 42;
 						if (isClosedDoji) {
 							dir = "WAIT";
-							confidence = 32;
-							pattern = "ক্লোজড ডোজি ক্যান্ডেল — সিদ্ধান্তহীন মার্কেট (WAIT)";
+							confidence = 30;
+							pattern = isSpinningTop ? "স্পিনিং টপ (দ্বিমুখী উইক) — সিদ্ধান্তহীন মার্কেট (WAIT)" : "ক্লোজড ডোজি ক্যান্ডেল — সিদ্ধান্তহীন মার্কেট (WAIT)";
 						} else if (isAlternatingChop) {
 							dir = "WAIT";
-							confidence = 38;
+							confidence = 36;
 							pattern = "সাইডওয়েজ অল্টারনেটিং চপ (WAIT)";
 						} else if (isClosedUpperRejection && macroTrend !== "UPTREND") {
 							dir = "DOWN";
-							confidence = secondaryTrend === "DOWNTREND" ? 88 : 81;
-							pattern = "ক্লোজড ক্যান্ডেল আপার উইক রিজেকশন (PUT)";
+							confidence = secondaryTrend === "DOWNTREND" ? 86 : 82;
+							pattern = "[অফলাইন CV] ক্লোজড ক্যান্ডেল আপার উইক রিজেকশন (PUT)";
 						} else if (isClosedLowerRejection && macroTrend !== "DOWNTREND") {
 							dir = "UP";
-							confidence = secondaryTrend === "UPTREND" ? 88 : 81;
-							pattern = "ক্লোজড ক্যান্ডেল লোয়ার উইক বাউন্স (CALL)";
-						} else if (closedTradeCandle.color === "GREEN" && prevPrev && prevPrev.color === "RED" && closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 && macroTrend !== "DOWNTREND") {
+							confidence = secondaryTrend === "UPTREND" ? 86 : 82;
+							pattern = "[অফলাইন CV] ক্লোজড ক্যান্ডেল লোয়ার উইক বাউন্স (CALL)";
+						} else if (closedTradeCandle.color === "GREEN" && prevPrev && prevPrev.color === "RED" && closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 && macroTrend === "UPTREND" && !nearTop) {
 							dir = "UP";
-							confidence = 87;
-							pattern = "বুলিশ এনগালফিং ক্লোজড ক্যান্ডেল (CALL)";
-						} else if (closedTradeCandle.color === "RED" && prevPrev && prevPrev.color === "GREEN" && closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 && macroTrend !== "UPTREND") {
+							confidence = 85;
+							pattern = "[অফলাইন CV] বুলিশ এনগালফিং ক্লোজড ক্যান্ডেল (CALL)";
+						} else if (closedTradeCandle.color === "RED" && prevPrev && prevPrev.color === "GREEN" && closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 && macroTrend === "DOWNTREND" && !nearBottom) {
 							dir = "DOWN";
-							confidence = 87;
-							pattern = "বিয়ারিশ এনগালফিং ক্লোজড ক্যান্ডেল (PUT)";
-						} else if (macroTrend === "UPTREND" && secondaryTrend === "UPTREND" && closedTradeCandle.color === "GREEN") {
+							confidence = 85;
+							pattern = "[অফলাইন CV] বিয়ারিশ এনগালফিং ক্লোজড ক্যান্ডেল (PUT)";
+						} else if (macroTrend === "UPTREND" && secondaryTrend === "UPTREND" && closedTradeCandle.color === "GREEN" && streak <= 2 && !nearTop && bodyPercent >= 40) {
 							dir = "UP";
-							confidence = 86;
-							pattern = "বুলিশ ট্রেন্ড কনটিনিউয়েশন (CALL)";
-						} else if (macroTrend === "DOWNTREND" && secondaryTrend === "DOWNTREND" && closedTradeCandle.color === "RED") {
+							confidence = 83;
+							pattern = "[অফলাইন CV] বুলিশ ট্রেন্ড পুলব্যাক কনটিনিউয়েশন (CALL)";
+						} else if (macroTrend === "DOWNTREND" && secondaryTrend === "DOWNTREND" && closedTradeCandle.color === "RED" && streak <= 2 && !nearBottom && bodyPercent >= 40) {
 							dir = "DOWN";
-							confidence = 86;
-							pattern = "বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (PUT)";
+							confidence = 83;
+							pattern = "[অফলাইন CV] বিয়ারিশ ট্রেন্ড পুলব্যাক কনটিনিউয়েশন (PUT)";
+						} else if (streak >= 3 || nearTop || nearBottom) {
+							dir = "WAIT";
+							confidence = 40;
+							pattern = `[অফলাইন CV] এক্সহশন / S-R দেয়াল সতর্কতা (টানা ${streak} ক্যান্ডেল) — WAIT`;
 						}
-						const closedBn = lastClosedCandleColor === "GREEN" ? "সবুজ (বুলিশ)" : lastClosedCandleColor === "RED" ? "লাল (বিয়ারিশ)" : "ডোজি";
-						const outcomeCandleColor = verifiedCandles.length >= 2 && (rightmost.width <= 6 || rightmost.pixelMass < penultimate.pixelMass * .35) ? penultimate.color : rightmost.color;
+						const closedBn = isSpinningTop ? "স্পিনিং টপ" : lastClosedCandleColor === "GREEN" ? "সবুজ (বুলিশ)" : lastClosedCandleColor === "RED" ? "লাল (বিয়ারিশ)" : "ডোজি";
+						const outcomeCandleColor = hasInfantTickRight || verifiedCandles.length >= 2 && (rightmost.width <= 5 || rightmost.pixelMass < closedTradeCandle.pixelMass * .35) ? closedTradeCandle.color : rightmost.color;
 						return resolve({
 							isChart: true,
 							dir,
@@ -66238,11 +66567,11 @@ var liveScreenService = class LiveScreenService {
 							macroTrend,
 							secondaryTrend,
 							microTrend,
-							isChoppy: isAlternatingChop,
+							isChoppy: isAlternatingChop || isSpinningTop || streak >= 3,
 							reason: [
-								`সদ্য ক্লোজড ক্যান্ডেল: ${closedBn} (বডি ${bodyPercent}%, আপার উইক ${upperWickPercent}%, লোয়ার উইক ${lowerWickPercent}%)।`,
-								`মাল্টি-TF: 15M ${macroTrend} · 5M ${secondaryTrend} · 1M ${microTrend}।`,
-								dir === "WAIT" ? "৫টি ধাপের মধ্যে পর্যাপ্ত কনফার্মেশন না থাকায় নিরাপদ WAIT।" : "৫-ধাপ অডিটে ক্লোজড ক্যান্ডেল ও ট্রেন্ড অ্যালাইনড।"
+								`[অফলাইন CV] সদ্য ক্লোজড ক্যান্ডেল: ${closedBn} (বডি ${bodyPercent}%, আপার ${upperWickPercent}%, লোয়ার ${lowerWickPercent}%)।`,
+								`দৃশ্যমান ট্রেন্ড: ${macroTrend} · শর্ট-টার্ম ${secondaryTrend} · স্ট্রিক ${streak}x।`,
+								dir === "WAIT" ? "নিরাপদ শর্ত বা ক্লাউড AI কনফার্মেশন না মেলায় WAIT।" : "অফলাইন ৫-ধাপ অডিটে ক্লোজড ক্যান্ডেল ও ট্রেন্ড অ্যালাইনড।"
 							],
 							diagnostic
 						});
@@ -66382,11 +66711,11 @@ var liveScreenService = class LiveScreenService {
 		const secTrend = chartDetection.secondaryTrend || "SIDEWAYS";
 		const microTrend = chartDetection.microTrend || "SIDEWAYS";
 		const step1Passed = true;
-		const step2Passed = closedColor === "GREEN" || closedColor === "RED" || closedColor === "DOJI";
-		const step3Passed = macroTrend !== "SIDEWAYS" && secTrend !== "SIDEWAYS" && macroTrend === secTrend;
+		const step2Passed = closedColor === "GREEN" || closedColor === "RED";
+		const step3Passed = macroTrend !== "SIDEWAYS" && secTrend !== "SIDEWAYS" && macroTrend === secTrend || Boolean(chartDetection.isClosedRejection);
 		const step4Passed = closedColor !== "DOJI" && !chartDetection.isChoppy && rawDir !== "WAIT";
-		const step5Passed = rawDir !== "WAIT" && confidence >= 78 && step4Passed;
-		const dir = step5Passed && step2Passed && step4Passed ? rawDir : "WAIT";
+		const step5Passed = rawDir !== "WAIT" && confidence >= 82 && step2Passed && step3Passed && step4Passed;
+		const dir = step5Passed && step2Passed && step3Passed && step4Passed ? rawDir : "WAIT";
 		const confirmedPoints = [
 			step1Passed,
 			step2Passed,
@@ -66405,14 +66734,14 @@ var liveScreenService = class LiveScreenService {
 			reasoning.push(`এআই প্লেবুক নিয়ম (${activeProfileId}): ${matchingRule.titleBn} (কনফিডেন্স: ${Math.round(matchingRule.confidenceWeight * 100)}%)`);
 			if (matchingRule.cautionaryNotesBn && matchingRule.cautionaryNotesBn.length > 0) reasoning.push(`⚠️ প্রোফাইল সতর্কতা: ${matchingRule.cautionaryNotesBn[0]}`);
 		}
-		const totalScore = Number((confirmedPoints / 5 * 9.2).toFixed(1));
+		const totalScore = Number((confirmedPoints / 5 * 9).toFixed(1));
 		return {
 			analysisId,
 			timestamp: now,
 			frameCapturedAt,
 			direction: dir,
 			confidence: dir === "WAIT" ? Math.min(55, confidence || 40) : confidence,
-			verdictTitle: dir === "UP" ? "▲ CALL (UP) সিগন্যাল" : dir === "DOWN" ? "▼ PUT (DOWN) সিগন্যাল" : `⏸ WAIT (${confirmedPoints}/৫ পয়েন্ট)`,
+			verdictTitle: dir === "UP" ? "▲ CALL (UP) [অফলাইন CV]" : dir === "DOWN" ? "▼ PUT (DOWN) [অফলাইন CV]" : `⏸ WAIT (${confirmedPoints}/৫ পয়েন্ট · অফলাইন CV)`,
 			suggestedExpiry: "01:00",
 			reasoning,
 			tradingProfileId: activeProfileId,
@@ -66461,7 +66790,7 @@ var liveScreenService = class LiveScreenService {
 					detectedAsset: symbol,
 					detectedTimeframe: "1M",
 					candleBarsCount: chartDetection.diagnostic?.distinctCandleBars || 8,
-					notes: "১/৫ চার্ট ও ডেটা যাচাই সম্পন্ন"
+					notes: "অফলাইন CV ১/৫ চার্ট ও ডেটা যাচাই সম্পন্ন"
 				},
 				candleData: {
 					candleCount: chartDetection.diagnostic?.distinctCandleBars || 8,
@@ -66488,14 +66817,14 @@ var liveScreenService = class LiveScreenService {
 				marketFilter: {
 					regime: chartDetection.isChoppy ? "SIDEWAYS" : closedColor === "DOJI" ? "DOJI_CHOPPY" : "TRENDING",
 					passed: step4Passed,
-					blockReason: step4Passed ? void 0 : "ডোজি বা সাইডওয়েজ ফিল্টার"
+					blockReason: step4Passed ? void 0 : "ডোজি / স্পিনিং টপ বা এক্সহশন ফিল্টার"
 				},
 				signalScoring: {
 					priceActionScore: Number((step2Passed ? 4.4 : 2).toFixed(1)),
 					indicatorMomentumScore: Number((step4Passed ? 2.4 : 1).toFixed(1)),
 					trendAlignmentScore: Number((step3Passed ? 1.8 : .6).toFixed(1)),
 					totalScore,
-					thresholdRequired: 7.5,
+					thresholdRequired: 8,
 					finalVerdict: dir === "UP" ? "CALL" : dir === "DOWN" ? "PUT" : "WAIT"
 				}
 			},
@@ -72072,7 +72401,7 @@ var AuthGatewayModal = ({ onSuccess }) => {
 									d: "M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
 								})
 							]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: googleLoading ? "যাচাই হচ্ছে..." : "Google দিয়ে প্রবেশ করুন" })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: googleLoading ? "Google যাচাই চলছে..." : "Google দিয়ে প্রবেশ করুন" })]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "relative flex items-center justify-center my-4 sm:my-5",
@@ -72728,6 +73057,151 @@ var OfflineIndicator = () => {
 	});
 };
 //#endregion
+//#region src/components/MobileGoogleAuthBridge.tsx
+var MobileGoogleAuthBridge = () => {
+	const [status, setStatus] = (0, import_react.useState)("ready");
+	const [errorMsg, setErrorMsg] = (0, import_react.useState)(null);
+	const [deepLinkUrl, setDeepLinkUrl] = (0, import_react.useState)(null);
+	const buildDeepLinkFromResult = (res) => {
+		const cred = GoogleAuthProvider.credentialFromResult(res);
+		const idToken = cred?.idToken || "";
+		const accessToken = cred?.accessToken || "";
+		if (!idToken && !accessToken) return null;
+		const params = new URLSearchParams();
+		if (idToken) params.set("idToken", idToken);
+		if (accessToken) params.set("accessToken", accessToken);
+		return `tradepulse://auth-callback?${params.toString()}`;
+	};
+	const finishWithResult = (res) => {
+		const url = buildDeepLinkFromResult(res);
+		if (!url) {
+			setStatus("error");
+			setErrorMsg("Google টোকেন পাওয়া যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।");
+			return;
+		}
+		setDeepLinkUrl(url);
+		setStatus("success");
+		try {
+			window.location.href = url;
+		} catch {}
+	};
+	(0, import_react.useEffect)(() => {
+		let active = true;
+		getRedirectResult(auth).then((res) => {
+			if (active && res) finishWithResult(res);
+		}).catch((err) => {
+			if (active) {
+				setStatus("error");
+				setErrorMsg(err?.message || "Google লগইন যাচাই ব্যর্থ হয়েছে");
+			}
+		});
+		return () => {
+			active = false;
+		};
+	}, []);
+	const handleStartGoogleLogin = async () => {
+		setErrorMsg(null);
+		setStatus("loading");
+		try {
+			const res = await signInWithPopup(auth, googleProvider);
+			finishWithResult(res);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("popup-blocked") || msg.includes("operation-not-supported")) try {
+				await signInWithRedirect(auth, googleProvider);
+				return;
+			} catch (redirectErr) {
+				setStatus("error");
+				setErrorMsg(redirectErr instanceof Error ? redirectErr.message : String(redirectErr));
+				return;
+			}
+			setStatus("error");
+			if (msg.includes("popup-closed-by-user")) setErrorMsg("Google পপআপ বন্ধ করা হয়েছিল। আবার নিচের বাটনে চাপুন।");
+			else if (msg.includes("unauthorized-domain")) {
+				const host = typeof window !== "undefined" ? window.location.hostname : "";
+				setErrorMsg(`Firebase-এ এই ডোমেইনটি (${host}) Authorized Domains-এ যুক্ত করা নেই। Firebase Console -> Authentication -> Settings -> Authorized domains-এ "${host}" যোগ করুন।`);
+			} else setErrorMsg(msg);
+		}
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-4 font-sans",
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "w-full max-w-md bg-[#0f172a] border border-slate-800 rounded-2xl p-6 space-y-5 shadow-2xl text-center",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "space-y-1",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h1", {
+					className: "text-xl font-bold text-white",
+					children: ["TradePulse ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "text-emerald-400",
+						children: "AI"
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "text-xs text-slate-400",
+					children: "মোবাইল অ্যাপ Google অ্যাকাউন্ট যাচাই"
+				})]
+			}), status === "success" && deepLinkUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "space-y-4",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-200 text-xs flex flex-col items-center gap-2",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-8 h-8 text-emerald-400" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "font-bold text-sm text-white",
+							children: "Google লগইন সফল হয়েছে!"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "স্বয়ংক্রিয়ভাবে অ্যাপে ফিরে না গেলে নিচের বাটনে চাপুন।" })
+					]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+					href: deepLinkUrl,
+					className: "w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-colors",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ArrowLeft, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "TradePulse অ্যাপে ফিরে যান" })]
+				})]
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "space-y-4",
+				children: [
+					errorMsg && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2 text-left",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleAlert, { className: "w-4 h-4 shrink-0 text-rose-400" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: errorMsg })]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "text-xs text-slate-300 leading-relaxed",
+						children: "মোবাইল অ্যাপে নিরাপদভাবে প্রবেশ করতে নিচের বাটনে ট্যাপ করে আপনার Google/Gmail অ্যাকাউন্ট নির্বাচন করুন।"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: handleStartGoogleLogin,
+						disabled: status === "loading",
+						className: "w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-bold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-colors border border-slate-200",
+						children: status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-4 h-4 animate-spin text-slate-700" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Google যাচাই চলছে..." })] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
+							className: "w-4 h-4 shrink-0",
+							viewBox: "0 0 24 24",
+							"aria-hidden": "true",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", {
+									fill: "#4285F4",
+									d: "M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", {
+									fill: "#34A853",
+									d: "M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", {
+									fill: "#FBBC05",
+									d: "M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", {
+									fill: "#EA4335",
+									d: "M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+								})
+							]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Google অ্যাকাউন্ট দিয়ে প্রবেশ করুন" })] })
+					})
+				]
+			})]
+		})
+	});
+};
+//#endregion
 //#region src/App.tsx
 /**
 * @license
@@ -72831,6 +73305,7 @@ function App() {
 	const stats = computeSignalStatistics(signalHistory);
 	const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
 	const previousCandle = candles.length > 1 ? candles[candles.length - 2] : null;
+	if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mobileGoogleAuth") === "1") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MobileGoogleAuthBridge, {});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans",
 		children: [

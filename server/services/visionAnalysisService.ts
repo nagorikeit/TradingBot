@@ -114,23 +114,24 @@ YOUR CORE DUTIES:
      * THAT rightmost bar attached to the live price line / countdown timer is the STILL-FORMING live candle ("formingCandleColor": "GREEN" | "RED" | "DOJI"). Because it has NOT closed yet, its color/wick can still flip before expiry!
      * Therefore, the **NEWLY CLOSED CANDLE** ("closedCandleColor", "lastCandleDirection") is the **last COMPLETED candle immediately to the LEFT of the forming candle** (2nd candle from the right!).
      * Only if there is clearly NO live forming candle / no live price line (e.g. a paused/offline historical screenshot where the rightmost candle sits cleanly to the left of whitespace with no active tick line), then treat the rightmost candle as the closed candle ("formingCandleColor": "NONE").
-   - Measure the CLOSED candle carefully${cleanZoomedBase64 ? ' (use IMAGE 2, the 2x zoomed right-edge close-up, for exact pixel-level inspection of the last candles, wicks, live price line, and timer!)' : ''}:
+   - Measure the CLOSED candle carefully${cleanZoomedBase64 ? ' (use IMAGE 2, the 2.2x zoomed right-edge close-up, for exact pixel-level inspection of the last candles, wicks, live price line, and timer!)' : ''}:
      * CRITICAL ANCHOR CHECK: Locate the horizontal dashed/solid current-price line + live price pill on the right Y-axis. Follow that horizontal line leftwards to the candle currently touching/tracking the live price — THAT candle is the FORMING candle ("formingCandleColor"). Never treat it as the closed candle!
      * The NEWLY CLOSED CANDLE ("closedCandleColor", "lastCandleDirection") is the completed bar IMMEDIATELY to the LEFT of the candle attached to the live price line. If the live candle has just opened (thin 1-2px tick or flat line on the live price), be extra careful NOT to skip the newly closed candle right next to it, and do NOT confuse the green/red Y-axis price label box with a candle!
      * "closedCandleColor": "GREEN" (bullish close > open), "RED" (bearish close < open), or "DOJI" (tiny/flat body < 18% of total high-to-low height).
      * "lastCandleDirection": "BULLISH" if GREEN, "BEARISH" if RED, "DOJI" if DOJI.
      * Estimate "closedCandleBodyPercent", "closedCandleUpperWickPercent", "closedCandleLowerWickPercent" (summing roughly to 100% of total height).
-     * "closedCandleRejection": "UPPER_REJECTION" if upper wick >= 35% of candle height (or >= 1.5x body), "LOWER_REJECTION" if lower wick >= 35% of candle height (or >= 1.5x body), else "NONE".
+     * "closedCandleRejection": ONLY mark "UPPER_REJECTION" if upper wick >= 38% AND lower wick <= 22% (Shooting Star / Bearish Pin Bar); ONLY mark "LOWER_REJECTION" if lower wick >= 38% AND upper wick <= 22% (Hammer / Bullish Pin Bar). If BOTH wicks are >= 28% with a small body, it is a SPINNING TOP / INDECISION -> MUST set "closedCandleRejection": "NONE", "marketRegime": "DOJI_CHOPPY", "step4FilterPassed": false, and "predictedNextCandle": "WAIT"!
      * Read any visible candle countdown timer into "candleTimerText" (e.g. "00:27") and "candleTimerSecondsLeft" (integer seconds).
 
 3. HIGH-PRECISION PRICE ACTION, STRUCTURE & INDICATOR READING:
    - Carefully inspect the last 10–25 candles, visible moving averages (EMA/SMA/Bollinger Bands), RSI/MACD/Stochastic sub-panels, and nearest horizontal Support / Resistance swing levels.
-   - WICK REJECTION: Long upper wick (>= 35% / Shooting Star) at resistance or upper band -> sellers rejected buyers -> bias PUT/DOWN. Long lower wick (>= 35% / Hammer) at support or lower band -> buyers rejected sellers -> bias CALL/UP.
-   - EXHAUSTION vs CONTINUATION:
-     * 3–4+ extended same-color candles hitting Bollinger outer band or major S/R with weakening/long-wick final closed candle -> high exhaustion reversal probability (never chase into major S/R!).
-     * Clean healthy trend breakout or pullback retest aligned with EMA slope & non-overbought/oversold RSI -> trend continuation.
+   - WICK REJECTION: True one-sided Hammer (>= 38% lower wick, tiny upper wick) at support/lower Bollinger band -> CALL/UP. True one-sided Shooting Star (>= 38% upper wick, tiny lower wick) at resistance/upper Bollinger band -> PUT/DOWN.
+   - STRICT ANTI-EXHAUSTION / NO-CHASING RULE (CRITICAL FOR 1M BINARY):
+     * NEVER predict continuation CALL after 3+ consecutive green candles OR right below a recent swing high/resistance/upper Bollinger band!
+     * NEVER predict continuation PUT after 3+ consecutive red candles OR right above a recent swing low/support/lower Bollinger band!
+     * Extended 3-4+ same-color runs are exhaustion zones: either a true opposing rejection wick confirms a reversal OR you MUST output "WAIT"!
    - SIDEWAYS / DOJI / CHOP FILTER:
-     * Alternating red-green-red-green small candles, tight horizontal box range, multiple Dojis, or erratic oversized news spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY" or "HIGH_VOLATILITY_SPIKE", "step4FilterPassed": false, and "predictedNextCandle": "WAIT"! NEVER guess or force CALL/PUT in chop!
+     * Alternating red-green-red-green candles, flat horizontal range, Spinning Tops (double wicks), Dojis, or erratic spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY", "step3TrendAligned": false, "step4FilterPassed": false, and "predictedNextCandle": "WAIT"!
 
 3B. USER-DRAWN CHART MARKUP PRIORITY (CRITICAL WHEN PRESENT!):
    - Carefully inspect BOTH IMAGE 1 (full chart) and IMAGE 2 (zoomed right-edge crop) for any trader-drawn annotations on the broker chart.
@@ -152,17 +153,17 @@ YOUR CORE DUTIES:
      * "NONE": No trader-drawn markings visible.
    - Write a crisp 1-sentence Bengali summary mentioning the recognized color and interaction in "drawingNoteBn" (e.g. "আকাশী সাপোর্ট লাইনে লোয়ার উইক রিজেকশন নিশ্চিত" বা "কমলা রেজিস্ট্যান্স লাইনের ঠিক নিচে CALL ব্লক").
 
-4. STRICT 5-STEP / 5-POINT INSTITUTIONAL AUDIT (MUST MATCH YOUR DECISION):
-   Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (exact count of true values, 0 to 5):
+4. STRICT 5-STEP / 5-POINT INSTITUTIONAL AUDIT (MUST BE CONSERVATIVE & HONEST!):
+   Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (0 to 5). DO NOT inflate scores on average 1m charts!
    - Step 1 ("step1ChartValid"): Trading chart verified, asset symbol & timeframe clearly readable, >= 6 sequential candles.
-   - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (to the left of forming candle) cleanly identified with clear bullish/bearish body or decisive pin-bar rejection (false if obscured/uncertain or weak ambiguous tiny doji).
-   - Step 3 ("step3TrendAligned"): Multi-timeframe slope ("macroTrend15m", "secondaryTrend5m", "microTrend1m") aligns with setup OR high-conviction S/R / Bollinger extreme reversal confluence exists.
-   - Step 4 ("step4FilterPassed"): Market condition filter passes (trending or clean structure at S/R; FALSE if sideways chop, doji cluster, or abnormal spike).
-   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 7.5 out of 10 AND unambiguous direction.
+   - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (immediately left of live forming candle) cleanly identified with >= 22% directional body OR clean one-sided >= 38% pin-bar wick (false if Doji, Spinning Top, or ambiguous).
+   - Step 3 ("step3TrendAligned"): Visible candle swing progression cleanly forms Higher Highs/Higher Lows (UPTREND) or Lower Highs/Lower Lows (DOWNTREND) aligned with setup, OR clean S/R / Bollinger extreme rejection exists. If price looks flat/mixed on screen, MUST set "macroTrend15m": "SIDEWAYS", "step3TrendAligned": false!
+   - Step 4 ("step4FilterPassed"): Market condition filter passes (NO sideways range, NO alternating chop, NO spinning top, NO chasing 3+ candle exhaustion into S/R).
+   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 8.0 out of 10 AND unambiguous high-conviction setup.
    CRITICAL CONSISTENCY RULE:
    - "confirmedPoints" MUST equal (step1?1:0) + (step2?1:0) + (step3?1:0) + (step4?1:0) + (step5?1:0).
-   - Only emit "predictedNextCandle": "CALL" or "PUT" when "confirmedPoints" >= 4 AND "step4FilterPassed" === true AND "totalScore" >= 7.5. Otherwise emit "WAIT".
-   - Do NOT predict counter to the newly closed candle unless there is a clear >= 35% rejection wick (Hammer / Shooting Star) at S/R or clear 3+ candle exhaustion extreme.
+   - Only emit "predictedNextCandle": "CALL" or "PUT" when ALL 5 steps pass ("confirmedPoints" >= 4 with "step2ClosedCandleValid", "step4FilterPassed", "step5SetupConfirmed" all true AND "totalScore" >= 8.0). Otherwise emit "WAIT". When in ANY doubt, choose "WAIT"!
+   - Do NOT predict counter to a >= 22% closed candle body unless there is a true one-sided >= 38% pin-bar rejection wick at S/R.
    - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
 5. STRICT PLATFORM-SPECIFIC RULE ISOLATION:
@@ -300,7 +301,7 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   },
                   predictedNextCandle: {
                     type: Type.STRING,
-                    description: 'CALL, PUT, or WAIT (WAIT whenever confirmedPoints < 4 or filter fails or totalScore < 7.5)',
+                    description: 'CALL, PUT, or WAIT (WAIT whenever confirmedPoints < 4, spinning top, exhaustion streak, or totalScore < 8.0)',
                   },
                   nextCandlePredictionReasonBn: {
                     type: Type.STRING,
@@ -320,9 +321,9 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   },
                   step1ChartValid: { type: Type.BOOLEAN, description: 'Step 1: Valid candlestick chart, symbol & TF visible' },
                   step2ClosedCandleValid: { type: Type.BOOLEAN, description: 'Step 2: Newly CLOSED candle cleanly identified & non-ambiguous' },
-                  step3TrendAligned: { type: Type.BOOLEAN, description: 'Step 3: Multi-timeframe trend or S/R extreme reversal confluence aligned' },
-                  step4FilterPassed: { type: Type.BOOLEAN, description: 'Step 4: Market filter passed (no chop, doji cluster, or spike)' },
-                  step5SetupConfirmed: { type: Type.BOOLEAN, description: 'Step 5: Setup score >= 7.5/10 and decisive CALL/PUT confirmed' },
+                  step3TrendAligned: { type: Type.BOOLEAN, description: 'Step 3: Visible trend swing progression or S/R extreme reversal confluence aligned' },
+                  step4FilterPassed: { type: Type.BOOLEAN, description: 'Step 4: Market filter passed (no chop, spinning top, doji cluster, or exhaustion chasing)' },
+                  step5SetupConfirmed: { type: Type.BOOLEAN, description: 'Step 5: Setup score >= 8.0/10 and decisive CALL/PUT confirmed' },
                   confirmedPoints: { type: Type.NUMBER, description: 'Exact number of passed steps out of 5 (0 to 5)' },
                   priceActionScore: { type: Type.NUMBER, description: 'Price action score 0.0 to 5.0' },
                   indicatorMomentumScore: { type: Type.NUMBER, description: 'Indicator/momentum score 0.0 to 3.0' },
