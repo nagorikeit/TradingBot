@@ -1977,7 +1977,7 @@ export class LiveScreenService {
             const upperWickPercent = Math.round((closedTradeCandle.upperWickPx / totalClosedSpan) * 100);
             const lowerWickPercent = Math.round((closedTradeCandle.lowerWickPx / totalClosedSpan) * 100);
 
-            const isSpinningTop = upperWickPercent >= 28 && lowerWickPercent >= 28 && bodyPercent < 35;
+            const isSpinningTop = upperWickPercent >= 30 && lowerWickPercent >= 30 && bodyPercent <= 26;
             const isClosedDoji = isSpinningTop || (bodyPercent <= 18 && (upperWickPercent >= 22 || lowerWickPercent >= 22));
             const isClosedUpperRejection = !isSpinningTop && upperWickPercent >= 38 && lowerWickPercent <= 22 && upperWickPercent > lowerWickPercent * 1.7;
             const isClosedLowerRejection = !isSpinningTop && lowerWickPercent >= 38 && upperWickPercent <= 22 && lowerWickPercent > upperWickPercent * 1.7;
@@ -2022,22 +2022,26 @@ export class LiveScreenService {
               closedPool[closedPool.length - 2].color !== closedPool[closedPool.length - 3].color &&
               closedPool[closedPool.length - 3].color !== closedPool[closedPool.length - 4].color;
 
-            // Count same-color exhaustion streak and local S/R range boundary
+            // Count same-color exhaustion streak and prior-swing S/R wall (excluding current 2 candles!)
             let streak = 1;
             for (let i = closedPool.length - 2; i >= 0; i--) {
               if (closedPool[i].color === closedTradeCandle.color) streak++;
               else break;
             }
-            const srPool = closedPool.slice(-14);
-            let srMinY = 9999;
-            let srMaxY = 0;
-            srPool.forEach((c) => {
-              if (c.minY < srMinY) srMinY = c.minY;
-              if (c.maxY > srMaxY) srMaxY = c.maxY;
-            });
-            const srSpan = Math.max(20, srMaxY - srMinY);
-            const nearTop = closedTradeCandle.minY <= srMinY + srSpan * 0.14;
-            const nearBottom = closedTradeCandle.maxY >= srMaxY - srSpan * 0.14;
+            const priorPool = closedPool.slice(Math.max(0, closedPool.length - 16), Math.max(0, closedPool.length - 2));
+            let nearTop = false;
+            let nearBottom = false;
+            if (priorPool.length >= 4) {
+              let srMinY = 9999;
+              let srMaxY = 0;
+              priorPool.forEach((c) => {
+                if (c.minY < srMinY) srMinY = c.minY;
+                if (c.maxY > srMaxY) srMaxY = c.maxY;
+              });
+              const srSpan = Math.max(20, srMaxY - srMinY);
+              nearTop = closedTradeCandle.minY <= srMinY + srSpan * 0.14 && closedTradeCandle.minY >= srMinY - srSpan * 0.06;
+              nearBottom = closedTradeCandle.maxY >= srMaxY - srSpan * 0.14 && closedTradeCandle.maxY <= srMaxY + srSpan * 0.06;
+            }
 
             let dir: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
             let pattern = 'স্পষ্ট সেটআপ মেলেনি (WAIT)';
@@ -2087,9 +2091,9 @@ export class LiveScreenService {
               macroTrend === 'UPTREND' &&
               secondaryTrend === 'UPTREND' &&
               closedTradeCandle.color === 'GREEN' &&
-              streak <= 2 &&
+              streak <= 3 &&
               !nearTop &&
-              bodyPercent >= 40
+              bodyPercent >= 38
             ) {
               dir = 'UP';
               confidence = 83;
@@ -2098,14 +2102,14 @@ export class LiveScreenService {
               macroTrend === 'DOWNTREND' &&
               secondaryTrend === 'DOWNTREND' &&
               closedTradeCandle.color === 'RED' &&
-              streak <= 2 &&
+              streak <= 3 &&
               !nearBottom &&
-              bodyPercent >= 40
+              bodyPercent >= 38
             ) {
               dir = 'DOWN';
               confidence = 83;
               pattern = '[অফলাইন CV] বিয়ারিশ ট্রেন্ড পুলব্যাক কনটিনিউয়েশন (PUT)';
-            } else if (streak >= 3 || nearTop || nearBottom) {
+            } else if (streak >= 4 || (streak >= 3 && (nearTop || nearBottom))) {
               dir = 'WAIT';
               confidence = 40;
               pattern = `[অফলাইন CV] এক্সহশন / S-R দেয়াল সতর্কতা (টানা ${streak} ক্যান্ডেল) — WAIT`;
@@ -2147,7 +2151,7 @@ export class LiveScreenService {
               macroTrend,
               secondaryTrend,
               microTrend,
-              isChoppy: isAlternatingChop || isSpinningTop || streak >= 3,
+              isChoppy: isAlternatingChop || isSpinningTop || streak >= 4,
               reason: [
                 `[অফলাইন CV] সদ্য ক্লোজড ক্যান্ডেল: ${closedBn} (বডি ${bodyPercent}%, আপার ${upperWickPercent}%, লোয়ার ${lowerWickPercent}%)।`,
                 `দৃশ্যমান ট্রেন্ড: ${macroTrend} · শর্ট-টার্ম ${secondaryTrend} · স্ট্রিক ${streak}x।`,

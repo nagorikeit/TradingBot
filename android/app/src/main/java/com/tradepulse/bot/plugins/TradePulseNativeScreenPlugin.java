@@ -1257,7 +1257,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int upWickPct = Math.round(100f * closedSignalCandle.upperWickPx / totalClosedSpan);
             int downWickPct = Math.round(100f * closedSignalCandle.lowerWickPx / totalClosedSpan);
 
-            boolean isSpinningTop = (upWickPct >= 28 && downWickPct >= 28 && bodyPct < 35);
+            boolean isSpinningTop = (upWickPct >= 30 && downWickPct >= 30 && bodyPct <= 26);
             boolean isDojiIndecision = (closedSignalCandle.isDoji || bodyPct <= 18 || isSpinningTop);
 
             boolean isAlternatingChop = false;
@@ -1271,22 +1271,27 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            // Same-color streak & local S/R range edge check (prevents chasing tops/bottoms!)
+            // Same-color streak & prior-swing S/R wall check (strictly excludes last 2 candles!)
             int sameColorStreak = 1;
             for (int i = closedIndex - 1; i >= 0; i--) {
                 if (bands.get(i).isGreen == closedSignalCandle.isGreen) sameColorStreak++;
                 else break;
             }
-            int srStart = Math.max(0, closedPoolSize - 14);
-            int srMinY = 9999, srMaxY = 0;
-            for (int i = srStart; i < closedPoolSize; i++) {
-                CandleBand b = bands.get(i);
-                if (b.minY < srMinY) srMinY = b.minY;
-                if (b.maxY > srMaxY) srMaxY = b.maxY;
+            int srStart = Math.max(0, closedPoolSize - 16);
+            int srEnd = Math.max(0, closedPoolSize - 2);
+            boolean nearTop = false;
+            boolean nearBottom = false;
+            if (srEnd - srStart >= 4) {
+                int srMinY = 9999, srMaxY = 0;
+                for (int i = srStart; i < srEnd; i++) {
+                    CandleBand b = bands.get(i);
+                    if (b.minY < srMinY) srMinY = b.minY;
+                    if (b.maxY > srMaxY) srMaxY = b.maxY;
+                }
+                int srSpan = Math.max(20, srMaxY - srMinY);
+                nearTop = closedSignalCandle.minY <= srMinY + (int)(srSpan * 0.14f) && closedSignalCandle.minY >= srMinY - (int)(srSpan * 0.06f);
+                nearBottom = closedSignalCandle.maxY >= srMaxY - (int)(srSpan * 0.14f) && closedSignalCandle.maxY <= srMaxY + (int)(srSpan * 0.06f);
             }
-            int srSpan = Math.max(20, srMaxY - srMinY);
-            boolean nearTop = closedSignalCandle.minY <= srMinY + (int)(srSpan * 0.14f);
-            boolean nearBottom = closedSignalCandle.maxY >= srMaxY - (int)(srSpan * 0.14f);
 
             int prevBodiesSum = 0;
             int prevBodiesCount = 0;
@@ -1331,7 +1336,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার রিজেকশন (সেলার প্রেসার)";
                 }
-                // Setup 2: Aligned Trend Engulfing (Never at range extreme)
+                // Setup 2: Aligned Trend Engulfing (Never at prior resistance/support wall)
                 else if ("UPTREND".equals(macroTrend15M) && !nearTop && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
                     && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f) && bodyPct >= 35) {
                     proposedDirection = "UP";
@@ -1345,26 +1350,26 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
                 }
-                // Setup 3: Healthy Pullback Continuation (Strictly blocked after 3+ consecutive candles or at S/R extremes!)
-                else if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && microGreenPct >= 65
-                    && sameColorStreak <= 2 && !nearTop && bodyPct >= 40
+                // Setup 3: Healthy Pullback/Momentum Continuation (allows streak 2-3, blocks 4+ exhaustion or hitting prior S/R wall!)
+                else if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && microGreenPct >= 62
+                    && sameColorStreak <= 3 && !nearTop && bodyPct >= 38
                     && closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
                     proposedDirection = "UP";
                     confidence = 83;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
-                } else if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && microRedPct >= 65
-                    && sameColorStreak <= 2 && !nearBottom && bodyPct >= 40
+                } else if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && microRedPct >= 62
+                    && sameColorStreak <= 3 && !nearBottom && bodyPct >= 38
                     && !closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
                     proposedDirection = "DOWN";
                     confidence = 83;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
-                } else if (sameColorStreak >= 3 || nearTop || nearBottom) {
+                } else if (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom))) {
                     proposedDirection = "WAIT";
                     confidence = 0;
                     verdictTitle = "⏸ এক্সহশন/S-R গার্ড (WAIT)";
-                    finalReason = "[অফলাইন CV] টানা " + sameColorStreak + "x ক্যান্ডেল বা S/R দেয়ালের কাছে ঝুঁকি — WAIT";
+                    finalReason = "[অফলাইন CV] টানা " + sameColorStreak + "x ক্যান্ডেল বা পূর্বের S/R দেয়ালের কাছে ঝুঁকি — WAIT";
                 } else {
                     proposedDirection = "WAIT";
                     confidence = 0;
@@ -1378,7 +1383,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             boolean step1Passed = isAuthenticChart;
             boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision);
             boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M)) || isTrueHammer || isTrueShootingStar;
-            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike && sameColorStreak < 3;
+            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike && sameColorStreak < 4;
             boolean step5Passed = !"WAIT".equals(direction) && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
 

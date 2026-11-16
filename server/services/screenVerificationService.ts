@@ -450,8 +450,8 @@ export class ScreenVerificationService {
     );
 
     const isSpinningTop =
-      (upperWickPct >= 28 && lowerWickPct >= 28 && bodyPct < 35) ||
-      Boolean(pixelAudit && pixelAudit.candleCount >= 5 && pixelAudit.isSpinningTop && bodyPct < 38);
+      (upperWickPct >= 30 && lowerWickPct >= 30 && bodyPct <= 26) ||
+      Boolean(pixelAudit && pixelAudit.candleCount >= 5 && pixelAudit.isSpinningTop && bodyPct <= 28);
 
     const hasUpperPinBar =
       !isSpinningTop &&
@@ -665,8 +665,13 @@ export class ScreenVerificationService {
             (hasRejection && mtfConfluence !== 'CONFLICT'))
       );
 
-      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / SPINNING TOP / PIXEL CHOP / EXHAUSTION CHASING
-      const isPixelChoppy = Boolean(pixelAudit && pixelAudit.candleCount >= 6 && pixelAudit.alternatingFlips >= 4);
+      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / SPINNING TOP / PIXEL CHOP / TRUE 4+ EXHAUSTION CHASING
+      const isPixelChoppy = Boolean(
+        pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          (pixelAudit.alternatingFlips >= 5 ||
+            (pixelAudit.alternatingFlips >= 4 && pixelAudit.sameColorStreak <= 1))
+      );
       const isBinaryMode = !isSpotSlTp;
       const isExhaustedCallChase = Boolean(
         isBinaryMode &&
@@ -675,8 +680,8 @@ export class ScreenVerificationService {
           !isBullishRejection &&
           pixelAudit &&
           pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'GREEN') ||
-            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 2))
+          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'GREEN') ||
+            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 3))
       );
       const isExhaustedPutChase = Boolean(
         isBinaryMode &&
@@ -685,8 +690,8 @@ export class ScreenVerificationService {
           !isBearishRejection &&
           pixelAudit &&
           pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'RED') ||
-            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 2))
+          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'RED') ||
+            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 3))
       );
       const isExhaustionChase = isExhaustedCallChase || isExhaustedPutChase;
 
@@ -704,6 +709,20 @@ export class ScreenVerificationService {
           !isExhaustionChase &&
           (visionData.step4FilterPassed !== false)
       );
+
+      const step4SpecificBlockReason = isBlockedByDrawing
+        ? 'ড্রয়িং S/R দেয়াল সুরক্ষা'
+        : isExhaustionChase
+        ? `টানা ${pixelAudit?.sameColorStreak || 3}+ ক্যান্ডেল এক্সহশন / পূর্বের S-R দেয়াল`
+        : isSpinningTop
+        ? `স্পিনিং টপ (আপার ${upperWickPct}% / লোয়ার ${lowerWickPct}%)`
+        : isPixelChoppy
+        ? 'অল্টারনেটিং চপি রেঞ্জ'
+        : isSidewaysNoRejection
+        ? 'সাইডওয়েজ মার্কেট (রিজেকশন নেই)'
+        : isUnsafeMarketRegime
+        ? `অস্থির মার্কেট (${marketRegime})`
+        : 'AI ফিল্টার (অনিশ্চিত সেটআপ)';
 
       // Weighted 10-point score
       const rawPaScore =
@@ -965,7 +984,7 @@ export class ScreenVerificationService {
         marketFilter: {
           regime: marketRegime,
           passed: filterPassed,
-          blockReason: filterPassed ? undefined : 'চপি / সাইডওয়েজ / এক্সহশন সতর্কতা',
+          blockReason: filterPassed ? undefined : step4SpecificBlockReason,
         },
         signalScoring: {
           priceActionScore: Number(rawPaScore.toFixed(1)),

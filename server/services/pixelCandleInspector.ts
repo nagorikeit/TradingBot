@@ -265,7 +265,7 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     const lowerWickPct = Math.round((closedBand.lowerWickPx / totalSpan) * 100);
 
     const isDoji = bodyPct <= 18 && (upperWickPct >= 22 || lowerWickPct >= 22);
-    const isSpinningTop = upperWickPct >= 28 && lowerWickPct >= 28 && bodyPct < 34;
+    const isSpinningTop = upperWickPct >= 30 && lowerWickPct >= 30 && bodyPct <= 26;
 
     const closedColor: 'GREEN' | 'RED' | 'DOJI' = isDoji ? 'DOJI' : closedBand.color;
 
@@ -297,8 +297,8 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    // Local 14-candle S/R extreme proximity (Y increases downwards)
-    const lookback = closedPool.slice(-14);
+    // Prior-swing S/R wall check (strictly excludes last 2 candles so active trend highs/lows aren't flagged as walls!)
+    const lookback = closedPool.slice(-16);
     let rangeMinY = 99999;
     let rangeMaxY = 0;
     for (const c of lookback) {
@@ -306,8 +306,27 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       if (c.maxY > rangeMaxY) rangeMaxY = c.maxY;
     }
     const rangeHeight = Math.max(20, rangeMaxY - rangeMinY);
-    const nearRangeTop = closedBand.bodyTop <= rangeMinY + rangeHeight * 0.14;
-    const nearRangeBottom = closedBand.bodyBottom >= rangeMaxY - rangeHeight * 0.14;
+
+    const priorLookback = closedPool.slice(Math.max(0, closedPool.length - 16), Math.max(0, closedPool.length - 2));
+    let nearRangeTop = false;
+    let nearRangeBottom = false;
+    if (priorLookback.length >= 4) {
+      let priorMinY = 99999;
+      let priorMaxY = 0;
+      for (const c of priorLookback) {
+        if (c.minY < priorMinY) priorMinY = c.minY;
+        if (c.maxY > priorMaxY) priorMaxY = c.maxY;
+      }
+      const priorSpan = Math.max(20, priorMaxY - priorMinY);
+      // True overhead resistance wall: closed body stopped inside old resistance band without clean breakout above it
+      nearRangeTop =
+        closedBand.bodyTop <= priorMinY + priorSpan * 0.14 &&
+        closedBand.bodyTop >= priorMinY - priorSpan * 0.06;
+      // True floor support wall: closed body stopped inside old support band without clean breakdown below it
+      nearRangeBottom =
+        closedBand.bodyBottom >= priorMaxY - priorSpan * 0.14 &&
+        closedBand.bodyBottom <= priorMaxY + priorSpan * 0.06;
+    }
 
     // 12-candle midpoint slope
     const slopePool = closedPool.slice(-12);
