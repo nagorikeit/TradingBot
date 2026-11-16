@@ -5,6 +5,8 @@ export type TradingProfileId =
   | 'FOREX'
   | 'COMMODITY_INDEX';
 
+export type ScreenProfileMode = 'AUTO' | TradingProfileId;
+
 export interface TradingProfileRuleDoc {
   title: string;
   bullCondition: string;

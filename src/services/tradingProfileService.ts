@@ -1,15 +1,18 @@
 import {
   TradingProfileConfig,
   TradingProfileId,
+  ScreenProfileMode,
   getTradingProfile,
   isValidTradingProfileId,
 } from '../strategy/tradingProfiles';
 
 const STORAGE_KEY_ACTIVE_PROFILE = 'tradepulse_active_trading_profile_v1';
+const STORAGE_KEY_SCREEN_MODE = 'tradepulse_screen_profile_mode_v1';
 
 class TradingProfileService {
   private static instance: TradingProfileService;
   private activeProfileId: TradingProfileId = 'BINARY_OTC';
+  private screenProfileMode: ScreenProfileMode = 'AUTO';
   private listeners: Set<(profileId: TradingProfileId) => void> = new Set();
 
   private constructor() {
@@ -18,8 +21,13 @@ class TradingProfileService {
       if (isValidTradingProfileId(saved)) {
         this.activeProfileId = saved;
       }
+      const savedScreenMode = localStorage.getItem(STORAGE_KEY_SCREEN_MODE);
+      if (savedScreenMode === 'AUTO' || isValidTradingProfileId(savedScreenMode)) {
+        this.screenProfileMode = savedScreenMode;
+      }
     } catch {
       this.activeProfileId = 'BINARY_OTC';
+      this.screenProfileMode = 'AUTO';
     }
   }
 
@@ -36,6 +44,28 @@ class TradingProfileService {
 
   public getActiveProfile(): TradingProfileConfig {
     return getTradingProfile(this.activeProfileId);
+  }
+
+  public getScreenProfileMode(): ScreenProfileMode {
+    return this.screenProfileMode;
+  }
+
+  public setScreenProfileMode(mode: ScreenProfileMode): void {
+    if (mode !== 'AUTO' && !isValidTradingProfileId(mode)) return;
+    const changed = this.screenProfileMode !== mode;
+    this.screenProfileMode = mode;
+    if (mode !== 'AUTO') {
+      this.activeProfileId = mode;
+      try {
+        localStorage.setItem(STORAGE_KEY_ACTIVE_PROFILE, mode);
+      } catch {}
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY_SCREEN_MODE, mode);
+    } catch {}
+    if (changed) {
+      this.listeners.forEach((l) => l(this.activeProfileId));
+    }
   }
 
   public setActiveProfile(profileId: TradingProfileId): void {

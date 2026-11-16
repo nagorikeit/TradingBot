@@ -236,6 +236,61 @@ export class ScreenVerificationService {
     }
   }
 
+  private resolveDetectedProfile(visionData: ScreenVisionParsedData): 'BINARY_OTC' | 'BINARY_LIVE' | 'CRYPTO_SPOT' | 'FOREX' | 'COMMODITY_INDEX' {
+    const validProfiles = new Set(['BINARY_OTC', 'BINARY_LIVE', 'CRYPTO_SPOT', 'FOREX', 'COMMODITY_INDEX']);
+    const blob = `${visionData.symbol || ''} ${visionData.detectedAppName || ''} ${visionData.screenTitle || ''} ${(visionData.extractedText || []).join(' ')}`.toUpperCase();
+
+    const hasBinaryApp =
+      blob.includes('QUOTEX') ||
+      blob.includes('POCKET OPTION') ||
+      blob.includes('POCKETOPTION') ||
+      blob.includes('BINOMO') ||
+      blob.includes('IQ OPTION') ||
+      blob.includes('OLYMP TRADE');
+
+    if (blob.includes('OTC')) {
+      return 'BINARY_OTC';
+    }
+    if (
+      blob.includes('XAU') ||
+      blob.includes('GOLD') ||
+      blob.includes('XAG') ||
+      blob.includes('NAS100') ||
+      blob.includes('NASDAQ') ||
+      blob.includes('US30') ||
+      blob.includes('SPX') ||
+      blob.includes('WTI') ||
+      blob.includes('USOIL') ||
+      blob.includes('NIFTY') ||
+      blob.includes('BANKNIFTY')
+    ) {
+      return 'COMMODITY_INDEX';
+    }
+    if (
+      !hasBinaryApp &&
+      (blob.includes('BINANCE') ||
+        blob.includes('BYBIT') ||
+        blob.includes('OKX') ||
+        blob.includes('BITGET') ||
+        blob.includes('KUCOIN') ||
+        blob.includes('USDT') ||
+        blob.includes('USDC') ||
+        visionData.marketType === 'CRYPTO')
+    ) {
+      return 'CRYPTO_SPOT';
+    }
+    if (hasBinaryApp) {
+      return 'BINARY_LIVE';
+    }
+    if (visionData.detectedTradingProfile && validProfiles.has(visionData.detectedTradingProfile)) {
+      return visionData.detectedTradingProfile;
+    }
+    if (visionData.marketType === 'CRYPTO') return 'CRYPTO_SPOT';
+    if (visionData.marketType === 'COMMODITY' || visionData.marketType === 'STOCKS') return 'COMMODITY_INDEX';
+    if (visionData.marketType === 'FOREX') return 'FOREX';
+    return 'BINARY_OTC';
+  }
+
   /**
    * Synthesizes Vision data and Market verification into final trading / screen analysis
    */
@@ -251,18 +306,23 @@ export class ScreenVerificationService {
     const analysisId = `screen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
     const latencyMs = now - frameCapturedAt;
-    const activeProfileId = tradingProfile || 'BINARY_OTC';
-    const profileLabelBn = this.getProfileLabelBn(activeProfileId);
+    const requestedProfile = tradingProfile || 'AUTO';
+    const isAutoMode = requestedProfile === 'AUTO';
 
-    // 1. Vision AI Processing — Strictly applying ONLY the selected profile's rules
+    // 1. Vision AI Processing — In AUTO mode, Vision AI identifies chart type first and applies matching rules
     const visionData = await visionAnalysisService.analyzeFrame(
       imageBase64,
       mimeType,
       customPrompt,
-      activeProfileId,
+      requestedProfile,
       activeProfileRules,
       zoomedCandleBase64
     );
+
+    const detectedProfileId = this.resolveDetectedProfile(visionData);
+    const activeProfileId = isAutoMode ? detectedProfileId : requestedProfile;
+    const baseProfileLabel = this.getProfileLabelBn(activeProfileId);
+    const profileLabelBn = isAutoMode ? `${baseProfileLabel} (অটো)` : baseProfileLabel;
 
     // Track Screen Transitions (switching between apps/screens)
     const currentAppName = visionData.detectedAppName || (visionData.isClearTradingChart ? 'Trading Chart' : 'Active Screen');
@@ -845,7 +905,7 @@ export class ScreenVerificationService {
           key: 'CHART' as const,
           labelBn: 'চার্ট',
           passed: step1Passed,
-          detailBn: `${assetName} · ${visionData.timeframe || '1m'}`,
+          detailBn: `${assetName} · ${baseProfileLabel}`,
         },
         {
           step: 2,
@@ -992,7 +1052,20 @@ export class ScreenVerificationService {
         reasoning.push(`ভিজুয়াল সামারি: ${visionData.visionSummary}`);
       }
 
+      if (isAutoMode) {
+        reasoning.unshift(
+          `চার্ট ধরন অটো-নিশ্চিত (${baseProfileLabel}): ${
+            visionData.detectedChartTypeReasonBn || `${currentAppName} (${assetName}) অনুযায়ী ${baseProfileLabel} রুলস প্রয়োগ করা হয়েছে`
+          }`
+        );
+      } else if (detectedProfileId !== activeProfileId) {
+        reasoning.push(
+          `নোট: স্ক্রিনের চার্টটি ${this.getProfileLabelBn(detectedProfileId)} মনে হচ্ছে, তবে আপনার নির্বাচিত ${baseProfileLabel} রুলস অনুযায়ী বিশ্লেষণ করা হয়েছে।`
+        );
+      }
+
       // Sync corrected closedCandleColor & lastCandleDirection onto returned visionData so HUD & logs match pixel verification
+      visionData.detectedTradingProfile = detectedProfileId;
       visionData.closedCandleColor = effectiveClosedColor;
       visionData.lastCandleDirection =
         effectiveClosedColor === 'GREEN'
@@ -1012,7 +1085,7 @@ export class ScreenVerificationService {
           detectedAsset: assetName,
           detectedTimeframe: visionData.timeframe || '1m',
           candleBarsCount: pixelAudit?.candleCount ?? 16,
-          notes: `${confirmedPoints}/৫ ধাপ নিশ্চিত`,
+          notes: `${isAutoMode ? 'অটো নিশ্চিত' : 'ম্যানুয়াল'}: ${baseProfileLabel} · ${confirmedPoints}/৫ ধাপ`,
         },
         candleData: {
           candleCount: pixelAudit?.candleCount ?? 16,
@@ -1076,6 +1149,7 @@ export class ScreenVerificationService {
       screenStatus: 'CHART_DETECTED',
       tradingProfileId: activeProfileId,
       profileLabelBn,
+      isAutoDetectedProfile: isAutoMode,
       screenTransition,
     };
   }

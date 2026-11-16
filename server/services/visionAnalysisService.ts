@@ -54,8 +54,14 @@ export class VisionAnalysisService {
 - Focus on high-momentum session breakouts, pullback retests, and volatility-protected wick filtering.
 - Use CALL to mean BUY / UP and PUT to mean SELL / DOWN, noting SL protection against spike wicks.`;
       default:
-        return `ACTIVE TRADE MODE: GENERAL MULTI-PLATFORM CANDLESTICK ANALYSIS.
-- Automatically detect broker style (OTC/Live Binary vs Crypto/Forex) and apply strict wick rejection, trend confluence, and sideways WAIT filtering.`;
+        return `ACTIVE TRADE MODE: AUTO-DETECT CHART TYPE & APPLY MATCHING STRATEGY RULES.
+STEP 1A (IDENTIFY CHART TYPE FIRST): Before evaluating candles or setups, inspect the broker UI, asset symbol, OTC badge, expiry countdown timer, and order buttons on screen to classify "detectedTradingProfile":
+- "BINARY_OTC": Asset contains "OTC" or "(OTC)" OR Quotex/Pocket Option/Binomo OTC chart with binary expiry timer & Up/Down buttons -> Apply BINARY_OTC rules (wick rejections >= 35%, BB reversion, 3-candle exhaustion reversals, strict chop filter, 1-2m CALL/PUT).
+- "BINARY_LIVE": Binary broker (Quotex, IQ Option, Olymp Trade, Pocket Option, Deriv) showing a LIVE (non-OTC) pair with binary countdown timer & Call/Put buttons -> Apply BINARY_LIVE rules (EMA trend alignment, dynamic S/R break & retest, 1-5m CALL/PUT).
+- "COMMODITY_INDEX": Gold (XAU/USD, XAG/USD), Oil (USOIL/WTI), or Indices (US30, NAS100, NASDAQ, SPX500, NIFTY, BANKNIFTY) -> Apply COMMODITY_INDEX rules (breakout momentum, pullback retest, SL/TP protection against spike wicks; CALL=BUY, PUT=SELL).
+- "CRYPTO_SPOT": Binance, Bybit, OKX, Bitget, Coinbase OR crypto pairs (BTC/USDT, ETH/USDT, SOL/USDT) without binary expiry buttons -> Apply CRYPTO_SPOT rules (macro trend, breakout volume, major horizontal S/R swings, SL/TP zones; CALL=LONG, PUT=SHORT).
+- "FOREX": MT4, MT5, Exness, XM, Octa, IC Markets, or TradingView FX pairs (EUR/USD, GBP/USD, USD/JPY) without binary OTC/Up-Down buttons -> Apply FOREX rules (BOS, liquidity sweep, order block, EMA 21/50, 1:2 R:R SL/TP; CALL=BUY, PUT=SELL).
+STEP 1B: Output "detectedTradingProfile" and a concise Bengali explanation in "detectedChartTypeReasonBn" (e.g. "Quotex OTC চার্ট শনাক্ত → Binary OTC রুলস প্রয়োগ"), then evaluate Steps 2–5 strictly using THAT detected profile's rules!`;
     }
   }
 
@@ -168,8 +174,9 @@ YOUR CORE DUTIES:
    - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
 5. STRICT PLATFORM-SPECIFIC RULE ISOLATION:
-Active Mode (${tradingProfile || 'BINARY_OTC'}):
+Requested Mode (${tradingProfile || 'AUTO'}):
 ${this.getProfileDirective(tradingProfile)}
+- ALWAYS fill "detectedTradingProfile" accurately from the chart visible on screen (BINARY_OTC, BINARY_LIVE, CRYPTO_SPOT, FOREX, or COMMODITY_INDEX) and summarize why in "detectedChartTypeReasonBn".
 ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProfileRules}` : ''}`;
 
     try {
@@ -178,9 +185,10 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
+          const modeLabel = !tradingProfile || tradingProfile === 'AUTO' ? 'AUTO-DETECT CHART TYPE FIRST, then apply matching' : tradingProfile;
           const userPromptText = customPrompt
-            ? `Analyze this screen frame (${tradingProfile || 'GENERAL'} mode). The user asked: "${customPrompt}". Answer in customPromptAnswer and also inspect chart/closed candle & 5-step points if a chart is visible.`
-            : `Inspect this live screen frame strictly under ${tradingProfile || 'BINARY_OTC'} rules. ${cleanZoomedBase64 ? 'IMAGE 1 is the full screen; IMAGE 2 is a 2x zoomed close-up of the rightmost candles, live price line, and timer.' : ''} First locate the live price line to isolate the rightmost FORMING candle from the immediately preceding newly CLOSED candle, measure the closed candle's exact color/body/wick percentages, evaluate all 5 steps (step1ChartValid..step5SetupConfirmed), compute confirmedPoints (0-5) and totalScore (0-10), and output CALL, PUT, or WAIT with crisp Bengali reasoning.`;
+            ? `Analyze this screen frame (${modeLabel} rules). The user asked: "${customPrompt}". Answer in customPromptAnswer and also inspect chart/closed candle & 5-step points if a chart is visible.`
+            : `Inspect this live screen frame using ${modeLabel} rules. ${cleanZoomedBase64 ? 'IMAGE 1 is the full screen; IMAGE 2 is a 2x zoomed close-up of the rightmost candles, live price line, and timer.' : ''} Step 1: Identify the exact broker & chart type (detectedTradingProfile: BINARY_OTC, BINARY_LIVE, CRYPTO_SPOT, FOREX, or COMMODITY_INDEX). Step 2: Locate the live price line to isolate the rightmost FORMING candle from the immediately preceding newly CLOSED candle and measure exact color/body/wick percentages. Steps 3-5: Apply the confirmed chart type's rules, evaluate step1ChartValid..step5SetupConfirmed, compute confirmedPoints (0-5) and totalScore (0-10), and output CALL, PUT, or WAIT with crisp Bengali reasoning.`;
 
           const contentParts: any[] = [
             {
@@ -241,6 +249,14 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   marketType: {
                     type: Type.STRING,
                     description: 'CRYPTO, FOREX, STOCKS, COMMODITY, or UNKNOWN',
+                  },
+                  detectedTradingProfile: {
+                    type: Type.STRING,
+                    description: 'Auto-detected chart category from screen: BINARY_OTC, BINARY_LIVE, CRYPTO_SPOT, FOREX, or COMMODITY_INDEX',
+                  },
+                  detectedChartTypeReasonBn: {
+                    type: Type.STRING,
+                    description: 'Short Bengali note on which chart/broker type was confirmed and which rule set was applied',
                   },
                   lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest price visible on right axis' },
                   candleTimerText: {
@@ -367,6 +383,7 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   'isReadable',
                   'screenSummaryBn',
                   'marketType',
+                  'detectedTradingProfile',
                   'lastCandleDirection',
                   'closedCandleColor',
                   'formingCandleColor',

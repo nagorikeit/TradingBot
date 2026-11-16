@@ -13,6 +13,8 @@ export interface ScreenVisionParsedData {
   symbol?: string; // e.g. "BTC/USDT", "ETHUSDT", "EUR/USD"
   timeframe?: string; // e.g. "1m", "5m", "15m", "1h", "4h", "1D"
   marketType: 'CRYPTO' | 'FOREX' | 'STOCKS' | 'COMMODITY' | 'UNKNOWN';
+  detectedTradingProfile?: 'BINARY_OTC' | 'BINARY_LIVE' | 'CRYPTO_SPOT' | 'FOREX' | 'COMMODITY_INDEX';
+  detectedChartTypeReasonBn?: string;
   lastVisiblePrice?: number;
   lastCandleDirection: 'BULLISH' | 'BEARISH' | 'DOJI' | 'UNCERTAIN';
   closedCandleColor?: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN';
@@ -162,6 +164,7 @@ export interface ScreenAnalysisFinalResult {
   screenStatus: 'CHART_DETECTED' | 'OTHER_SCREEN_READING' | 'UNCLEAR_SCREEN';
   tradingProfileId?: string;
   profileLabelBn?: string;
+  isAutoDetectedProfile?: boolean;
   screenTransition?: {
     previousScreen?: string;
     currentScreen: string;

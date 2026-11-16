@@ -117,7 +117,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private final java.util.List<Runnable> pendingScanProgressRunnables = new java.util.ArrayList<>();
 
     // Profile & 5-Step Audit HUD Cache
-    private volatile String activeTradingProfile = "BINARY_OTC";
+    private volatile String activeTradingProfile = "AUTO";
+    private volatile String lastResolvedTradingProfile = "BINARY_OTC";
+    private volatile String lastResolvedProfileLabelBn = "";
     private volatile int lastConfirmedPoints = 0;
     private volatile boolean[] lastStepResults = new boolean[]{false, false, false, false, false};
     private volatile String lastClosedCandleColor = "UNCERTAIN";
@@ -618,7 +620,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
             payload.put("mimeType", "image/jpeg");
             payload.put("frameCapturedAt", timestamp > 0 ? timestamp : System.currentTimeMillis());
-            payload.put("tradingProfile", activeTradingProfile != null ? activeTradingProfile : "BINARY_OTC");
+            payload.put("tradingProfile", activeTradingProfile != null ? activeTradingProfile : "AUTO");
 
             byte[] out = payload.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream os = conn.getOutputStream()) {
@@ -710,12 +712,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 else closedLabel = "ক্লোজ: অস্পষ্ট";
             }
 
+            String resolvedProf = result.optString("tradingProfileId", "BINARY_OTC");
+            String resolvedLabelBn = result.optString("profileLabelBn", "");
+            this.lastResolvedTradingProfile = (resolvedProf != null && !resolvedProf.isEmpty()) ? resolvedProf : "BINARY_OTC";
+            this.lastResolvedProfileLabelBn = resolvedLabelBn != null ? resolvedLabelBn : "";
             this.lastConfirmedPoints = pts;
             this.lastStepResults = steps;
             this.lastClosedCandleColor = closedColor;
             this.lastClosedCandleLabel = closedLabel;
 
-            updateOverlayUI(direction, confidence, verdictTitle, finalReason, symbol, flowJs);
+            String displaySymbol = (resolvedLabelBn != null && !resolvedLabelBn.isEmpty())
+                    ? (symbol + " · " + resolvedLabelBn)
+                    : symbol;
+            updateOverlayUI(direction, confidence, verdictTitle, finalReason, displaySymbol, flowJs);
             return true;
         } catch (Exception e) {
             Log.w("TradePulseNativeScreen", "Backend vision fallback to local: " + e.getMessage());
@@ -1538,6 +1547,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cScore.put("finalVerdict", "UP".equals(direction) ? "CALL" : ("DOWN".equals(direction) ? "PUT" : "WAIT"));
             flowObj.put("signalScoring", cScore);
 
+            this.lastResolvedTradingProfile = "BINARY_OTC";
+            this.lastResolvedProfileLabelBn = "AUTO".equalsIgnoreCase(activeTradingProfile) ? "Binary OTC (অটো CV)" : "";
             updateOverlayUI(direction, confidence, verdictTitle, finalReason, verifiedSymbol, flowObj);
             bitmap.recycle();
 
@@ -1594,7 +1605,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         nativeResult.put("confirmedPoints", lastConfirmedPoints);
         nativeResult.put("closedCandleColor", lastClosedCandleColor);
         nativeResult.put("closedCandleLabel", lastClosedCandleLabel);
-        nativeResult.put("tradingProfile", activeTradingProfile);
+        String emittedProfile = "AUTO".equalsIgnoreCase(activeTradingProfile)
+                ? (lastResolvedTradingProfile != null && !lastResolvedTradingProfile.isEmpty() ? lastResolvedTradingProfile : "BINARY_OTC")
+                : activeTradingProfile;
+        nativeResult.put("tradingProfile", emittedProfile);
+        if (lastResolvedProfileLabelBn != null && !lastResolvedProfileLabelBn.isEmpty()) {
+            nativeResult.put("profileLabelBn", lastResolvedProfileLabelBn);
+        } else if ("AUTO".equalsIgnoreCase(activeTradingProfile)) {
+            nativeResult.put("profileLabelBn", "Binary OTC (অটো CV)");
+        }
         if (flowObj != null) {
             nativeResult.put("signalFlow", flowObj);
         }

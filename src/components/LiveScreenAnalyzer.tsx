@@ -47,7 +47,7 @@ import {
   checkBackendHealth,
 } from '../services/apiConfig';
 import { WhatsAppAlertConfigPanel } from './WhatsAppAlertConfigPanel';
-import { TRADING_PROFILE_LIST, TradingProfileId, getTradingProfile } from '../strategy/tradingProfiles';
+import { TRADING_PROFILE_LIST, TradingProfileId, ScreenProfileMode, getTradingProfile } from '../strategy/tradingProfiles';
 import { tradingProfileService } from '../services/tradingProfileService';
 
 export const LiveScreenAnalyzer: React.FC = () => {
@@ -78,9 +78,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const [activeProfileId, setActiveProfileId] = useState<TradingProfileId>(() =>
     tradingProfileService.getActiveProfileId()
   );
-  const [showConnectProfileModal, setShowConnectProfileModal] = useState<boolean>(false);
-  const [pendingProfileId, setPendingProfileId] = useState<TradingProfileId>(() =>
-    tradingProfileService.getActiveProfileId()
+  const [screenProfileMode, setScreenProfileMode] = useState<ScreenProfileMode>(() =>
+    tradingProfileService.getScreenProfileMode()
   );
 
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -175,6 +174,7 @@ export const LiveScreenAnalyzer: React.FC = () => {
     });
     const unsubProfile = tradingProfileService.subscribe((id) => {
       setActiveProfileId(id);
+      setScreenProfileMode(tradingProfileService.getScreenProfileMode());
     });
     return () => {
       unsub();
@@ -211,17 +211,11 @@ export const LiveScreenAnalyzer: React.FC = () => {
   const countdownRemainderSec = expirySec % 60;
   const formattedCountdown = `${String(countdownMin).padStart(2, '0')}:${String(countdownRemainderSec).padStart(2, '0')}`;
 
-  const handleConnect = () => {
-    setPendingProfileId(activeProfileId);
-    setShowConnectProfileModal(true);
-  };
-
-  const handleConfirmProfileAndConnect = async () => {
-    tradingProfileService.setActiveProfile(pendingProfileId);
-    setShowConnectProfileModal(false);
+  const handleConnect = async () => {
+    const mode = tradingProfileService.getScreenProfileMode();
     setDesktopPipError(null);
 
-    const connected = await liveScreenService.connectScreen(pendingProfileId);
+    const connected = await liveScreenService.connectScreen(mode);
     if (connected && !isMobileApp && !desktopPipService.isActive()) {
       const pipRes = await desktopPipService.openInteractiveBubble();
       if (!pipRes.ok && pipRes.message) {
@@ -506,26 +500,27 @@ export const LiveScreenAnalyzer: React.FC = () => {
         {/* Interval, Active Trade Profile (post-click/active) & Live Quota Strip */}
         <div className="pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-3 text-slate-400">
-            {(isStreaming || isPaused || isConnecting) && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span>ট্রেড ধরন:</span>
-                  <select
-                    value={activeProfileId}
-                    onChange={(e) => tradingProfileService.setActiveProfile(e.target.value as TradingProfileId)}
-                    aria-label="ট্রেড ধরন"
-                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500"
-                  >
-                    {TRADING_PROFILE_LIST.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.shortLabel}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <span className="hidden sm:inline text-slate-700" aria-hidden="true">|</span>
-              </>
-            )}
+            <div className="flex items-center gap-2">
+              <span>রুলস মোড:</span>
+              <select
+                value={screenProfileMode}
+                onChange={(e) => {
+                  const val = e.target.value as ScreenProfileMode;
+                  tradingProfileService.setScreenProfileMode(val);
+                  setScreenProfileMode(val);
+                }}
+                aria-label="চার্ট রুলস মোড"
+                className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500"
+              >
+                <option value="AUTO">অটো-ডিটেক্ট (AI স্বয়ংক্রিয়)</option>
+                {TRADING_PROFILE_LIST.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.shortLabel} (ম্যানুয়াল)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="hidden sm:inline text-slate-700" aria-hidden="true">|</span>
 
             <div className="flex items-center gap-2">
               <Sliders className="w-3.5 h-3.5 text-slate-500" />
@@ -772,8 +767,8 @@ export const LiveScreenAnalyzer: React.FC = () => {
                     <div className="text-white font-mono font-medium truncate">
                       {flow.chartVerification.detectedAsset || result.visionData.symbol}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      {flow.chartVerification.detectedTimeframe} · {flow.chartVerification.candleBarsCount} ক্যান্ডেল
+                    <div className="text-[11px] text-cyan-300 font-medium truncate">
+                      {result.profileLabelBn || getTradingProfile((result.tradingProfileId as TradingProfileId) || activeProfileId).labelBn} · {flow.chartVerification.detectedTimeframe} · {flow.chartVerification.candleBarsCount} ক্যান্ডেল
                     </div>
                   </div>
 
@@ -1283,67 +1278,6 @@ export const LiveScreenAnalyzer: React.FC = () => {
                 </button>
               </div>
               <WhatsAppAlertConfigPanel />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pre-Connect Trade Type Selection Modal */}
-      {showConnectProfileModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-md">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/60">
-                <div className="flex items-center gap-2">
-                  <Monitor className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-sm font-bold text-white">ট্রেড ধরন সিলেক্ট করুন</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowConnectProfileModal(false)}
-                  className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-800"
-                >
-                  বাতিল
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4 text-xs">
-                <div className="space-y-2">
-                  <label htmlFor="connect-trade-profile" className="font-semibold text-slate-300 block">
-                    ট্রেড টাইপ
-                  </label>
-                  <select
-                    id="connect-trade-profile"
-                    value={pendingProfileId}
-                    onChange={(e) => setPendingProfileId(e.target.value as TradingProfileId)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    {TRADING_PROFILE_LIST.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.shortLabel}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setShowConnectProfileModal(false)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
-                  >
-                    বন্ধ করুন
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmProfileAndConnect}
-                    className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-                  >
-                    <Monitor className="w-3.5 h-3.5" />
-                    <span>স্ক্রিন শেয়ার চালু করুন</span>
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         </div>

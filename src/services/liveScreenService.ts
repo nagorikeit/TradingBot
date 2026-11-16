@@ -256,9 +256,9 @@ export class LiveScreenService {
   /**
    * Starts native background capture or browser screen capture
    */
-  public async connectScreen(profileId?: TradingProfileId): Promise<boolean> {
-    if (profileId) {
-      tradingProfileService.setActiveProfile(profileId);
+  public async connectScreen(profileMode?: 'AUTO' | TradingProfileId): Promise<boolean> {
+    if (profileMode) {
+      tradingProfileService.setScreenProfileMode(profileMode);
     }
     if (this.state === 'STREAMING') return true;
 
@@ -747,7 +747,11 @@ export class LiveScreenService {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
 
-      const activeProfile = tradingProfileService.getActiveProfileId();
+      const screenMode = tradingProfileService.getScreenProfileMode();
+      const ruleProfileId: TradingProfileId =
+        screenMode === 'AUTO'
+          ? ((this.latestResult?.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId())
+          : screenMode;
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -756,8 +760,8 @@ export class LiveScreenService {
           mimeType: 'image/jpeg',
           frameCapturedAt: Date.now(),
           customPrompt: question,
-          tradingProfile: activeProfile,
-          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
+          tradingProfile: screenMode,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(ruleProfileId),
         }),
       });
 
@@ -817,7 +821,7 @@ export class LiveScreenService {
         targetWidth: 1080,
         quality: 0.85,
         backendUrl: getApiBaseUrl() || DEFAULT_HOSTED_BACKEND_URL,
-        tradingProfile: tradingProfileService.getActiveProfileId(),
+        tradingProfile: tradingProfileService.getScreenProfileMode(),
       });
 
       const timeoutPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
@@ -916,6 +920,8 @@ export class LiveScreenService {
                 signalFlow: data.signalFlow,
                 screenStatus: 'CHART_DETECTED',
                 tradingProfileId: data.tradingProfile || tradingProfileService.getActiveProfileId(),
+                profileLabelBn: data.profileLabelBn || undefined,
+                isAutoDetectedProfile: tradingProfileService.getScreenProfileMode() === 'AUTO',
                 visionData: {
                   symbol: data.symbol || 'CHART',
                   timeframe: '1m',
@@ -962,7 +968,7 @@ export class LiveScreenService {
                 resType,
                 'প্রতিষ্ঠানিক ৫-ধাপ বিশ্লেষণ',
                 undefined,
-                tradingProfileService.getActiveProfileId(),
+                (this.latestResult?.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId(),
                 'NATIVE_OVERLAY'
               );
               this.activePendingSignalId = null;
@@ -989,7 +995,7 @@ export class LiveScreenService {
           stepResults: [false, false, false, false, false],
           closedCandleColor: 'UNCERTAIN',
           closedCandleLabel: 'ক্লোজ: --',
-          tradingProfile: tradingProfileService.getActiveProfileId(),
+          tradingProfile: tradingProfileService.getScreenProfileMode(),
           captureState: 'RUNNING',
           aiState: 'IDLE',
         });
@@ -1310,7 +1316,11 @@ export class LiveScreenService {
     const timeout = setTimeout(() => controller.abort(), 22000);
 
     try {
-      const activeProfile = tradingProfileService.getActiveProfileId();
+      const screenMode = tradingProfileService.getScreenProfileMode();
+      const ruleProfileId: TradingProfileId =
+        screenMode === 'AUTO'
+          ? ((this.latestResult?.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId())
+          : screenMode;
       const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(frame.imageBase64);
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
@@ -1320,8 +1330,8 @@ export class LiveScreenService {
           zoomedCandleBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt: frame.timestamp,
-          tradingProfile: activeProfile,
-          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
+          tradingProfile: screenMode,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(ruleProfileId),
         }),
         signal: controller.signal,
       });
@@ -2446,13 +2456,20 @@ export class LiveScreenService {
         : 'ডোজি / স্পিনিং';
 
     // Cross-check ONLY with the selected profile's isolated AI Playbook rules
-    const activeProfileId = tradingProfileService.getActiveProfileId();
+    const screenMode = tradingProfileService.getScreenProfileMode();
+    const isAutoMode = screenMode === 'AUTO';
+    const activeProfileId: TradingProfileId = isAutoMode
+      ? ((this.latestResult?.tradingProfileId as TradingProfileId) || 'BINARY_OTC')
+      : screenMode;
     const targetDir = dir === 'UP' ? 'CALL' : 'PUT';
     const learnedRules = agentLearningService.getRulesByProfile(activeProfileId);
     const matchingRule = dir !== 'WAIT'
       ? learnedRules.find((r) => r.recommendedDirection === targetDir && r.status !== 'UNDER_REVIEW')
       : undefined;
     const reasoning = [...chartDetection.reason];
+    if (isAutoMode) {
+      reasoning.unshift(`অটো চার্ট ধরন (অফলাইন CV): ${activeProfileId === 'BINARY_OTC' ? 'Binary OTC' : activeProfileId} রুলস প্রয়োগ`);
+    }
     if (matchingRule) {
       reasoning.push(
         `এআই প্লেবুক নিয়ম (${activeProfileId}): ${matchingRule.titleBn} (কনফিডেন্স: ${Math.round(
@@ -2481,11 +2498,13 @@ export class LiveScreenService {
       suggestedExpiry: '01:00',
       reasoning,
       tradingProfileId: activeProfileId,
+      profileLabelBn: isAutoMode ? 'Binary OTC (অটো CV)' : undefined,
+      isAutoDetectedProfile: isAutoMode,
       signalFlow: {
         confirmedPoints,
         totalPoints: 5,
         stepChecks: [
-          { step: 1, key: 'CHART', labelBn: '১. চার্ট', passed: step1Passed, detailBn: symbol },
+          { step: 1, key: 'CHART', labelBn: '১. চার্ট', passed: step1Passed, detailBn: `${symbol} · ${isAutoMode ? 'অটো' : activeProfileId}` },
           { step: 2, key: 'CLOSED_CANDLE', labelBn: '২. ক্লোজ ক্যান্ডেল', passed: step2Passed, detailBn: closedLabelBn },
           { step: 3, key: 'MTF_TREND', labelBn: '৩. মাল্টি-TF (15/5/3/1)', passed: step3Passed, detailBn: chartDetection.ohlcSummaryBn || `${macroTrend}/${secTrend}/${momentum3m}` },
           { step: 4, key: 'MARKET_FILTER', labelBn: '৪. ফিল্টার', passed: step4Passed, detailBn: step4Passed ? 'পাস' : 'ঝুঁকি' },
@@ -2496,7 +2515,7 @@ export class LiveScreenService {
           detectedAsset: symbol,
           detectedTimeframe: '1M',
           candleBarsCount: chartDetection.diagnostic?.distinctCandleBars || 8,
-          notes: 'অফলাইন CV ১/৫ চার্ট ও ডেটা যাচাই সম্পন্ন',
+          notes: `${isAutoMode ? 'অটো নিশ্চিত' : 'ম্যানুয়াল'}: ${confirmedPoints}/৫ ধাপ`,
         },
         candleData: {
           candleCount: chartDetection.diagnostic?.distinctCandleBars || 8,
@@ -3263,7 +3282,11 @@ export class LiveScreenService {
       imageBase64 = canvas.toDataURL('image/jpeg', 0.88);
 
       const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(imageBase64);
-      const activeProfile = tradingProfileService.getActiveProfileId();
+      const screenMode = tradingProfileService.getScreenProfileMode();
+      const ruleProfileId: TradingProfileId =
+        screenMode === 'AUTO'
+          ? ((this.latestResult?.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId())
+          : screenMode;
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3272,8 +3295,8 @@ export class LiveScreenService {
           zoomedCandleBase64,
           mimeType: 'image/jpeg',
           frameCapturedAt,
-          tradingProfile: activeProfile,
-          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
+          tradingProfile: screenMode,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(ruleProfileId),
         }),
         signal: controller.signal,
       });
@@ -3344,7 +3367,11 @@ export class LiveScreenService {
 
     try {
       const frameCapturedAt = Date.now();
-      const activeProfile = tradingProfileService.getActiveProfileId();
+      const screenMode = tradingProfileService.getScreenProfileMode();
+      const ruleProfileId: TradingProfileId =
+        screenMode === 'AUTO'
+          ? ((this.latestResult?.tradingProfileId as TradingProfileId) || tradingProfileService.getActiveProfileId())
+          : screenMode;
       const zoomedCandleBase64 = await this.buildZoomedRightCandleCrop(imageBase64);
       const res = await fetch(getApiUrl('/api/agent/vision/analyze-frame'), {
         method: 'POST',
@@ -3354,8 +3381,8 @@ export class LiveScreenService {
           zoomedCandleBase64,
           mimeType: imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
           frameCapturedAt,
-          tradingProfile: activeProfile,
-          activeProfileRules: agentLearningService.getActiveProfilePromptContext(activeProfile),
+          tradingProfile: screenMode,
+          activeProfileRules: agentLearningService.getActiveProfilePromptContext(ruleProfileId),
         }),
         signal: controller.signal,
       });

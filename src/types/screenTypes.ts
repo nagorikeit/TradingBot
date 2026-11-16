@@ -13,6 +13,8 @@ export interface ScreenVisionParsedData {
   symbol?: string;
   timeframe?: string;
   marketType: 'CRYPTO' | 'FOREX' | 'STOCKS' | 'COMMODITY' | 'UNKNOWN';
+  detectedTradingProfile?: 'BINARY_OTC' | 'BINARY_LIVE' | 'CRYPTO_SPOT' | 'FOREX' | 'COMMODITY_INDEX';
+  detectedChartTypeReasonBn?: string;
   lastVisiblePrice?: number;
   lastCandleDirection: 'BULLISH' | 'BEARISH' | 'DOJI' | 'UNCERTAIN';
   closedCandleColor?: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN';
@@ -97,6 +99,7 @@ export interface ScreenAnalysisFinalResult {
   screenStatus: 'CHART_DETECTED' | 'OTHER_SCREEN_READING' | 'UNCLEAR_SCREEN';
   tradingProfileId?: string;
   profileLabelBn?: string;
+  isAutoDetectedProfile?: boolean;
   screenTransition?: {
     previousScreen?: string;
     currentScreen: string;
