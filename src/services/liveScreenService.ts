@@ -1448,7 +1448,9 @@ export class LiveScreenService {
     lowerWickPercent?: number;
     macroTrend?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
     secondaryTrend?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    momentum3m?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
     microTrend?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    ohlcSummaryBn?: string;
     isChoppy?: boolean;
     reason: string[];
     diagnostic?: ChartDetectionDiagnostic;
@@ -1654,6 +1656,8 @@ export class LiveScreenService {
             const totalCandlePixels = greenPixelsInChart + redPixelsInChart;
 
             // 5. Stage 3: Candlestick Band Segmentation via Vertical-Run Filtered Column Projection
+            // Preserve raw pixel grid for infant 2-7px forming-candle detection before stripping thin horizontal lines
+            const rawCandleGrid = new Uint8Array(candlePixelGrid);
             // Strips horizontal EMA/SMA/Bollinger/drawing lines (runs < 4px tall) so adjacent candles don't merge
             const colCounts = new Int32Array(targetWidth);
             for (let x = xStart; x < xEnd; x++) {
@@ -1822,8 +1826,8 @@ export class LiveScreenService {
             // Stage 4: Filter genuine vertical candlestick morphology + strip hollow drawing boxes & right-edge UI price pills
             const rawCandles = candleBands.filter((b) => {
               const fillDensity = b.pixelMass / Math.max(1, b.width * b.height);
-              const isHollowBox = b.width > 20 && fillDensity < 0.28;
-              return !isHollowBox && (b.height >= b.width * 1.05 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.85)) && b.height >= 12;
+              const isHollowBox = b.width > 18 && fillDensity < 0.28;
+              return !isHollowBox && (b.height >= b.width * 1.05 || ((b.hasUpperWick || b.hasLowerWick) && b.height >= b.width * 0.85)) && b.height >= 7;
             });
 
             // Pitch & width outlier guard: if rightmost band is an isolated price tag/badge, strip it cleanly
@@ -1831,7 +1835,7 @@ export class LiveScreenService {
             let medianStep = 12;
             let medianW = 8;
             if (rawCandles.length >= 5) {
-              const sample = rawCandles.slice(-Math.min(8, rawCandles.length - 1), -1);
+              const sample = rawCandles.slice(-Math.min(12, rawCandles.length - 1), -1);
               const widths = sample.map((c) => c.width).sort((a, b) => a - b);
               medianW = widths[Math.floor(widths.length / 2)] || 8;
               const gaps: number[] = [];
@@ -1845,7 +1849,17 @@ export class LiveScreenService {
                 const tail = verifiedCandles[verifiedCandles.length - 1];
                 const prev = verifiedCandles[verifiedCandles.length - 2];
                 const tailGap = tail.centerX - prev.centerX;
-                if (tailGap > Math.max(medianStep * 2.25, 34) || tail.width > Math.max(medianW * 2.3, 28)) {
+                const tailDensity = tail.pixelMass / Math.max(1, tail.width * tail.height);
+                const isSolidUiPill =
+                  tail.width > Math.max(medianW * 1.45, 16) &&
+                  !tail.hasUpperWick &&
+                  !tail.hasLowerWick &&
+                  tailDensity > 0.78;
+                if (
+                  tailGap > Math.max(medianStep * 1.85, 28) ||
+                  tail.width > Math.max(medianW * 1.8, 22) ||
+                  isSolidUiPill
+                ) {
                   verifiedCandles.pop();
                 } else {
                   break;
@@ -1950,14 +1964,55 @@ export class LiveScreenService {
 
             const rightmost = verifiedCandles[verifiedCandles.length - 1];
             let hasInfantTickRight = false;
+            let infantGreen = 0;
+            let infantRed = 0;
             if (verifiedCandles.length >= 4) {
-              const tStart = Math.min(xEnd - 1, rightmost.end + Math.max(2, Math.round(medianStep * 0.45)));
+              const tStart = Math.min(xEnd - 1, rightmost.end + Math.max(2, Math.round(medianStep * 0.4)));
               const tEnd = Math.min(xEnd - 1, rightmost.centerX + Math.round(medianStep * 1.55));
               let tickCols = 0;
               for (let tx = tStart; tx <= tEnd; tx++) {
-                if (colCounts[tx] >= 2) tickCols++;
+                let colHasTick = colCounts[tx] >= 2;
+                let colG = 0;
+                let colR = 0;
+                if (!colHasTick) {
+                  let rawRun = 0;
+                  let runG = 0;
+                  let runR = 0;
+                  let maxRun = 0;
+                  let runTopY = -1;
+                  for (let ty = yStart; ty <= yEnd; ty++) {
+                    const v = ty < yEnd ? rawCandleGrid[ty * targetWidth + tx] : 0;
+                    if (v > 0) {
+                      if (rawRun === 0) runTopY = ty;
+                      rawRun++;
+                      if (v === 1) runG++;
+                      else runR++;
+                    } else {
+                      if (rawRun >= 2) {
+                        const midY = runTopY + Math.floor(rawRun / 2);
+                        const leftX = Math.max(xStart, tx - 3);
+                        const rightX = Math.min(xEnd - 1, tx + 3);
+                        const isContinuousLine = rawCandleGrid[midY * targetWidth + leftX] > 0 && rawCandleGrid[midY * targetWidth + rightX] > 0;
+                        if (!isContinuousLine) {
+                          maxRun = Math.max(maxRun, rawRun);
+                          colG += runG;
+                          colR += runR;
+                        }
+                      }
+                      rawRun = 0;
+                      runG = 0;
+                      runR = 0;
+                    }
+                  }
+                  if (maxRun >= 2) colHasTick = true;
+                }
+                if (colHasTick) {
+                  tickCols++;
+                  infantGreen += colG;
+                  infantRed += colR;
+                }
               }
-              if (tickCols >= 1 && tickCols <= 2 && rightmost.width >= Math.max(3, Math.round(medianW * 0.75))) {
+              if (tickCols >= 1 && tickCols <= 4 && rightmost.width >= Math.max(2, Math.round(medianW * 0.65))) {
                 hasInfantTickRight = true;
               }
             }
@@ -1985,36 +2040,83 @@ export class LiveScreenService {
             const lastClosedCandleColor: 'GREEN' | 'RED' | 'DOJI' = isClosedDoji
               ? 'DOJI'
               : closedTradeCandle.color;
+            const totalInfant = infantGreen + infantRed;
             const formingCandleColor: 'GREEN' | 'RED' | 'DOJI' | 'NONE' = hasInfantTickRight
-              ? 'DOJI'
+              ? (totalInfant < 6 ? 'DOJI' : infantGreen > infantRed * 1.2 ? 'GREEN' : infantRed > infantGreen * 1.2 ? 'RED' : 'DOJI')
               : verifiedCandles.length >= 2
               ? rightmost.color
               : 'NONE';
 
-            // Macro / Secondary / Micro trend across visible closed bars
+            // 4-Layer Mathematical Backward OHLC Aggregation across visible closed 1M bars (15M, 5M, 3M, 1M)
             const closedPool = verifiedCandles.slice(0, closedIdx + 1);
-            const macroSlice = closedPool.slice(-16);
-            const secSlice = closedPool.slice(-7);
-            const microSlice = closedPool.slice(-3);
 
-            const calcTrend = (arr: CandleBand[]): 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' => {
-              if (arr.length < 3) return 'SIDEWAYS';
-              let g = 0;
-              let r = 0;
-              arr.forEach((c) => {
-                if (c.color === 'GREEN') g++;
-                else r++;
-              });
-              const slopeUp = arr[arr.length - 1].minY < arr[0].minY && arr[arr.length - 1].maxY <= arr[0].maxY;
-              const slopeDown = arr[arr.length - 1].maxY > arr[0].maxY && arr[arr.length - 1].minY >= arr[0].minY;
-              if (g >= r + 2 && slopeUp) return 'UPTREND';
-              if (r >= g + 2 && slopeDown) return 'DOWNTREND';
+            const aggregateOhlc = (arr: CandleBand[], period: number) => {
+              const bars: { open: number; high: number; low: number; close: number; color: 'GREEN' | 'RED' | 'DOJI'; bodyPct: number }[] = [];
+              if (arr.length < period) return bars;
+              for (let end = arr.length; end - period >= 0; end -= period) {
+                const chunk = arr.slice(end - period, end);
+                const first = chunk[0];
+                const last = chunk[chunk.length - 1];
+                const firstBodyTop = first.minY + first.upperWickPx;
+                const firstBodyBottom = first.maxY - first.lowerWickPx;
+                const lastBodyTop = last.minY + last.upperWickPx;
+                const lastBodyBottom = last.maxY - last.lowerWickPx;
+                const open = first.color === 'GREEN' ? -firstBodyBottom : -firstBodyTop;
+                const close = last.color === 'GREEN' ? -lastBodyTop : -lastBodyBottom;
+                let high = -999999;
+                let low = 999999;
+                chunk.forEach((c) => {
+                  if (-c.minY > high) high = -c.minY;
+                  if (-c.maxY < low) low = -c.maxY;
+                });
+                const span = Math.max(1, high - low);
+                const bodyPct = Math.round((Math.abs(close - open) / span) * 100);
+                const color: 'GREEN' | 'RED' | 'DOJI' = bodyPct < 15 ? 'DOJI' : close >= open ? 'GREEN' : 'RED';
+                bars.unshift({ open, high, low, close, color, bodyPct });
+              }
+              return bars;
+            };
+
+            const classifyOhlcTrend = (
+              bars: { open: number; high: number; low: number; close: number; color: 'GREEN' | 'RED' | 'DOJI'; bodyPct: number }[],
+              singleMinBodyPct: number
+            ): 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' => {
+              if (bars.length === 0) return 'SIDEWAYS';
+              const latest = bars[bars.length - 1];
+              if (bars.length === 1) {
+                if (latest.color === 'GREEN' && latest.bodyPct >= singleMinBodyPct) return 'UPTREND';
+                if (latest.color === 'RED' && latest.bodyPct >= singleMinBodyPct) return 'DOWNTREND';
+                return 'SIDEWAYS';
+              }
+              const prev = bars[bars.length - 2];
+              const recent = bars.slice(-3);
+              const greens = recent.filter((b) => b.color === 'GREEN').length;
+              const reds = recent.filter((b) => b.color === 'RED').length;
+              const hhhl = latest.close > prev.close && latest.low >= prev.low - Math.max(2, (prev.high - prev.low) * 0.15);
+              const lhll = latest.close < prev.close && latest.high <= prev.high + Math.max(2, (prev.high - prev.low) * 0.15);
+              if (latest.color === 'GREEN' && latest.bodyPct >= 14 && (greens >= 2 || hhhl || latest.close > prev.open)) return 'UPTREND';
+              if (latest.color === 'RED' && latest.bodyPct >= 14 && (reds >= 2 || lhll || latest.close < prev.open)) return 'DOWNTREND';
               return 'SIDEWAYS';
             };
 
-            const macroTrend = calcTrend(macroSlice);
-            const secondaryTrend = calcTrend(secSlice);
-            const microTrend = calcTrend(microSlice);
+            const bars3m = aggregateOhlc(closedPool, 3);
+            const bars5m = aggregateOhlc(closedPool, 5);
+            const bars15m =
+              closedPool.length >= 15
+                ? aggregateOhlc(closedPool, 15)
+                : closedPool.length >= 10
+                ? aggregateOhlc(closedPool, closedPool.length)
+                : [];
+
+            const momentum3m = classifyOhlcTrend(bars3m, 20);
+            const secondaryTrend = classifyOhlcTrend(bars5m, 22);
+            const macroTrend = classifyOhlcTrend(bars15m, 22);
+            const microTrend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+              lastClosedCandleColor === 'GREEN' ? 'UPTREND' : lastClosedCandleColor === 'RED' ? 'DOWNTREND' : 'SIDEWAYS';
+
+            const fmtTfBn = (t: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS') =>
+              t === 'UPTREND' ? 'আপ' : t === 'DOWNTREND' ? 'ডাউন' : 'রেঞ্জ';
+            const ohlcSummaryBn = `১৫M ${fmtTfBn(macroTrend)} • ৫M ${fmtTfBn(secondaryTrend)} • ৩M ${fmtTfBn(momentum3m)}`;
 
             const isAlternatingChop =
               closedPool.length >= 4 &&
@@ -2150,11 +2252,13 @@ export class LiveScreenService {
               lowerWickPercent,
               macroTrend,
               secondaryTrend,
+              momentum3m,
               microTrend,
+              ohlcSummaryBn,
               isChoppy: isAlternatingChop || isSpinningTop || streak >= 4,
               reason: [
                 `[অফলাইন CV] সদ্য ক্লোজড ক্যান্ডেল: ${closedBn} (বডি ${bodyPercent}%, আপার ${upperWickPercent}%, লোয়ার ${lowerWickPercent}%)।`,
-                `দৃশ্যমান ট্রেন্ড: ${macroTrend} · শর্ট-টার্ম ${secondaryTrend} · স্ট্রিক ${streak}x।`,
+                `OHLC মাল্টি-TF: ${ohlcSummaryBn} · স্ট্রিক ${streak}x।`,
                 dir === 'WAIT'
                   ? 'নিরাপদ শর্ত বা ক্লাউড AI কনফার্মেশন না মেলায় WAIT।'
                   : 'অফলাইন ৫-ধাপ অডিটে ক্লোজড ক্যান্ডেল ও ট্রেন্ড অ্যালাইনড।',
@@ -2314,14 +2418,17 @@ export class LiveScreenService {
     const closedColor = chartDetection.lastClosedCandleColor || 'UNCERTAIN';
     const macroTrend = chartDetection.macroTrend || 'SIDEWAYS';
     const secTrend = chartDetection.secondaryTrend || 'SIDEWAYS';
+    const momentum3m = chartDetection.momentum3m || secTrend;
     const microTrend = chartDetection.microTrend || 'SIDEWAYS';
 
+    const has5m3mAligned = secTrend !== 'SIDEWAYS' && momentum3m === secTrend && (macroTrend === secTrend || macroTrend === 'SIDEWAYS');
     const step1Passed = true;
     const step2Passed = closedColor === 'GREEN' || closedColor === 'RED';
     const step3Passed =
       (macroTrend !== 'SIDEWAYS' &&
         secTrend !== 'SIDEWAYS' &&
         macroTrend === secTrend) ||
+      has5m3mAligned ||
       Boolean(chartDetection.isClosedRejection);
     const step4Passed = closedColor !== 'DOJI' && !chartDetection.isChoppy && rawDir !== 'WAIT';
     const step5Passed = rawDir !== 'WAIT' && confidence >= 82 && step2Passed && step3Passed && step4Passed;
@@ -2380,7 +2487,7 @@ export class LiveScreenService {
         stepChecks: [
           { step: 1, key: 'CHART', labelBn: '১. চার্ট', passed: step1Passed, detailBn: symbol },
           { step: 2, key: 'CLOSED_CANDLE', labelBn: '২. ক্লোজ ক্যান্ডেল', passed: step2Passed, detailBn: closedLabelBn },
-          { step: 3, key: 'MTF_TREND', labelBn: '৩. মাল্টি-TF', passed: step3Passed, detailBn: `${macroTrend}/${secTrend}` },
+          { step: 3, key: 'MTF_TREND', labelBn: '৩. মাল্টি-TF (15/5/3/1)', passed: step3Passed, detailBn: chartDetection.ohlcSummaryBn || `${macroTrend}/${secTrend}/${momentum3m}` },
           { step: 4, key: 'MARKET_FILTER', labelBn: '৪. ফিল্টার', passed: step4Passed, detailBn: step4Passed ? 'পাস' : 'ঝুঁকি' },
           { step: 5, key: 'SETUP_SCORE', labelBn: '৫. স্কোর', passed: step5Passed, detailBn: `${totalScore}/১০` },
         ],
@@ -2415,8 +2522,10 @@ export class LiveScreenService {
         multiTimeframe: {
           macroTrend15m: macroTrend,
           secondaryTrend5m: secTrend,
+          momentum3m,
           microTrend1m: microTrend,
           confluenceStatus: step3Passed ? 'ALIGNED' : 'CONFLICT',
+          ohlcAggregationSummaryBn: chartDetection.ohlcSummaryBn,
         },
         marketFilter: {
           regime: chartDetection.isChoppy ? 'SIDEWAYS' : closedColor === 'DOJI' ? 'DOJI_CHOPPY' : 'TRENDING',

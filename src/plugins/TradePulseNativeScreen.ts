@@ -178,7 +178,23 @@ export interface TradePulseNativeScreenPlugin {
   stopSpeaking(): Promise<{ success: boolean }>;
 
   /**
-   * Opens Google Sign-In flow in system Chrome Custom Tab (outside WebView)
+   * Native Android in-app Google Sign-In bottom sheet via Credential Manager (stays inside app, no external browser)
+   */
+  signInWithGoogleNative(options?: { serverClientId?: string }): Promise<{
+    success: boolean;
+    idToken?: string;
+    email?: string;
+    displayName?: string;
+    cancelled?: boolean;
+    errorCode?: string;
+    error?: string;
+    packageName?: string;
+    sha1?: string;
+    sha256?: string;
+  }>;
+
+  /**
+   * Opens Google Sign-In flow in embedded Chrome Custom Tab (fallback)
    */
   openGoogleAuthInBrowser(options: { url: string }): Promise<{ opened: boolean }>;
 

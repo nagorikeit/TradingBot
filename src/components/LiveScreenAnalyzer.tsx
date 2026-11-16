@@ -794,16 +794,16 @@ export const LiveScreenAnalyzer: React.FC = () => {
 
                   <div className={`p-2.5 rounded-lg bg-slate-950 border space-y-1 ${s3 ? 'border-emerald-500/40' : 'border-amber-500/40'}`}>
                     <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                      <span>৩. মাল্টি-TF</span>
+                      <span>৩. মাল্টি-TF (OHLC)</span>
                       <span className={s3 ? 'text-emerald-400' : 'text-amber-400'}>
                         {s3 ? '✓ অ্যালাইন্ড' : '✕ সতর্কতা'}
                       </span>
                     </div>
                     <div className="text-white font-mono text-[11px]">
-                      15M:{flow.multiTimeframe.macroTrend15m === 'UPTREND' ? 'UP' : flow.multiTimeframe.macroTrend15m === 'DOWNTREND' ? 'DN' : 'RNG'} · 5M:{flow.multiTimeframe.secondaryTrend5m === 'UPTREND' ? 'UP' : flow.multiTimeframe.secondaryTrend5m === 'DOWNTREND' ? 'DN' : 'RNG'}
+                      15M:{flow.multiTimeframe.macroTrend15m === 'UPTREND' ? 'UP' : flow.multiTimeframe.macroTrend15m === 'DOWNTREND' ? 'DN' : 'RNG'} · 5M:{flow.multiTimeframe.secondaryTrend5m === 'UPTREND' ? 'UP' : flow.multiTimeframe.secondaryTrend5m === 'DOWNTREND' ? 'DN' : 'RNG'} · 3M:{(flow.multiTimeframe.momentum3m || flow.multiTimeframe.secondaryTrend5m) === 'UPTREND' ? 'UP' : (flow.multiTimeframe.momentum3m || flow.multiTimeframe.secondaryTrend5m) === 'DOWNTREND' ? 'DN' : 'RNG'}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      1M: {flow.multiTimeframe.microTrend1m}
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {flow.multiTimeframe.ohlcAggregationSummaryBn || `1M: ${flow.multiTimeframe.microTrend1m}`}
                     </div>
                   </div>
 

@@ -148,8 +148,10 @@ export interface InstitutionalSignalFlow {
   multiTimeframe: {
     macroTrend15m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
     secondaryTrend5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+    momentum3m?: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
     microTrend1m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
     confluenceStatus: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL';
+    ohlcAggregationSummaryBn?: string;
   };
   // ৪. Market Condition Filter
   marketFilter: {

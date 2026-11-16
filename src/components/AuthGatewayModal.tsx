@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { authService } from '../services/authService';
-import { Lock, Mail, User as UserIcon, Phone, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, Phone, ArrowRight, AlertCircle, Copy, Check } from 'lucide-react';
 
 interface AuthGatewayModalProps {
   onSuccess?: () => void;
@@ -15,9 +15,14 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sha1Info, setSha1Info] = useState<{ sha1: string; packageName: string } | null>(null);
+  const [canUseCustomTab, setCanUseCustomTab] = useState(false);
+  const [copiedSha, setCopiedSha] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setError(null);
+    setSha1Info(null);
+    setCanUseCustomTab(false);
     setGoogleLoading(true);
     const res = await authService.loginWithGoogle();
     setGoogleLoading(false);
@@ -26,7 +31,37 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
       onSuccess?.();
     } else {
       setError(res.error || 'Google লগইন ব্যর্থ হয়েছে');
+      if (res.sha1) {
+        setSha1Info({
+          sha1: res.sha1,
+          packageName: res.packageName || 'com.tradepulse.bot',
+        });
+      }
+      if (res.canUseCustomTabFallback) {
+        setCanUseCustomTab(true);
+      }
     }
+  };
+
+  const handleCustomTabFallback = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    const res = await authService.loginWithGoogleCustomTabFallback();
+    setGoogleLoading(false);
+    if (res.success) {
+      onSuccess?.();
+    } else {
+      setError(res.error || 'Google লগইন ব্যর্থ হয়েছে');
+    }
+  };
+
+  const handleCopySha1 = async () => {
+    if (!sha1Info?.sha1) return;
+    try {
+      await navigator.clipboard.writeText(sha1Info.sha1);
+      setCopiedSha(true);
+      setTimeout(() => setCopiedSha(false), 2000);
+    } catch {}
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -150,9 +185,41 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{error}</span>
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2.5">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+              <span>{error}</span>
+            </div>
+
+            {sha1Info && (
+              <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 space-y-1.5 text-[11px] text-slate-300">
+                <div className="font-semibold text-amber-300">
+                  Firebase Console → Project Settings → Android App ({sha1Info.packageName})-এ এই SHA-1 যোগ করুন:
+                </div>
+                <div className="flex items-center justify-between gap-2 bg-slate-900 px-2 py-1.5 rounded border border-slate-700 font-mono text-[10px] text-emerald-300 break-all">
+                  <span>{sha1Info.sha1}</span>
+                  <button
+                    type="button"
+                    onClick={handleCopySha1}
+                    className="shrink-0 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1"
+                  >
+                    {copiedSha ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedSha ? 'কপিড' : 'কপি'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {canUseCustomTab && (
+              <button
+                type="button"
+                onClick={handleCustomTabFallback}
+                disabled={googleLoading || loading}
+                className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-colors cursor-pointer"
+              >
+                বিকল্প: ইন-অ্যাপ সিকিউর ট্যাব দিয়ে প্রবেশ করুন
+              </button>
+            )}
           </div>
         )}
 

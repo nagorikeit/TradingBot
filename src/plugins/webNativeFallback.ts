@@ -165,6 +165,25 @@ export class TradePulseNativeScreenWeb extends WebPlugin implements TradePulseNa
     return { success: true };
   }
 
+  public async signInWithGoogleNative(): Promise<{
+    success: boolean;
+    idToken?: string;
+    email?: string;
+    displayName?: string;
+    cancelled?: boolean;
+    errorCode?: string;
+    error?: string;
+    packageName?: string;
+    sha1?: string;
+    sha256?: string;
+  }> {
+    return {
+      success: false,
+      errorCode: 'WEB_UNSUPPORTED',
+      error: 'Native Credential Manager is only available inside Android APK.',
+    };
+  }
+
   public async openGoogleAuthInBrowser(options: { url: string }): Promise<{ opened: boolean }> {
     if (typeof window !== 'undefined' && options?.url) {
       window.location.href = options.url;

@@ -116,7 +116,8 @@ YOUR CORE DUTIES:
      * Only if there is clearly NO live forming candle / no live price line (e.g. a paused/offline historical screenshot where the rightmost candle sits cleanly to the left of whitespace with no active tick line), then treat the rightmost candle as the closed candle ("formingCandleColor": "NONE").
    - Measure the CLOSED candle carefully${cleanZoomedBase64 ? ' (use IMAGE 2, the 2.2x zoomed right-edge close-up, for exact pixel-level inspection of the last candles, wicks, live price line, and timer!)' : ''}:
      * CRITICAL ANCHOR CHECK: Locate the horizontal dashed/solid current-price line + live price pill on the right Y-axis. Follow that horizontal line leftwards to the candle currently touching/tracking the live price — THAT candle is the FORMING candle ("formingCandleColor"). Never treat it as the closed candle!
-     * The NEWLY CLOSED CANDLE ("closedCandleColor", "lastCandleDirection") is the completed bar IMMEDIATELY to the LEFT of the candle attached to the live price line. If the live candle has just opened (thin 1-2px tick or flat line on the live price), be extra careful NOT to skip the newly closed candle right next to it, and do NOT confuse the green/red Y-axis price label box with a candle!
+     * The NEWLY CLOSED CANDLE ("closedCandleColor", "lastCandleDirection") is the completed bar IMMEDIATELY to the LEFT of the candle attached to the live price line. If the live candle has just opened (thin 1-2px tick, flat line, or tiny Doji on the live price when the timer shows 00:45-00:59), you MUST still report it in "formingCandleColor" and read the bar IMMEDIATELY to its LEFT as "closedCandleColor" — never confuse the Y-axis price box or timer pill with a candle!
+      * Output "candleTimerText", "candleTimerSecondsLeft", and "formingCandleColor" FIRST before deciding "closedCandleColor" and "lastCandleDirection".
      * "closedCandleColor": "GREEN" (bullish close > open), "RED" (bearish close < open), or "DOJI" (tiny/flat body < 18% of total high-to-low height).
      * "lastCandleDirection": "BULLISH" if GREEN, "BEARISH" if RED, "DOJI" if DOJI.
      * Estimate "closedCandleBodyPercent", "closedCandleUpperWickPercent", "closedCandleLowerWickPercent" (summing roughly to 100% of total height).
@@ -242,13 +243,25 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                     description: 'CRYPTO, FOREX, STOCKS, COMMODITY, or UNKNOWN',
                   },
                   lastVisiblePrice: { type: Type.NUMBER, description: 'Current latest price visible on right axis' },
+                  candleTimerText: {
+                    type: Type.STRING,
+                    description: 'Visible countdown timer text near current candle e.g. 00:24',
+                  },
+                  candleTimerSecondsLeft: {
+                    type: Type.NUMBER,
+                    description: 'Visible countdown timer seconds remaining if shown (0-3600)',
+                  },
+                  formingCandleColor: {
+                    type: Type.STRING,
+                    description: 'Color of the still-forming rightmost live candle attached to live price line FIRST: GREEN, RED, DOJI, or NONE (never NONE when live timer/price line is visible)',
+                  },
                   lastCandleDirection: {
                     type: Type.STRING,
-                    description: 'Direction of the newly CLOSED candle: BULLISH, BEARISH, DOJI, or UNCERTAIN',
+                    description: 'Direction of the newly CLOSED candle immediately left of the forming candle: BULLISH, BEARISH, DOJI, or UNCERTAIN',
                   },
                   closedCandleColor: {
                     type: Type.STRING,
-                    description: 'Color of the newly CLOSED candle (2nd from right if rightmost is forming): GREEN, RED, DOJI, or UNCERTAIN',
+                    description: 'Color of the newly CLOSED candle (immediately left of the live forming candle): GREEN, RED, DOJI, or UNCERTAIN',
                   },
                   closedCandleBodyPercent: {
                     type: Type.NUMBER,
@@ -265,18 +278,6 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   closedCandleRejection: {
                     type: Type.STRING,
                     description: 'UPPER_REJECTION, LOWER_REJECTION, or NONE on the newly CLOSED candle',
-                  },
-                  formingCandleColor: {
-                    type: Type.STRING,
-                    description: 'Color of the still-forming rightmost live candle: GREEN, RED, DOJI, or NONE',
-                  },
-                  candleTimerText: {
-                    type: Type.STRING,
-                    description: 'Visible countdown timer text near current candle e.g. 00:24',
-                  },
-                  candleTimerSecondsLeft: {
-                    type: Type.NUMBER,
-                    description: 'Visible countdown timer seconds remaining if shown (0-3600)',
                   },
                   candlestickPattern: { type: Type.STRING, description: 'Identified pattern on the closed candle/setup in short label' },
                   chartStructure: {

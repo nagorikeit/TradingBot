@@ -3,6 +3,10 @@ package com.tradepulse.bot.plugins;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -31,12 +35,29 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
 import androidx.activity.result.ActivityResult;
+import androidx.annotation.NonNull;
+import androidx.browser.customtabs.CustomTabColorSchemeParams;
+import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.core.content.ContextCompat;
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.GetCredentialCancellationException;
+import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
+import androidx.credentials.exceptions.NoCredentialException;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.BufferedReader;
@@ -47,6 +68,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -723,6 +745,52 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         boolean isDoji = false;
     }
 
+    private static String classifyAggregatedOhlc(java.util.List<CandleBand> bands, int poolSize, int period, int singleMinBodyPct) {
+        if (poolSize < period || period <= 0) return "SIDEWAYS";
+        java.util.List<int[]> bars = new java.util.ArrayList<>(); // [open, high, low, close, colorFlag(1=G,-1=R,0=D), bodyPct]
+        for (int end = poolSize; end - period >= 0; end -= period) {
+            CandleBand first = bands.get(end - period);
+            CandleBand last = bands.get(end - 1);
+            int firstBodyTop = first.minY + first.upperWickPx;
+            int firstBodyBottom = first.maxY - first.lowerWickPx;
+            int lastBodyTop = last.minY + last.upperWickPx;
+            int lastBodyBottom = last.maxY - last.lowerWickPx;
+            int open = first.isGreen ? -firstBodyBottom : -firstBodyTop;
+            int close = last.isGreen ? -lastBodyTop : -lastBodyBottom;
+            int high = -999999;
+            int low = 999999;
+            for (int i = end - period; i < end; i++) {
+                CandleBand c = bands.get(i);
+                if (-c.minY > high) high = -c.minY;
+                if (-c.maxY < low) low = -c.maxY;
+            }
+            int span = Math.max(1, high - low);
+            int bodyPct = Math.round(100f * Math.abs(close - open) / span);
+            int colorFlag = (bodyPct < 15) ? 0 : (close >= open ? 1 : -1);
+            bars.add(0, new int[]{open, high, low, close, colorFlag, bodyPct});
+        }
+        if (bars.isEmpty()) return "SIDEWAYS";
+        int[] latest = bars.get(bars.size() - 1);
+        if (bars.size() == 1) {
+            if (latest[4] == 1 && latest[5] >= singleMinBodyPct) return "UPTREND";
+            if (latest[4] == -1 && latest[5] >= singleMinBodyPct) return "DOWNTREND";
+            return "SIDEWAYS";
+        }
+        int[] prev = bars.get(bars.size() - 2);
+        int recentStart = Math.max(0, bars.size() - 3);
+        int greens = 0, reds = 0;
+        for (int i = recentStart; i < bars.size(); i++) {
+            if (bars.get(i)[4] == 1) greens++;
+            else if (bars.get(i)[4] == -1) reds++;
+        }
+        int prevSpan = Math.max(2, prev[1] - prev[2]);
+        boolean hhhl = latest[3] > prev[3] && latest[2] >= prev[2] - (int) (prevSpan * 0.15f);
+        boolean lhll = latest[3] < prev[3] && latest[1] <= prev[1] + (int) (prevSpan * 0.15f);
+        if (latest[4] == 1 && latest[5] >= 14 && (greens >= 2 || hhhl || latest[3] > prev[0])) return "UPTREND";
+        if (latest[4] == -1 && latest[5] >= 14 && (reds >= 2 || lhll || latest[3] < prev[0])) return "DOWNTREND";
+        return "SIDEWAYS";
+    }
+
     private static boolean isRecentHighBreakout(java.util.List<CandleBand> bands, int count, CandleBand target) {
         int checkStart = Math.max(0, count - 6);
         for (int i = checkStart; i < count; i++) {
@@ -1036,10 +1104,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                 cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                                 cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                                boolean isCandleShape = cb.height >= 12
+                                boolean isCandleShape = cb.height >= 8
                                         && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
                                 float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                                boolean isHollowBox = (bandWidth > 22 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                                boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
                                 if (isCandleShape && !isHollowBox) {
                                     bands.add(cb);
                                 }
@@ -1102,10 +1170,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                     cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                    boolean isCandleShape = cb.height >= 12
+                    boolean isCandleShape = cb.height >= 8
                             && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
                     float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                    boolean isHollowBox = (bandWidth > 22 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                    boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
                     if (isCandleShape && !isHollowBox) {
                         bands.add(cb);
                     }
@@ -1182,7 +1250,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     CandleBand prevTailBand = bands.get(bands.size() - 2);
                     int tailWidth = tailBand.endX - tailBand.startX + 1;
                     int tailGap = tailBand.centerX - prevTailBand.centerX;
-                    if (tailGap > Math.max((int) (medianStep * 2.25f), 38) || tailWidth > Math.max((int) (medianW * 2.3f), 30)) {
+                    if (tailGap > Math.max((int) (medianStep * 1.85f), 28) || tailWidth > Math.max((int) (medianW * 1.8f), 22)) {
                         bands.remove(bands.size() - 1);
                     } else {
                         break;
@@ -1200,14 +1268,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             CandleBand rightmost = bands.get(candleCount - 1);
             boolean hasInfantTickRight = false;
             if (candleCount >= 4) {
-                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, (int) (medianStep * 0.45f)));
+                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, (int) (medianStep * 0.40f)));
                 int tEnd = Math.min(endX - 1, rightmost.centerX + (int) (medianStep * 1.55f));
                 int tickCols = 0;
                 for (int tx = tStart; tx <= tEnd; tx++) {
                     if (colGreen[tx] + colRed[tx] >= 2) tickCols++;
                 }
                 int rWidth = rightmost.endX - rightmost.startX + 1;
-                if (tickCols >= 1 && tickCols <= 2 && rWidth >= Math.max(3, (int) (medianW * 0.75f))) {
+                if (tickCols >= 1 && tickCols <= 4 && rWidth >= Math.max(2, (int) (medianW * 0.65f))) {
                     hasInfantTickRight = true;
                 }
             }
@@ -1220,25 +1288,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // For compatibility with JSObject flow reporting
             CandleBand lastClosedCandle = closedSignalCandle;
 
-            // ধাপ ৩: Multi-Timeframe Trend Calculation across closed candles (up to closedIndex)
+            // ধাপ ৩: 4-Layer Mathematical Backward OHLC Multi-Timeframe Analysis (15M, 5M, 3M, 1M)
             int closedPoolSize = closedIndex + 1;
-            int macroStart = Math.max(0, closedPoolSize - 16);
-            int macroGreen = 0, macroRed = 0;
-            for (int i = macroStart; i < closedPoolSize; i++) {
-                if (bands.get(i).isGreen) macroGreen++;
-                else macroRed++;
-            }
-            boolean macroSlopeUp = closedPoolSize >= 4 && bands.get(closedIndex).minY < bands.get(macroStart).minY;
-            boolean macroSlopeDown = closedPoolSize >= 4 && bands.get(closedIndex).maxY > bands.get(macroStart).maxY;
-            String macroTrend15M = (macroGreen >= macroRed + 2 && macroSlopeUp) ? "UPTREND" : (macroRed >= macroGreen + 2 && macroSlopeDown) ? "DOWNTREND" : "SIDEWAYS";
-
-            int secStart = Math.max(0, closedPoolSize - 7);
-            int secGreen = 0, secRed = 0;
-            for (int i = secStart; i < closedPoolSize; i++) {
-                if (bands.get(i).isGreen) secGreen++;
-                else secRed++;
-            }
-            String secTrend5M = (secGreen >= secRed + 2) ? "UPTREND" : (secRed >= secGreen + 2) ? "DOWNTREND" : "SIDEWAYS";
+            int macroPeriod = (closedPoolSize >= 15) ? 15 : (closedPoolSize >= 10 ? closedPoolSize : 999);
+            String macroTrend15M = (macroPeriod <= closedPoolSize) ? classifyAggregatedOhlc(bands, closedPoolSize, macroPeriod, 22) : "SIDEWAYS";
+            String secTrend5M = classifyAggregatedOhlc(bands, closedPoolSize, 5, 22);
+            String momentum3M = classifyAggregatedOhlc(bands, closedPoolSize, 3, 20);
+            String microTrend1M = closedSignalCandle.isDoji ? "SIDEWAYS" : (closedSignalCandle.isGreen ? "UPTREND" : "DOWNTREND");
 
             int microStart = Math.max(0, closedPoolSize - 4);
             int microGreenVol = 0, microRedVol = 0;
@@ -1249,7 +1305,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int microTotalVol = microGreenVol + microRedVol;
             int microGreenPct = (int) (100f * microGreenVol / Math.max(1, microTotalVol));
             int microRedPct = 100 - microGreenPct;
-            String microTrend1M = (microGreenPct > microRedPct + 10) ? "UPTREND" : (microRedPct > microGreenPct + 10) ? "DOWNTREND" : "SIDEWAYS";
+
+            String ohlcSummaryBn = "১৫M " + ("UPTREND".equals(macroTrend15M) ? "আপ" : ("DOWNTREND".equals(macroTrend15M) ? "ডাউন" : "রেঞ্জ"))
+                    + " • ৫M " + ("UPTREND".equals(secTrend5M) ? "আপ" : ("DOWNTREND".equals(secTrend5M) ? "ডাউন" : "রেঞ্জ"))
+                    + " • ৩M " + ("UPTREND".equals(momentum3M) ? "আপ" : ("DOWNTREND".equals(momentum3M) ? "ডাউন" : "রেঞ্জ"));
 
             // ধাপ ৪: Market Condition Filter (Chop, Doji, Spinning Top, Volatility, Exhaustion & S/R Wall Guard)
             int totalClosedSpan = Math.max(1, closedSignalCandle.bodyHeight + closedSignalCandle.upperWickPx + closedSignalCandle.lowerWickPx);
@@ -1380,9 +1439,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             String direction = proposedDirection;
 
+            boolean has5m3mMomentum = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M)
+                    && (secTrend5M.equals(macroTrend15M) || "SIDEWAYS".equals(macroTrend15M));
             boolean step1Passed = isAuthenticChart;
             boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision);
-            boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M)) || isTrueHammer || isTrueShootingStar;
+            boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M))
+                    || has5m3mMomentum
+                    || isTrueHammer
+                    || isTrueShootingStar;
             boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike && sameColorStreak < 4;
             boolean step5Passed = !"WAIT".equals(direction) && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
@@ -1453,8 +1517,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             JSObject cMtf = new JSObject();
             cMtf.put("macroTrend15m", macroTrend15M);
             cMtf.put("secondaryTrend5m", secTrend5M);
+            cMtf.put("momentum3m", momentum3M);
             cMtf.put("microTrend1m", microTrend1M);
             cMtf.put("confluenceStatus", step3Passed ? "ALIGNED" : "CONFLICT");
+            cMtf.put("ohlcAggregationSummaryBn", ohlcSummaryBn);
             flowObj.put("multiTimeframe", cMtf);
 
             JSObject cFilter = new JSObject();
@@ -1574,6 +1640,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     private void applySignalToOverlay(String direction, int confidence, String verdictTitle, String reason, String symbol) {
+        isOneClickScanPending = false;
+        cancelPendingScanProgress();
         if (overlayView == null) return;
         TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
         TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
@@ -1651,6 +1719,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    isOneClickScanPending = false;
+                    cancelPendingScanProgress();
                     if (overlayView == null) return;
                     TextView dirView = (TextView) overlayView.findViewWithTag("directionText");
                     TextView detView = (TextView) overlayView.findViewWithTag("detailsText");
@@ -2530,14 +2600,47 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         data.put("action", "scanAndLock");
         notifyListeners("onOverlayScanToggle", data);
 
-        // Request fresh frame from VirtualDisplay, but retain backup to prevent timeout stalls
+        // Capture a clean, unobstructed broker chart frame by hiding overlayView for ~120ms first
         final String backupFrame = latestFrameBase64;
         final long backupTs = latestFrameTimestamp;
         isScanRequested = true;
         isOneClickScanPending = true;
+        overlayView.setVisibility(View.INVISIBLE);
 
         if (captureHandler != null) {
-            // ২/৫: Candle Data Collection চলছে (OHLC, Closed Candle ও Timer যাচাই)
+            // Start real analysis immediately after clean bubble-free capture (~120ms) while showing step progress
+            Runnable immediateAnalyzeRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (overlayView != null) {
+                        overlayView.setVisibility(View.VISIBLE);
+                    }
+                    if (!isOneClickScanPending) return;
+                    isAnalyzingNativeFrame.set(false);
+                    String frameToAnalyze = (latestFrameBase64 != null) ? latestFrameBase64 : backupFrame;
+                    long ts = (latestFrameBase64 != null) ? latestFrameTimestamp : backupTs;
+                    if (frameToAnalyze != null) {
+                        executeNativeAnalysis(frameToAnalyze, ts);
+                    } else {
+                        isOneClickScanPending = false;
+                        cancelPendingScanProgress();
+                        if (dirView != null) {
+                            dirView.setTextColor(0xFFF59E0B);
+                            dirView.setText("⚠️ ফ্রেম প্রস্তুত হয়নি");
+                        }
+                        if (detView != null) {
+                            detView.setText("স্ক্রিন শেয়ার পারমিশন চালু আছে কি না পরীক্ষা করুন");
+                        }
+                        if (scanToggleBtn != null) {
+                            updateScanButtonVisual(scanToggleBtn, false, false);
+                        }
+                    }
+                }
+            };
+            pendingScanProgressRunnables.add(immediateAnalyzeRunnable);
+            captureHandler.postDelayed(immediateAnalyzeRunnable, 120);
+
+            // Live step progress feedback while Gemini / CV analysis is executing
             Runnable stage2Runnable = new Runnable() {
                 @Override
                 public void run() {
@@ -2549,13 +2652,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("OHLC, Closed Candle ও Timer যাচাই...");
                     }
-                    isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage2Runnable);
-            captureHandler.postDelayed(stage2Runnable, 380);
+            captureHandler.postDelayed(stage2Runnable, 420);
 
-            // ৩/৫: Multi-Timeframe Analysis চলছে (১৫M + ৫M + ১M Trend)
             Runnable stage3Runnable = new Runnable() {
                 @Override
                 public void run() {
@@ -2567,13 +2668,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("১৫M + ৫M + ১M Trend কাঠামো যাচাই...");
                     }
-                    isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage3Runnable);
-            captureHandler.postDelayed(stage3Runnable, 760);
+            captureHandler.postDelayed(stage3Runnable, 820);
 
-            // ৪/৫: Market Condition Filter করা হচ্ছে (Trend, Sideways, Volatility ও Spike)
             Runnable stage4Runnable = new Runnable() {
                 @Override
                 public void run() {
@@ -2585,13 +2684,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("Trend, Sideways, Volatility ও Spike ফিল্টার...");
                     }
-                    isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage4Runnable);
-            captureHandler.postDelayed(stage4Runnable, 1140);
+            captureHandler.postDelayed(stage4Runnable, 1220);
 
-            // ৫/৫: Signal Scoring চলছে (Indicator ও Price Action মিলিয়ে Score)
             Runnable stage5Runnable = new Runnable() {
                 @Override
                 public void run() {
@@ -2603,40 +2700,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (detView != null) {
                         detView.setText("Indicator ও Price Action মিলিয়ে Score...");
                     }
-                    isScanRequested = true;
                 }
             };
             pendingScanProgressRunnables.add(stage5Runnable);
-            captureHandler.postDelayed(stage5Runnable, 1520);
-
-            // Final Deep Execution & Signal Locking (1900ms)
-            Runnable finalAnalysisRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    if (isOneClickScanPending) {
-                        isOneClickScanPending = false;
-                        isAnalyzingNativeFrame.set(false);
-                        String frameToAnalyze = (latestFrameBase64 != null) ? latestFrameBase64 : backupFrame;
-                        long ts = (latestFrameBase64 != null) ? latestFrameTimestamp : backupTs;
-                        if (frameToAnalyze != null) {
-                            executeNativeAnalysis(frameToAnalyze, ts);
-                        } else {
-                            if (dirView != null) {
-                                dirView.setTextColor(0xFFF59E0B);
-                                dirView.setText("⚠️ ফ্রেম প্রস্তুত হয়নি");
-                            }
-                            if (detView != null) {
-                                detView.setText("স্ক্রিন শেয়ার পারমিশন চালু আছে কি না পরীক্ষা করুন");
-                            }
-                            if (scanToggleBtn != null) {
-                                updateScanButtonVisual(scanToggleBtn, false, false);
-                            }
-                        }
-                    }
-                }
-            };
-            pendingScanProgressRunnables.add(finalAnalysisRunnable);
-            captureHandler.postDelayed(finalAnalysisRunnable, 1900);
+            captureHandler.postDelayed(stage5Runnable, 1620);
+        } else {
+            overlayView.setVisibility(View.VISIBLE);
         }
     }
 
@@ -2788,6 +2857,148 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
     }
 
+    private String getAppSigningFingerprint(String algorithm) {
+        try {
+            Context ctx = getContext();
+            if (ctx == null) return "";
+            PackageManager pm = ctx.getPackageManager();
+            String pkg = ctx.getPackageName();
+            Signature[] signatures = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo pkgInfo = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+                if (pkgInfo != null && pkgInfo.signingInfo != null) {
+                    SigningInfo signingInfo = pkgInfo.signingInfo;
+                    signatures = signingInfo.hasMultipleSigners()
+                            ? signingInfo.getApkContentsSigners()
+                            : signingInfo.getSigningCertificateHistory();
+                }
+            } else {
+                @SuppressWarnings("deprecation")
+                PackageInfo pkgInfo = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES);
+                if (pkgInfo != null) {
+                    signatures = pkgInfo.signatures;
+                }
+            }
+            if (signatures == null || signatures.length == 0) return "";
+            MessageDigest md = MessageDigest.getInstance(algorithm);
+            byte[] digest = md.digest(signatures[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < digest.length; i++) {
+                if (i > 0) sb.append(':');
+                sb.append(String.format(Locale.US, "%02X", digest[i] & 0xFF));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @PluginMethod
+    public void signInWithGoogleNative(PluginCall call) {
+        final String serverClientId = call.getString(
+                "serverClientId",
+                "1074453942803-a3p076amqntv9oblaq01fb6aclbf5c7r.apps.googleusercontent.com"
+        );
+        final Activity activity = getActivity();
+        if (activity == null || activity.isFinishing()) {
+            JSObject errRes = new JSObject();
+            errRes.put("success", false);
+            errRes.put("errorCode", "NO_ACTIVITY");
+            errRes.put("error", "অ্যাপ অ্যাক্টিভিটি প্রস্তুত নয়।");
+            call.resolve(errRes);
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            try {
+                CredentialManager credentialManager = CredentialManager.create(activity);
+                GetSignInWithGoogleOption signInWithGoogleOption =
+                        new GetSignInWithGoogleOption.Builder(serverClientId).build();
+                GetCredentialRequest request = new GetCredentialRequest.Builder()
+                        .addCredentialOption(signInWithGoogleOption)
+                        .build();
+
+                credentialManager.getCredentialAsync(
+                        activity,
+                        request,
+                        null,
+                        ContextCompat.getMainExecutor(activity),
+                        new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                            @Override
+                            public void onResult(@NonNull GetCredentialResponse response) {
+                                Credential credential = response.getCredential();
+                                if (credential instanceof CustomCredential
+                                        && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                                    try {
+                                        GoogleIdTokenCredential googleCred =
+                                                GoogleIdTokenCredential.createFrom(credential.getData());
+                                        JSObject ok = new JSObject();
+                                        ok.put("success", true);
+                                        ok.put("idToken", googleCred.getIdToken());
+                                        ok.put("email", googleCred.getId());
+                                        ok.put("displayName", googleCred.getDisplayName() != null ? googleCred.getDisplayName() : "");
+                                        call.resolve(ok);
+                                    } catch (GoogleIdTokenParsingException parseEx) {
+                                        JSObject fail = new JSObject();
+                                        fail.put("success", false);
+                                        fail.put("errorCode", "TOKEN_PARSE_ERROR");
+                                        fail.put("error", "Google ID টোকেন পার্স করা যায়নি: " + parseEx.getMessage());
+                                        call.resolve(fail);
+                                    }
+                                } else {
+                                    JSObject fail = new JSObject();
+                                    fail.put("success", false);
+                                    fail.put("errorCode", "UNEXPECTED_CREDENTIAL");
+                                    fail.put("error", "অপ্রত্যাশিত Google ক্রেডেনশিয়াল ধরন পাওয়া গেছে।");
+                                    call.resolve(fail);
+                                }
+                            }
+
+                            @Override
+                            public void onError(@NonNull GetCredentialException e) {
+                                JSObject fail = new JSObject();
+                                fail.put("success", false);
+                                if (e instanceof GetCredentialCancellationException) {
+                                    fail.put("cancelled", true);
+                                    fail.put("errorCode", "CANCELLED");
+                                    fail.put("error", "Google অ্যাকাউন্ট বাছাই বাতিল করা হয়েছে।");
+                                    call.resolve(fail);
+                                    return;
+                                }
+
+                                String rawMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                                String lower = rawMsg.toLowerCase(Locale.US);
+                                boolean likelyShaOrConfig = (e instanceof NoCredentialException)
+                                        || (e instanceof GetCredentialProviderConfigurationException)
+                                        || lower.contains("developer")
+                                        || lower.contains("28444")
+                                        || lower.contains("10:")
+                                        || lower.contains("caller has no access")
+                                        || lower.contains("sha")
+                                        || lower.contains("configuration");
+
+                                fail.put("errorCode", likelyShaOrConfig ? "NEEDS_ANDROID_SHA1" : "NATIVE_ERROR");
+                                fail.put("error", rawMsg);
+                                fail.put("packageName", getContext() != null ? getContext().getPackageName() : "com.tradepulse.bot");
+                                fail.put("sha1", getAppSigningFingerprint("SHA-1"));
+                                fail.put("sha256", getAppSigningFingerprint("SHA-256"));
+                                call.resolve(fail);
+                            }
+                        }
+                );
+            } catch (Exception ex) {
+                JSObject fail = new JSObject();
+                fail.put("success", false);
+                fail.put("errorCode", "NATIVE_INIT_ERROR");
+                fail.put("error", ex.getMessage() != null ? ex.getMessage() : "Native Google Sign-In init failed");
+                fail.put("packageName", getContext() != null ? getContext().getPackageName() : "com.tradepulse.bot");
+                fail.put("sha1", getAppSigningFingerprint("SHA-1"));
+                fail.put("sha256", getAppSigningFingerprint("SHA-256"));
+                call.resolve(fail);
+            }
+        });
+    }
+
     @PluginMethod
     public void openGoogleAuthInBrowser(PluginCall call) {
         final String url = call.getString("url", "");
@@ -2796,31 +3007,29 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             return;
         }
         pendingAuthCallbackUri = null;
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-            // Request Chrome Custom Tabs presentation when supported without external AndroidX dependency
-            Bundle customTabsExtras = new Bundle();
-            customTabsExtras.putBinder("android.support.customtabs.extra.SESSION", null);
-            intent.putExtras(customTabsExtras);
-            intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR", 0xFF0F172A);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getActivity().startActivity(intent);
-            JSObject res = new JSObject();
-            res.put("opened", true);
-            call.resolve(res);
-        } catch (Exception e) {
+        final Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity unavailable");
+            return;
+        }
+        activity.runOnUiThread(() -> {
             try {
-                Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                getContext().startActivity(fallback);
+                CustomTabColorSchemeParams colorParams = new CustomTabColorSchemeParams.Builder()
+                        .setToolbarColor(0xFF0F172A)
+                        .build();
+                CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
+                        .setDefaultColorSchemeParams(colorParams)
+                        .setShowTitle(false)
+                        .setUrlBarHidingEnabled(true)
+                        .build();
+                customTabsIntent.launchUrl(activity, Uri.parse(url));
                 JSObject res = new JSObject();
                 res.put("opened", true);
                 call.resolve(res);
-            } catch (Exception ex) {
-                call.reject("ব্রাউজার খোলা যায়নি: " + ex.getMessage());
+            } catch (Exception e) {
+                call.reject("ইন-অ্যাপ লগইন ট্যাব খোলা যায়নি: " + e.getMessage());
             }
-        }
+        });
     }
 
     @PluginMethod

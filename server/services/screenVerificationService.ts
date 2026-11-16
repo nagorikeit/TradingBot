@@ -411,24 +411,34 @@ export class ScreenVerificationService {
         : 'UNCERTAIN';
 
     // Detect if Vision confused the currently forming candle with the newly closed candle
-    const pixelConfirmedOpposite =
+    const pixelConfirmedDifferent =
       pixelAudit &&
-      pixelAudit.candleCount >= 5 &&
-      pixelAudit.bodyPct >= 30 &&
-      ((visionClosedColor === 'GREEN' && pixelAudit.closedColor === 'RED') ||
-        (visionClosedColor === 'RED' && pixelAudit.closedColor === 'GREEN'));
+      pixelAudit.candleCount >= 6 &&
+      (pixelAudit.bodyPct >= 20 || pixelAudit.closedColor === 'DOJI') &&
+      pixelAudit.closedColor !== visionClosedColor;
 
     const visionMatchedFormingInstead =
-      Boolean(pixelConfirmedOpposite) &&
+      Boolean(pixelConfirmedDifferent) &&
       pixelAudit !== null &&
       pixelAudit.formingColor !== 'NONE' &&
-      pixelAudit.formingColor !== 'DOJI' &&
-      visionClosedColor === pixelAudit.formingColor;
+      (visionClosedColor === pixelAudit.formingColor ||
+        visionData.formingCandleColor === 'NONE');
+
+    const pixelConfirmedOpposite = Boolean(
+      pixelAudit &&
+        pixelAudit.candleCount >= 5 &&
+        pixelAudit.bodyPct >= 30 &&
+        !visionMatchedFormingInstead &&
+        ((visionClosedColor === 'GREEN' && pixelAudit.closedColor === 'RED') ||
+          (visionClosedColor === 'RED' && pixelAudit.closedColor === 'GREEN'))
+    );
+
+    const pixelOverrodeClosedCandle =
+      Boolean(pixelAudit && pixelAudit.candleCount >= 5) &&
+      (visionClosedColor === 'UNCERTAIN' || visionMatchedFormingInstead);
 
     const effectiveClosedColor: 'GREEN' | 'RED' | 'DOJI' | 'UNCERTAIN' =
-      visionClosedColor === 'UNCERTAIN' && pixelAudit && pixelAudit.candleCount >= 5
-        ? pixelAudit.closedColor
-        : visionMatchedFormingInstead && pixelAudit
+      pixelOverrodeClosedCandle && pixelAudit
         ? pixelAudit.closedColor
         : visionClosedColor;
 
@@ -440,13 +450,19 @@ export class ScreenVerificationService {
         : 'DOJI';
 
     const upperWickPct = Number(
-      visionData.closedCandleUpperWickPercent ?? pixelAudit?.upperWickPct ?? 0
+      pixelOverrodeClosedCandle && pixelAudit
+        ? pixelAudit.upperWickPct
+        : visionData.closedCandleUpperWickPercent ?? pixelAudit?.upperWickPct ?? 0
     );
     const lowerWickPct = Number(
-      visionData.closedCandleLowerWickPercent ?? pixelAudit?.lowerWickPct ?? 0
+      pixelOverrodeClosedCandle && pixelAudit
+        ? pixelAudit.lowerWickPct
+        : visionData.closedCandleLowerWickPercent ?? pixelAudit?.lowerWickPct ?? 0
     );
     const bodyPct = Number(
-      visionData.closedCandleBodyPercent ?? pixelAudit?.bodyPct ?? (closedCandleType === 'DOJI' ? 12 : 55)
+      pixelOverrodeClosedCandle && pixelAudit
+        ? pixelAudit.bodyPct
+        : visionData.closedCandleBodyPercent ?? pixelAudit?.bodyPct ?? (closedCandleType === 'DOJI' ? 12 : 55)
     );
 
     const isSpinningTop =
@@ -456,12 +472,12 @@ export class ScreenVerificationService {
     const hasUpperPinBar =
       !isSpinningTop &&
       ((upperWickPct >= 38 && lowerWickPct <= 22 && upperWickPct >= Math.max(25, lowerWickPct * 1.7)) ||
-        (visionData.closedCandleRejection === 'UPPER_REJECTION' && lowerWickPct <= 24));
+        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'UPPER_REJECTION' && lowerWickPct <= 24));
 
     const hasLowerPinBar =
       !isSpinningTop &&
       ((lowerWickPct >= 38 && upperWickPct <= 22 && lowerWickPct >= Math.max(25, upperWickPct * 1.7)) ||
-        (visionData.closedCandleRejection === 'LOWER_REJECTION' && upperWickPct <= 24));
+        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'LOWER_REJECTION' && upperWickPct <= 24));
 
     const hasRejection = hasUpperPinBar || hasLowerPinBar;
 
@@ -474,18 +490,36 @@ export class ScreenVerificationService {
         ? `লাল${hasRejection ? ' (উইক রিজেকশন)' : ' (বিয়ারিশ বডি)'}`
         : 'ডোজি (সিদ্ধান্তহীন)';
 
-    // Normalize Multi-Timeframe & Market Filter from Vision AI
-    const macroTrend15m =
+    // Normalize Multi-Timeframe & Market Filter from Pixel OHLC Aggregation (1M -> 3M, 5M, 15M) + Vision AI
+    const rawVision15m =
       visionData.macroTrend15m ||
       (visionData.chartStructure === 'UPTREND'
         ? 'UPTREND'
         : visionData.chartStructure === 'DOWNTREND'
         ? 'DOWNTREND'
         : 'SIDEWAYS');
-    const secondaryTrend5m = visionData.secondaryTrend5m || macroTrend15m;
-    const microTrend1m =
-      visionData.microTrend1m ||
-      (closedCandleType === 'BULLISH' ? 'UPTREND' : closedCandleType === 'BEARISH' ? 'DOWNTREND' : 'SIDEWAYS');
+    const macroTrend15m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+      pixelAudit && pixelAudit.candleCount >= 15
+        ? pixelAudit.tf15m
+        : pixelAudit && pixelAudit.candleCount >= 11 && pixelAudit.tf15m !== 'SIDEWAYS'
+        ? pixelAudit.tf15m
+        : rawVision15m;
+    const secondaryTrend5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+      pixelAudit && pixelAudit.candleCount >= 8
+        ? pixelAudit.tf5m
+        : visionData.secondaryTrend5m || macroTrend15m;
+    const microTrend1m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+      closedCandleType === 'BULLISH'
+        ? 'UPTREND'
+        : closedCandleType === 'BEARISH'
+        ? 'DOWNTREND'
+        : visionData.microTrend1m || 'SIDEWAYS';
+    const momentum3m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+      pixelAudit && pixelAudit.candleCount >= 6
+        ? pixelAudit.tf3m
+        : secondaryTrend5m !== 'SIDEWAYS'
+        ? secondaryTrend5m
+        : microTrend1m;
 
     const marketRegime =
       visionData.marketRegime ||
@@ -622,22 +656,38 @@ export class ScreenVerificationService {
       );
 
       // Check real visible chart slope via pixelAudit if available
+      const has5m3mMomentum =
+        secondaryTrend5m !== 'SIDEWAYS' && momentum3m === secondaryTrend5m;
+      const is15mOpposing5m3m =
+        macroTrend15m !== 'SIDEWAYS' &&
+        has5m3mMomentum &&
+        macroTrend15m !== secondaryTrend5m;
+      const is5m3mConflicting =
+        secondaryTrend5m !== 'SIDEWAYS' &&
+        momentum3m !== 'SIDEWAYS' &&
+        secondaryTrend5m !== momentum3m;
+
       const isFlatVisualRange = Boolean(
         pixelAudit &&
           pixelAudit.candleCount >= 6 &&
           pixelAudit.slope12 === 'FLAT' &&
+          !has5m3mMomentum &&
           !hasRejection
       );
 
       const mtfConfluence: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL' =
-        isFlatVisualRange
+        macroTrend15m !== 'SIDEWAYS' &&
+        secondaryTrend5m === macroTrend15m &&
+        momentum3m === macroTrend15m
+          ? 'ALIGNED'
+          : has5m3mMomentum && !is15mOpposing5m3m
+          ? 'ALIGNED'
+          : is5m3mConflicting || is15mOpposing5m3m
+          ? 'CONFLICT'
+          : isFlatVisualRange
           ? 'NEUTRAL'
           : macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
           ? 'ALIGNED'
-          : macroTrend15m === 'SIDEWAYS' && secondaryTrend5m === 'SIDEWAYS'
-          ? 'NEUTRAL'
-          : macroTrend15m !== secondaryTrend5m && secondaryTrend5m !== 'SIDEWAYS'
-          ? 'CONFLICT'
           : 'NEUTRAL';
 
       // User-Drawn Chart Markup Confluence & Anti-Wall Entry Guard
@@ -656,7 +706,7 @@ export class ScreenVerificationService {
         directionalScore += aiForecast === 'CALL' ? 2.0 : -2.0;
       }
 
-      // Enforce genuine alignment: disallow hallucinated 15M/5M alignment when 1m visual structure is flat without true pin-bar or drawing bounce!
+      // Enforce genuine 4-layer TF alignment (15M Macro + 5M Structure + 3M Momentum + 1M Trigger)
       const step3Passed = Boolean(
         !isBlockedByDrawing &&
           !isFlatVisualRange &&
@@ -807,17 +857,19 @@ export class ScreenVerificationService {
         {
           step: 3,
           key: 'MTF_TREND' as const,
-          labelBn: 'মাল্টি-TF',
+          labelBn: 'মাল্টি-TF (15/5/3/1)',
           passed: step3Passed,
           detailBn: isBlockedByDrawing
             ? 'লেভেল বাধা'
             : isDrawingConfirmed
             ? 'ড্রয়িং ম্যাচ'
+            : pixelAudit?.ohlcSummaryBn && step3Passed
+            ? pixelAudit.ohlcSummaryBn
             : mtfConfluence === 'ALIGNED'
-            ? 'অ্যালাইন্ড'
+            ? '১৫M+৫M+৩M অ্যালাইন্ড'
             : hasRejection && step3Passed
             ? 'রিজেকশন জোন'
-            : 'রেঞ্জ/দুর্বল',
+            : pixelAudit?.ohlcSummaryBn || 'রেঞ্জ/দুর্বল',
         },
         {
           step: 4,
@@ -940,8 +992,16 @@ export class ScreenVerificationService {
         reasoning.push(`ভিজুয়াল সামারি: ${visionData.visionSummary}`);
       }
 
-      // Sync corrected closedCandleColor onto returned visionData so HUD & logs match pixel verification
+      // Sync corrected closedCandleColor & lastCandleDirection onto returned visionData so HUD & logs match pixel verification
       visionData.closedCandleColor = effectiveClosedColor;
+      visionData.lastCandleDirection =
+        effectiveClosedColor === 'GREEN'
+          ? 'BULLISH'
+          : effectiveClosedColor === 'RED'
+          ? 'BEARISH'
+          : effectiveClosedColor === 'DOJI'
+          ? 'DOJI'
+          : 'UNCERTAIN';
 
       signalFlow = {
         confirmedPoints,
@@ -978,8 +1038,10 @@ export class ScreenVerificationService {
         multiTimeframe: {
           macroTrend15m,
           secondaryTrend5m,
+          momentum3m,
           microTrend1m,
           confluenceStatus: mtfConfluence,
+          ohlcAggregationSummaryBn: pixelAudit?.ohlcSummaryBn,
         },
         marketFilter: {
           regime: marketRegime,
