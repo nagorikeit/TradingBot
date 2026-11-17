@@ -474,7 +474,7 @@ export class ScreenVerificationService {
     const pixelConfirmedDifferent =
       pixelAudit &&
       pixelAudit.candleCount >= 6 &&
-      (pixelAudit.bodyPct >= 20 || pixelAudit.closedColor === 'DOJI') &&
+      (pixelAudit.bodyPct >= 15 || pixelAudit.closedColor === 'DOJI') &&
       pixelAudit.closedColor !== visionClosedColor;
 
     const visionMatchedFormingInstead =
@@ -487,7 +487,7 @@ export class ScreenVerificationService {
     const pixelConfirmedOpposite = Boolean(
       pixelAudit &&
         pixelAudit.candleCount >= 5 &&
-        pixelAudit.bodyPct >= 30 &&
+        pixelAudit.bodyPct >= 22 &&
         !visionMatchedFormingInstead &&
         ((visionClosedColor === 'GREEN' && pixelAudit.closedColor === 'RED') ||
           (visionClosedColor === 'RED' && pixelAudit.closedColor === 'GREEN'))
@@ -775,12 +775,15 @@ export class ScreenVerificationService {
             (hasRejection && mtfConfluence !== 'CONFLICT'))
       );
 
-      // Market filter MUST fail on SIDEWAYS / DOJI_CHOPPY / SPINNING TOP / PIXEL CHOP / TRUE 4+ EXHAUSTION CHASING
+      // Market filter MUST fail on true 5-flip checkerboard chop, Spinning Top, HIGH_VOLATILITY_SPIKE, or TRUE 4+ exhaustion chasing
       const isPixelChoppy = Boolean(
         pixelAudit &&
           pixelAudit.candleCount >= 6 &&
           (pixelAudit.alternatingFlips >= 5 ||
-            (pixelAudit.alternatingFlips >= 4 && pixelAudit.sameColorStreak <= 1))
+            (pixelAudit.alternatingFlips >= 4 &&
+              pixelAudit.sameColorStreak <= 1 &&
+              !has5m3mMomentum &&
+              !hasRejection))
       );
       const isBinaryMode = !isSpotSlTp;
       const isExhaustedCallChase = Boolean(
@@ -805,19 +808,32 @@ export class ScreenVerificationService {
       );
       const isExhaustionChase = isExhaustedCallChase || isExhaustedPutChase;
 
+      const isWeakDojiRisk =
+        visionData.tradeQualityTier === 'HIGH_RISK_DOJI' &&
+        (closedCandleType === 'DOJI' || bodyPct < 24 || isPixelChoppy);
+
       const isUnsafeMarketRegime =
         marketRegime === 'DOJI_CHOPPY' ||
         marketRegime === 'HIGH_VOLATILITY_SPIKE' ||
-        visionData.tradeQualityTier === 'HIGH_RISK_DOJI' ||
+        isWeakDojiRisk ||
         isSpinningTop ||
         isPixelChoppy;
-      const isSidewaysNoRejection = marketRegime === 'SIDEWAYS' && !hasRejection && !isDrawingConfirmed;
+      const isSidewaysNoRejection =
+        marketRegime === 'SIDEWAYS' &&
+        mtfConfluence !== 'ALIGNED' &&
+        !hasRejection &&
+        !isDrawingConfirmed;
+      const aiFilterBlockedUnaligned =
+        visionData.step4FilterPassed === false &&
+        mtfConfluence !== 'ALIGNED' &&
+        !hasRejection &&
+        !isDrawingConfirmed;
       const filterPassed = Boolean(
         !isUnsafeMarketRegime &&
           !isSidewaysNoRejection &&
           !isBlockedByDrawing &&
           !isExhaustionChase &&
-          (visionData.step4FilterPassed !== false)
+          !aiFilterBlockedUnaligned
       );
 
       const step4SpecificBlockReason = isBlockedByDrawing

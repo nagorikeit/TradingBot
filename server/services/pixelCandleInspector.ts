@@ -132,10 +132,10 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     const h = Math.floor(srcH / step);
     const isPortrait = h > w;
 
-    const yStart = Math.floor(h * (isPortrait ? 0.18 : 0.08));
-    const yEnd = Math.floor(h * (isPortrait ? 0.70 : 0.86));
-    const xStart = Math.floor(w * 0.05);
-    const xEnd = Math.floor(w * (isPortrait ? 0.83 : 0.87));
+    const yStart = Math.floor(h * (isPortrait ? 0.14 : 0.05));
+    const yEnd = Math.floor(h * (isPortrait ? 0.78 : 0.95));
+    const xStart = Math.floor(w * 0.03);
+    const xEnd = Math.floor(w * (isPortrait ? 0.84 : 0.88));
 
     if (xEnd - xStart < 60 || yEnd - yStart < 60) return null;
 
@@ -219,7 +219,7 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         inBand = false;
         const endX = x - 1;
         const width = endX - bandStart + 1;
-        if (width >= 2 && width <= 60) {
+        if (width >= 2 && width <= 65) {
           let bMinY = 99999;
           let bMaxY = 0;
           let maxColPx = 0;
@@ -238,29 +238,56 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
           const mass = sumGreen + sumRed;
           const fillDensity = mass / Math.max(1, width * height);
 
-          // Reject wide hollow boxes / flat price pills
-          const isHollowOrPill = width > 18 && fillDensity < 0.28;
-          if (height >= 7 && !isHollowOrPill && (height >= width * 0.85 || width <= 8)) {
-            let bodyTop = bMaxY;
-            let bodyBottom = bMinY;
+          let bodyTop = bMinY;
+          let bodyBottom = bMaxY;
+          const nonEmptyMins: number[] = [];
+          const nonEmptyMaxs: number[] = [];
+          for (let bx = bandStart; bx <= endX; bx++) {
+            if (colCounts[bx] >= 4) {
+              nonEmptyMins.push(colMinY[bx]);
+              nonEmptyMaxs.push(colMaxY[bx]);
+            }
+          }
+          if (width >= 5 && nonEmptyMins.length >= 3) {
+            nonEmptyMins.sort((a, b) => a - b);
+            nonEmptyMaxs.sort((a, b) => a - b);
+            bodyTop = nonEmptyMins[Math.floor(nonEmptyMins.length / 2)];
+            bodyBottom = nonEmptyMaxs[Math.floor(nonEmptyMaxs.length / 2)];
+          } else {
+            bodyTop = bMaxY;
+            bodyBottom = bMinY;
             const bodyThresh = Math.max(3, Math.round(maxColPx * 0.45));
-
             for (let bx = bandStart; bx <= endX; bx++) {
               if (colCounts[bx] >= bodyThresh) {
                 if (colMinY[bx] < bodyTop) bodyTop = colMinY[bx];
                 if (colMaxY[bx] > bodyBottom) bodyBottom = colMaxY[bx];
               }
             }
-            if (bodyBottom < bodyTop) {
-              bodyTop = bMinY;
-              bodyBottom = bMaxY;
+          }
+          if (bodyBottom < bodyTop) {
+            bodyTop = bMinY;
+            bodyBottom = bMaxY;
+          }
+
+          const centerX = Math.round((bandStart + endX) / 2);
+          const upperWickPx = Math.max(0, bodyTop - bMinY);
+          const lowerWickPx = Math.max(0, bMaxY - bodyBottom);
+          const bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+
+          let bodyPixels = 0;
+          for (let py = bodyTop; py <= bodyBottom; py++) {
+            for (let px = bandStart; px <= endX; px++) {
+              if (grid[py * w + px] > 0) bodyPixels++;
             }
+          }
+          const bodyFillDensity = bodyPixels / Math.max(1, width * bodyHeight);
 
-            const centerX = Math.round((bandStart + endX) / 2);
-            const upperWickPx = Math.max(0, bodyTop - bMinY);
-            const lowerWickPx = Math.max(0, bMaxY - bodyBottom);
-            const bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+          // Reject wide hollow drawing boxes (empty interior) while keeping zoomed-in Hammer/Pin-bar candles with solid bodies
+          const isHollowOrPill = width > 18 && fillDensity < 0.28 && bodyFillDensity < 0.48;
+          const hasValidMorphology =
+            height >= width * 0.45 || width <= 8 || bodyHeight >= 5 || upperWickPx >= 4 || lowerWickPx >= 4;
 
+          if (height >= 7 && !isHollowOrPill && hasValidMorphology) {
             rawBands.push({
               startX: bandStart,
               endX,
@@ -284,10 +311,13 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
 
     if (rawBands.length < 5) return null;
 
-    // Filter outliers using median candle width and pitch gap (strips right-edge Y-axis price/timer pills & UI badges)
+    // Filter outliers using median candle width (ignoring 1-3px Doji wicks) and pitch gap
     const sampleForPitch = rawBands.slice(-Math.min(12, rawBands.length - 1), -1);
-    const widths = sampleForPitch.map((b) => b.width).sort((a, b) => a - b);
-    const medianW = widths[Math.floor(widths.length / 2)] || 8;
+    const bodyWidths = sampleForPitch.filter((b) => b.width >= 4).map((b) => b.width).sort((a, b) => a - b);
+    const allWidths = sampleForPitch.map((b) => b.width).sort((a, b) => a - b);
+    const medianW =
+      (bodyWidths.length > 0 ? bodyWidths[Math.floor(bodyWidths.length / 2)] : allWidths[Math.floor(allWidths.length / 2)]) ||
+      8;
     const gaps: number[] = [];
     for (let i = 1; i < sampleForPitch.length; i++) {
       gaps.push(sampleForPitch[i].centerX - sampleForPitch[i - 1].centerX);

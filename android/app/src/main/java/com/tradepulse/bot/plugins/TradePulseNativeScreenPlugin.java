@@ -57,7 +57,6 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.BufferedReader;
@@ -854,10 +853,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // Bottom ~28% is trade panel (Investment %, Timer, and huge green Buy / red Sell buttons)
             // Central ~22% to 70% is the true candlestick chart canvas
             // Right edge (from 85% to 100%) has the vertical price scale & current price badge
-            int startY = (int) (height * 0.22f);
-            int endY = (int) (height * 0.70f);
-            int startX = (int) (width * 0.08f); // Starts past left sidebar/briefcase icon to prevent false red bias
-            int endX = (int) (width * 0.81f); // Excludes right price axis & live current-price label pill
+            boolean isPortraitFrame = height > width;
+            int startY = (int) (height * (isPortraitFrame ? 0.14f : 0.05f));
+            int endY = (int) (height * (isPortraitFrame ? 0.78f : 0.95f));
+            int startX = (int) (width * (isPortraitFrame ? 0.05f : 0.03f)); // Starts past left sidebar/briefcase icon
+            int endX = (int) (width * (isPortraitFrame ? 0.84f : 0.88f)); // Excludes right price axis & live price pill
 
             // Determine Floating Overlay's exact on-screen position so we can MASK IT OUT!
             // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button and border from contaminating candles!
@@ -1113,10 +1113,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                 cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                                 cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                                boolean isCandleShape = cb.height >= 8
-                                        && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
+                                boolean isCandleShape = cb.height >= 7
+                                        && (cb.height >= bandWidth * 0.45f || cb.bodyHeight >= 5 || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
                                 float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                                boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                                boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && cb.bodyHeight < 5 && fillDensity < 0.25f);
                                 if (isCandleShape && !isHollowBox) {
                                     bands.add(cb);
                                 }
@@ -1179,10 +1179,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
                     cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
 
-                    boolean isCandleShape = cb.height >= 8
-                            && (cb.height >= bandWidth * 0.85f || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
+                    boolean isCandleShape = cb.height >= 7
+                            && (cb.height >= bandWidth * 0.45f || cb.bodyHeight >= 5 || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
                     float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                    boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && fillDensity < 0.25f);
+                    boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && cb.bodyHeight < 5 && fillDensity < 0.25f);
                     if (isCandleShape && !isHollowBox) {
                         bands.add(cb);
                     }
@@ -1329,12 +1329,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             boolean isDojiIndecision = (closedSignalCandle.isDoji || bodyPct <= 18 || isSpinningTop);
 
             boolean isAlternatingChop = false;
-            if (closedPoolSize >= 4) {
+            if (closedPoolSize >= 5) {
                 boolean c1 = bands.get(closedIndex).isGreen;
                 boolean c2 = bands.get(closedIndex - 1).isGreen;
                 boolean c3 = bands.get(closedIndex - 2).isGreen;
                 boolean c4 = bands.get(closedIndex - 3).isGreen;
-                if ((c1 != c2) && (c2 != c3) && (c3 != c4)) {
+                boolean c5 = bands.get(closedIndex - 4).isGreen;
+                boolean has5m3mTrend = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M);
+                if ((c1 != c2) && (c2 != c3) && (c3 != c4) && (c4 != c5) && !has5m3mTrend) {
                     isAlternatingChop = true;
                 }
             }
@@ -1419,18 +1421,20 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
                 }
                 // Setup 3: Healthy Pullback/Momentum Continuation (allows streak 2-3, blocks 4+ exhaustion or hitting prior S/R wall!)
-                else if ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && microGreenPct >= 62
-                    && sameColorStreak <= 3 && !nearTop && bodyPct >= 38
+                else if (("UPTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(momentum3M)))
+                    && "UPTREND".equals(secTrend5M) && microGreenPct >= 58
+                    && sameColorStreak <= 3 && !nearTop && bodyPct >= 35
                     && closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
                     proposedDirection = "UP";
-                    confidence = 83;
+                    confidence = "UPTREND".equals(macroTrend15M) ? 84 : 82;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
-                } else if ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && microRedPct >= 62
-                    && sameColorStreak <= 3 && !nearBottom && bodyPct >= 38
+                } else if (("DOWNTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(momentum3M)))
+                    && "DOWNTREND".equals(secTrend5M) && microRedPct >= 58
+                    && sameColorStreak <= 3 && !nearBottom && bodyPct >= 35
                     && !closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
                     proposedDirection = "DOWN";
-                    confidence = 83;
+                    confidence = "DOWNTREND".equals(macroTrend15M) ? 84 : 82;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
                 } else if (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom))) {
@@ -1456,7 +1460,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     || has5m3mMomentum
                     || isTrueHammer
                     || isTrueShootingStar;
-            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike && sameColorStreak < 4;
+            boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike
+                    && (sameColorStreak < 4 || isTrueHammer || isTrueShootingStar);
             boolean step5Passed = !"WAIT".equals(direction) && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
 
@@ -2957,7 +2962,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                         ok.put("email", googleCred.getId());
                                         ok.put("displayName", googleCred.getDisplayName() != null ? googleCred.getDisplayName() : "");
                                         call.resolve(ok);
-                                    } catch (GoogleIdTokenParsingException parseEx) {
+                                    } catch (Exception parseEx) {
                                         JSObject fail = new JSObject();
                                         fail.put("success", false);
                                         fail.put("errorCode", "TOKEN_PARSE_ERROR");
