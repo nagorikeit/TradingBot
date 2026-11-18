@@ -107,6 +107,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private volatile int latestFrameWidth = 720;
     private volatile int latestFrameHeight = 1280;
     private volatile long latestFrameTimestamp = 0;
+    private volatile boolean latestFrameWasClean = false;
     private volatile boolean isScanningActive = false;
     private volatile boolean isScanRequested = false;
     private volatile boolean isOneClickScanPending = false;
@@ -444,6 +445,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         bitmap.copyPixelsFromBuffer(paddedBuffer);
                     }
 
+                    final boolean frameClean = (overlayView == null || overlayView.getVisibility() != View.VISIBLE);
                     Bitmap cropped = (safeWidth == w) ? bitmap : Bitmap.createBitmap(bitmap, 0, 0, w, h);
                     ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                     cropped.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream);
@@ -452,6 +454,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     latestFrameBase64 = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP);
                     latestFrameWidth = w;
                     latestFrameHeight = h;
+                    latestFrameWasClean = frameClean;
                     latestFrameTimestamp = System.currentTimeMillis();
 
                     if (cropped != bitmap) {
@@ -518,17 +521,21 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private void captureAndEmitLatestFrame() {
         if (latestFrameBase64 != null) {
             emitCachedFrame();
-            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp);
+            executeNativeAnalysis(latestFrameBase64, latestFrameTimestamp, latestFrameWasClean);
             return;
         }
         isScanRequested = true;
     }
 
     private void analyzeNativeFrameInBackground(final String frameBase64, final long timestamp) {
-        executeNativeAnalysis(frameBase64, timestamp);
+        executeNativeAnalysis(frameBase64, timestamp, latestFrameWasClean);
     }
 
     public void executeNativeAnalysis(final String frameBase64, final long timestamp) {
+        executeNativeAnalysis(frameBase64, timestamp, latestFrameWasClean);
+    }
+
+    public void executeNativeAnalysis(final String frameBase64, final long timestamp, final boolean isCleanFrame) {
         if (frameBase64 == null) {
             showAnalysisErrorOnOverlay("স্ক্রিন ফ্রেম লোড হয়নি — আবার চেষ্টা করুন");
             return;
@@ -553,7 +560,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         return;
                     }
                     // Priority 2: On-Device Fallback Computer Vision Analyzer (Offline resilience)
-                    analyzeFrameLocallyNative(frameBase64);
+                    analyzeFrameLocallyNative(frameBase64, isCleanFrame);
                 } catch (Exception e) {
                     Log.e("TradePulseNativeScreen", "Native analysis exception: " + e.getMessage(), e);
                     showAnalysisErrorOnOverlay("বিশ্লেষণ ব্যর্থ হয়েছে — আবার চাপুন");
@@ -611,9 +618,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
             URL url = new URL(backendUrl + "/api/agent/vision/analyze-frame");
             conn = (HttpURLConnection) url.openConnection();
+            conn.setInstanceFollowRedirects(false);
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(20000);
+            conn.setConnectTimeout(2500);
+            conn.setReadTimeout(14000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
 
@@ -635,6 +643,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int status = conn.getResponseCode();
             if (status < 200 || status >= 300) {
                 Log.w("TradePulseNativeScreen", "Backend vision non-200: " + status);
+                return false;
+            }
+            String contentType = conn.getContentType();
+            if (contentType != null && !contentType.toLowerCase(Locale.US).contains("application/json")) {
+                Log.w("TradePulseNativeScreen", "Backend vision non-JSON response: " + contentType);
                 return false;
             }
 
@@ -828,6 +841,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     }
 
     private void analyzeFrameLocallyNative(final String frameBase64) {
+        analyzeFrameLocallyNative(frameBase64, false);
+    }
+
+    private void analyzeFrameLocallyNative(final String frameBase64, final boolean isCleanFrame) {
         try {
             if (isTradeActiveAndLocked && overlaySecondsRemaining > 0 && !isOneClickScanPending) {
                 return;
@@ -845,30 +862,37 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
 
             byte[] decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT);
-            Bitmap bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-            if (bitmap == null) {
+            Bitmap rawBitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+            if (rawBitmap == null) {
                 showAnalysisErrorOnOverlay("ফ্রেম ডিকোড করা যায়নি — আবার চাপুন");
                 return;
             }
 
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
+            int origW = Math.max(1, rawBitmap.getWidth());
+            int origH = Math.max(1, rawBitmap.getHeight());
+            int width = 720;
+            int height = Math.max(360, Math.min(1600, Math.round(((float) origH / (float) origW) * width)));
+            Bitmap bitmap = (origW == width && origH == height)
+                    ? rawBitmap
+                    : Bitmap.createScaledBitmap(rawBitmap, width, height, true);
+            if (bitmap != rawBitmap) {
+                rawBitmap.recycle();
+            }
 
-            // 1. Adaptive Chart Canvas ROI (Region of Interest)
-            // Top ~22% is browser address bar, deposit header & floating HUD overlay
-            // Bottom ~28% is trade panel (Investment %, Timer, and huge green Buy / red Sell buttons)
-            // Central ~22% to 70% is the true candlestick chart canvas
-            // Right edge (from 85% to 100%) has the vertical price scale & current price badge
+            int[] pixels = new int[width * height];
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+            bitmap.recycle();
+
+            // 1. Adaptive Chart Canvas ROI (Region of Interest) on normalized 720px canvas
             boolean isPortraitFrame = height > width;
             int startY = (int) (height * (isPortraitFrame ? 0.14f : 0.05f));
-            int endY = (int) (height * (isPortraitFrame ? 0.78f : 0.95f));
-            int startX = (int) (width * (isPortraitFrame ? 0.05f : 0.03f)); // Starts past left sidebar/briefcase icon
-            int endX = (int) (width * (isPortraitFrame ? 0.84f : 0.88f)); // Excludes right price axis & live price pill
+            int endY = (int) (height * (isPortraitFrame ? 0.74f : 0.94f));
+            int startX = (int) (width * 0.03f);
+            int endX = (int) (width * (isPortraitFrame ? 0.84f : 0.88f));
 
-            // Determine Floating Overlay's exact on-screen position so we can MASK IT OUT!
-            // This prevents the overlay's own green "১-ক্লিক স্ক্যান" button and border from contaminating candles!
+            // Only mask out Floating Overlay if frame was NOT captured cleanly with overlay hidden
             int ovLeft = -1, ovTop = -1, ovRight = -1, ovBottom = -1;
-            if (overlayView != null) {
+            if (!isCleanFrame && overlayView != null && overlayView.getVisibility() == View.VISIBLE) {
                 int[] loc = new int[2];
                 overlayView.getLocationOnScreen(loc);
                 DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
@@ -882,72 +906,50 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             int greenPixels = 0;
             int redPixels = 0;
-            int[] colGreen = new int[width];
-            int[] colRed = new int[width];
-            int[] colMinY = new int[width];
-            int[] colMaxY = new int[width];
-            java.util.Arrays.fill(colMinY, 9999);
+            byte[] rawGrid = new byte[width * height]; // 1 = green, 2 = red
+            byte[] bodyGrid = new byte[width * height];
 
-            // Sample pixels per column with vertical continuity check so thin horizontal EMA/Bollinger lines
-            // (height < 4px at step=2) don't bridge adjacent candles or create phantom bands.
-            for (int x = startX; x < endX; x++) {
-                int runLen = 0;
-                int runGreen = 0;
-                int runRed = 0;
-                int runMinY = 9999;
-                int runMaxY = 0;
+            for (int y = startY; y < endY; y++) {
+                int rowOffset = y * width;
+                for (int x = startX; x < endX; x++) {
+                    if (ovLeft >= 0 && x >= ovLeft - 8 && x <= ovRight + 8 && y >= ovTop - 8 && y <= ovBottom + 8) {
+                        continue;
+                    }
+                    int pixel = pixels[rowOffset + x];
+                    int r = (pixel >> 16) & 0xff;
+                    int g = (pixel >> 8) & 0xff;
+                    int b = pixel & 0xff;
 
-                for (int y = startY; y <= endY; y += 2) {
-                    boolean inOverlay = ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10;
-                    int hitType = 0; // 1 = green, 2 = red
-                    if (y < endY && !inOverlay) {
-                        int pixel = bitmap.getPixel(x, y);
-                        int r = (pixel >> 16) & 0xff;
-                        int g = (pixel >> 8) & 0xff;
-                        int b = pixel & 0xff;
+                    boolean isGreen = (g >= 75 && g > r * 1.22f && g > b * 1.03f);
+                    boolean isRed = (r >= 95 && r > g * 1.22f && r > b * 1.18f);
 
+                    if (!isGreen && !isRed) {
                         int max = Math.max(r, Math.max(g, b));
                         int min = Math.min(r, Math.min(g, b));
                         int delta = max - min;
-
-                        if (delta >= 14 && max >= 50) {
+                        if (delta >= 16 && max >= 55) {
                             float hue;
                             if (max == r) {
-                                hue = (60f * ((float)(g - b) / delta) + 360f) % 360f;
+                                hue = (60f * ((float) (g - b) / delta) + 360f) % 360f;
                             } else if (max == g) {
-                                hue = (60f * ((float)(b - r) / delta) + 120f) % 360f;
+                                hue = (60f * ((float) (b - r) / delta) + 120f) % 360f;
                             } else {
-                                hue = (60f * ((float)(r - g) / delta) + 240f) % 360f;
+                                hue = (60f * ((float) (r - g) / delta) + 240f) % 360f;
                             }
                             float sat = (float) delta / (float) max;
-
-                            boolean isGreen = (g >= 48 && g > r + 8 && g >= b - 18 && hue >= 100f && hue <= 195f && sat >= 0.12f);
-                            boolean isRed = (r >= 55 && r > g + 16 && r > b + 12 && (hue >= 335f || hue <= 25f) && sat >= 0.14f);
-                            if (isGreen) hitType = 1;
-                            else if (isRed) hitType = 2;
+                            isGreen = (g >= 52 && g > r + 10 && g >= b - 14 && hue >= 100f && hue <= 192f && sat >= 0.16f);
+                            isRed = (r >= 60 && r > g + 18 && r > b + 14 && (hue >= 336f || hue <= 22f) && sat >= 0.18f);
                         }
                     }
 
-                    if (hitType > 0) {
-                        runLen++;
-                        if (hitType == 1) runGreen++;
-                        else runRed++;
-                        if (y < runMinY) runMinY = y;
-                        if (y > runMaxY) runMaxY = y;
-                    } else {
-                        if (runLen >= 3) {
-                            greenPixels += runGreen;
-                            redPixels += runRed;
-                            colGreen[x] += runGreen;
-                            colRed[x] += runRed;
-                            if (runMinY < colMinY[x]) colMinY[x] = runMinY;
-                            if (runMaxY > colMaxY[x]) colMaxY[x] = runMaxY;
-                        }
-                        runLen = 0;
-                        runGreen = 0;
-                        runRed = 0;
-                        runMinY = 9999;
-                        runMaxY = 0;
+                    if (isGreen) {
+                        rawGrid[rowOffset + x] = 1;
+                        bodyGrid[rowOffset + x] = 1;
+                        greenPixels++;
+                    } else if (isRed) {
+                        rawGrid[rowOffset + x] = 2;
+                        bodyGrid[rowOffset + x] = 2;
+                        redPixels++;
                     }
                 }
             }
@@ -957,14 +959,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             int bgWhiteLight = 0;
             int pureBlackPixels = 0;
             int totalBgSampled = 0;
-            int bgStep = 4;
+            int bgStep = 3;
             for (int y = startY; y < endY; y += bgStep) {
+                int rowOffset = y * width;
                 for (int x = startX; x < endX; x += bgStep) {
-                    if (ovLeft >= 0 && x >= ovLeft - 10 && x <= ovRight + 10 && y >= ovTop - 10 && y <= ovBottom + 10) {
+                    if (ovLeft >= 0 && x >= ovLeft - 8 && x <= ovRight + 8 && y >= ovTop - 8 && y <= ovBottom + 8) {
                         continue;
                     }
-
-                    int pixel = bitmap.getPixel(x, y);
+                    int pixel = pixels[rowOffset + x];
                     int r = (pixel >> 16) & 0xff;
                     int g = (pixel >> 8) & 0xff;
                     int b = pixel & 0xff;
@@ -973,7 +975,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (r <= 15 && g <= 15 && b <= 15) {
                         pureBlackPixels++;
                     }
-                    if ((r <= 85 && g <= 90 && b <= 125) || (r <= 65 && g <= 65 && b <= 65)) {
+                    if ((r <= 88 && g <= 95 && b <= 125) || (r <= 68 && g <= 68 && b <= 68)) {
                         bgNavyDark++;
                     } else if (r >= 200 && g >= 200 && b >= 200) {
                         bgWhiteLight++;
@@ -981,15 +983,15 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 }
             }
 
-            // Broker Signature Diagnostics:
             // Check for broker trading controls (Green Buy + Red Sell buttons at bottom panel)
             int bottomGreen = 0;
             int bottomRed = 0;
-            int bStart = (int) (height * 0.74f);
-            int bEnd = (int) (height * 0.94f);
-            for (int y = bStart; y < bEnd; y += 4) {
-                for (int x = 0; x < width; x += 4) {
-                    int p = bitmap.getPixel(x, y);
+            int bStart = (int) (height * 0.73f);
+            int bEnd = (int) (height * 0.95f);
+            for (int y = bStart; y < bEnd; y += 3) {
+                int rowOffset = y * width;
+                for (int x = 0; x < width; x += 3) {
+                    int p = pixels[rowOffset + x];
                     int pr = (p >> 16) & 0xff;
                     int pg = (p >> 8) & 0xff;
                     int pb = p & 0xff;
@@ -1001,9 +1003,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // Check for right-edge vertical price axis and active price badge
             int rightAxisDigits = 0;
             int rXStart = (int) (width * 0.82f);
-            for (int y = startY; y < endY; y += 4) {
-                for (int x = rXStart; x < width; x += 4) {
-                    int p = bitmap.getPixel(x, y);
+            for (int y = startY; y < endY; y += 3) {
+                int rowOffset = y * width;
+                for (int x = rXStart; x < width; x += 3) {
+                    int p = pixels[rowOffset + x];
                     int pr = (p >> 16) & 0xff;
                     int pg = (p >> 8) & 0xff;
                     int pb = p & 0xff;
@@ -1025,12 +1028,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         "স্ক্রিন অন করে ব্রোকার চার্ট সামনে রাখুন",
                         "NO_SCREEN"
                 );
-                bitmap.recycle();
                 return;
             }
 
             // Web page open, but completely no candle visible
-            if (totalCandlePixels < 15) {
+            if (totalCandlePixels < 30) {
                 updateOverlayUI(
                         "WAIT",
                         0,
@@ -1038,21 +1040,55 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         "ক্যান্ডেলস্টিক চার্ট স্ক্রিনের মাঝখানে রেখে স্ক্যান করুন",
                         "NO_CANDLE"
                 );
-                bitmap.recycle();
                 return;
             }
 
-            // 3. Candlestick Band Segmentation across X axis with gap-tolerance
+            // 3. Strip horizontal EMA/SMA/Bollinger lines (vertical run < 4px) from bodyGrid while keeping rawGrid for wicks & infant open tick
+            int[] colCounts = new int[width];
+            int[] colGreen = new int[width];
+            int[] colRed = new int[width];
+            for (int x = startX; x < endX; x++) {
+                int runLen = 0;
+                int runStart = startY;
+                int verticalCount = 0;
+                int runG = 0;
+                int runR = 0;
+                for (int y = startY; y <= endY; y++) {
+                    byte val = (y < endY) ? bodyGrid[y * width + x] : 0;
+                    if (val > 0) {
+                        if (runLen == 0) runStart = y;
+                        runLen++;
+                        if (val == 1) runG++;
+                        else runR++;
+                    } else {
+                        if (runLen >= 4) {
+                            verticalCount += runLen;
+                            colGreen[x] += runG;
+                            colRed[x] += runR;
+                        } else if (runLen > 0) {
+                            for (int ry = runStart; ry < runStart + runLen; ry++) {
+                                bodyGrid[ry * width + x] = 0;
+                            }
+                        }
+                        runLen = 0;
+                        runG = 0;
+                        runR = 0;
+                    }
+                }
+                colCounts[x] = verticalCount;
+            }
+
+            // 4. Candlestick Band Segmentation across X axis (matches normalized 720px JS engine)
             java.util.List<CandleBand> bands = new java.util.ArrayList<>();
             boolean inBand = false;
             int bandStart = 0;
             int bandGreen = 0;
             int bandRed = 0;
-            int emptyCols = 0;
+            int colThreshold = 4;
 
-            for (int x = startX; x < endX; x++) {
-                int colTotal = colGreen[x] + colRed[x];
-                if (colTotal >= 2) {
+            for (int x = startX; x <= endX; x++) {
+                boolean activeCol = (x < endX) && (colCounts[x] >= colThreshold);
+                if (activeCol) {
                     if (!inBand) {
                         inBand = true;
                         bandStart = x;
@@ -1061,148 +1097,169 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     }
                     bandGreen += colGreen[x];
                     bandRed += colRed[x];
-                    emptyCols = 0;
-                } else {
-                    if (inBand) {
-                        emptyCols++;
-                        if (emptyCols >= 3 || x == endX - 1) {
-                            inBand = false;
-                            int bandWidth = (x - emptyCols) - bandStart + 1;
-                            if (bandWidth >= 2 && bandWidth <= 150) {
-                                CandleBand cb = new CandleBand();
-                                cb.startX = bandStart;
-                                cb.endX = x - emptyCols;
-                                cb.centerX = (cb.startX + cb.endX) / 2;
-                                cb.isGreen = bandGreen >= bandRed;
-                                cb.greenCount = bandGreen;
-                                cb.redCount = bandRed;
-
-                                int bMinY = 9999;
-                                int bMaxY = 0;
-                                int maxColCount = 0;
-                                for (int bx = cb.startX; bx <= cb.endX; bx++) {
-                                    int colCount = colGreen[bx] + colRed[bx];
-                                    if (colCount > 0) {
-                                        if (colMinY[bx] < bMinY) bMinY = colMinY[bx];
-                                        if (colMaxY[bx] > bMaxY) bMaxY = colMaxY[bx];
-                                        if (colCount > maxColCount) maxColCount = colCount;
-                                    }
-                                }
-                                cb.minY = bMinY;
-                                cb.maxY = bMaxY;
-                                cb.height = Math.max(0, bMaxY - bMinY + 1);
-
-                                // Distinguish Body vs Wicks:
-                                // Body columns have high pixel density. Central columns with wicks extend higher and lower.
-                                int bodyTop = bMaxY;
-                                int bodyBottom = bMinY;
-                                int thresh = Math.max(3, (int)(maxColCount * 0.40f));
-                                for (int bx = cb.startX; bx <= cb.endX; bx++) {
-                                    int count = colGreen[bx] + colRed[bx];
-                                    if (count >= thresh) {
-                                        if (colMinY[bx] < bodyTop) bodyTop = colMinY[bx];
-                                        if (colMaxY[bx] > bodyBottom) bodyBottom = colMaxY[bx];
-                                    }
-                                }
-                                if (bodyBottom < bodyTop) {
-                                    bodyTop = bMinY;
-                                    bodyBottom = bMaxY;
-                                }
-                                cb.upperWickPx = Math.max(0, bodyTop - bMinY);
-                                cb.lowerWickPx = Math.max(0, bMaxY - bodyBottom);
-                                cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
-
-                                float body = (float) cb.bodyHeight;
-                                float upWick = (float) cb.upperWickPx;
-                                float downWick = (float) cb.lowerWickPx;
-                                cb.isHammer = (downWick >= body * 1.5f && upWick <= body * 0.5f && downWick >= 6);
-                                cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
-                                cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
-
-                                boolean isCandleShape = cb.height >= 7
-                                        && (cb.height >= bandWidth * 0.45f || cb.bodyHeight >= 5 || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
-                                float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                                boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && cb.bodyHeight < 5 && fillDensity < 0.25f);
-                                if (isCandleShape && !isHollowBox) {
-                                    bands.add(cb);
+                } else if (inBand) {
+                    int bandWidth = x - bandStart;
+                    if (bandWidth >= 2 && bandWidth <= 65) {
+                        int bMinY = 9999;
+                        int bMaxY = 0;
+                        int maxColPx = 0;
+                        java.util.List<Integer> nonEmptyMins = new java.util.ArrayList<>();
+                        java.util.List<Integer> nonEmptyMaxs = new java.util.ArrayList<>();
+                        for (int bx = bandStart; bx < x; bx++) {
+                            int bxCount = 0;
+                            int bxMin = 9999;
+                            int bxMax = 0;
+                            for (int y = startY; y < endY; y++) {
+                                if (bodyGrid[y * width + bx] > 0) {
+                                    bxCount++;
+                                    if (y < bMinY) bMinY = y;
+                                    if (y > bMaxY) bMaxY = y;
+                                    if (y < bxMin) bxMin = y;
+                                    if (y > bxMax) bxMax = y;
                                 }
                             }
-                            emptyCols = 0;
+                            if (bxCount > maxColPx) maxColPx = bxCount;
+                            if (bxCount >= 4) {
+                                nonEmptyMins.add(bxMin);
+                                nonEmptyMaxs.add(bxMax);
+                            }
+                        }
+
+                        if (bMaxY >= bMinY) {
+                            int centerX = (bandStart + x - 1) / 2;
+                            int bodyTop = bMinY;
+                            int bodyBottom = bMaxY;
+                            if (bandWidth >= 5 && nonEmptyMins.size() >= 3) {
+                                java.util.Collections.sort(nonEmptyMins);
+                                java.util.Collections.sort(nonEmptyMaxs);
+                                bodyTop = nonEmptyMins.get(nonEmptyMins.size() / 2);
+                                bodyBottom = nonEmptyMaxs.get(nonEmptyMaxs.size() / 2);
+                            } else {
+                                bodyTop = bMaxY;
+                                bodyBottom = bMinY;
+                                int thresh = Math.max(3, Math.round(maxColPx * 0.45f));
+                                for (int bx = bandStart; bx < x; bx++) {
+                                    int bxCount = 0;
+                                    int bxMin = 9999;
+                                    int bxMax = 0;
+                                    for (int y = startY; y < endY; y++) {
+                                        if (bodyGrid[y * width + bx] > 0) {
+                                            bxCount++;
+                                            if (y < bxMin) bxMin = y;
+                                            if (y > bxMax) bxMax = y;
+                                        }
+                                    }
+                                    if (bxCount >= thresh) {
+                                        if (bxMin < bodyTop) bodyTop = bxMin;
+                                        if (bxMax > bodyBottom) bodyBottom = bxMax;
+                                    }
+                                }
+                            }
+                            if (bodyBottom < bodyTop) {
+                                bodyTop = bMinY;
+                                bodyBottom = bMaxY;
+                            }
+
+                            // Scan upper & lower wicks across centerX - 1 .. centerX + 1 (also checks non-horizontal rawGrid pixels)
+                            int wickTopY = bodyTop;
+                            int wickBottomY = bodyBottom;
+                            for (int dy = 1; dy <= 42; dy++) {
+                                int checkY = bodyTop - dy;
+                                if (checkY < startY) break;
+                                boolean hit = false;
+                                for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
+                                    if (bodyGrid[checkY * width + wx] > 0) {
+                                        hit = true;
+                                        break;
+                                    }
+                                    if (rawGrid[checkY * width + wx] > 0) {
+                                        int lx = Math.max(startX, wx - 3);
+                                        int rx = Math.min(endX - 1, wx + 3);
+                                        boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
+                                        if (!horizLine) {
+                                            hit = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (hit) wickTopY = checkY;
+                                else if (dy > 3 && checkY < bMinY) break;
+                            }
+                            for (int dy = 1; dy <= 42; dy++) {
+                                int checkY = bodyBottom + dy;
+                                if (checkY >= endY) break;
+                                boolean hit = false;
+                                for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
+                                    if (bodyGrid[checkY * width + wx] > 0) {
+                                        hit = true;
+                                        break;
+                                    }
+                                    if (rawGrid[checkY * width + wx] > 0) {
+                                        int lx = Math.max(startX, wx - 3);
+                                        int rx = Math.min(endX - 1, wx + 3);
+                                        boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
+                                        if (!horizLine) {
+                                            hit = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (hit) wickBottomY = checkY;
+                                else if (dy > 3 && checkY > bMaxY) break;
+                            }
+
+                            int finalMinY = Math.min(bMinY, wickTopY);
+                            int finalMaxY = Math.max(bMaxY, wickBottomY);
+
+                            CandleBand cb = new CandleBand();
+                            cb.startX = bandStart;
+                            cb.endX = x - 1;
+                            cb.centerX = centerX;
+                            cb.isGreen = bandGreen >= bandRed;
+                            cb.greenCount = bandGreen;
+                            cb.redCount = bandRed;
+                            cb.minY = finalMinY;
+                            cb.maxY = finalMaxY;
+                            cb.upperWickPx = Math.max(0, bodyTop - finalMinY);
+                            cb.lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
+                            cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+                            cb.height = Math.max(1, finalMaxY - finalMinY + 1);
+
+                            int cTotalSpan = Math.max(1, cb.bodyHeight + cb.upperWickPx + cb.lowerWickPx);
+                            int cBodyPct = Math.round(100f * cb.bodyHeight / cTotalSpan);
+                            int cUpPct = Math.round(100f * cb.upperWickPx / cTotalSpan);
+                            int cDownPct = Math.round(100f * cb.lowerWickPx / cTotalSpan);
+                            boolean cSpin = (cUpPct >= 30 && cDownPct >= 30 && cBodyPct <= 26);
+
+                            cb.isHammer = !cSpin && cDownPct >= 38 && cUpPct <= 22 && cDownPct >= (int) (cUpPct * 1.7f) && cb.lowerWickPx >= 6;
+                            cb.isShootingStar = !cSpin && cUpPct >= 38 && cDownPct <= 22 && cUpPct >= (int) (cDownPct * 1.7f) && cb.upperWickPx >= 6;
+                            cb.isDoji = cSpin || (cBodyPct <= 18 && (cUpPct >= 22 || cDownPct >= 22));
+
+                            float fillDensity = (float) (bandGreen + bandRed) / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
+                            int bodyPxCount = 0;
+                            for (int py = bodyTop; py <= bodyBottom; py++) {
+                                for (int px = cb.startX; px <= cb.endX; px++) {
+                                    if (bodyGrid[py * width + px] > 0) bodyPxCount++;
+                                }
+                            }
+                            float bodyFillDensity = (float) bodyPxCount / (float) Math.max(1, bandWidth * Math.max(1, bodyBottom - bodyTop + 1));
+                            boolean isHollowBox = (bandWidth > 18 && fillDensity < 0.28f && bodyFillDensity < 0.48f);
+                            boolean isCandleShape = cb.height >= 7
+                                    && (cb.height >= bandWidth * 0.45f || bandWidth <= 8 || cb.bodyHeight >= 5 || cb.upperWickPx >= 4 || cb.lowerWickPx >= 4);
+                            if (isCandleShape && !isHollowBox) {
+                                bands.add(cb);
+                            }
                         }
                     }
-                }
-            }
-
-            // Close trailing in-progress band at the right edge if present
-            if (inBand) {
-                int bandWidth = (endX - emptyCols) - bandStart;
-                if (bandWidth >= 2 && bandWidth <= 150) {
-                    CandleBand cb = new CandleBand();
-                    cb.startX = bandStart;
-                    cb.endX = endX - 1 - emptyCols;
-                    cb.centerX = (cb.startX + cb.endX) / 2;
-                    cb.isGreen = bandGreen >= bandRed;
-                    cb.greenCount = bandGreen;
-                    cb.redCount = bandRed;
-
-                    int bMinY = 9999;
-                    int bMaxY = 0;
-                    int maxColCount = 0;
-                    for (int bx = cb.startX; bx <= cb.endX; bx++) {
-                        int colCount = colGreen[bx] + colRed[bx];
-                        if (colCount > 0) {
-                            if (colMinY[bx] < bMinY) bMinY = colMinY[bx];
-                            if (colMaxY[bx] > bMaxY) bMaxY = colMaxY[bx];
-                            if (colCount > maxColCount) maxColCount = colCount;
-                        }
-                    }
-                    cb.minY = bMinY;
-                    cb.maxY = bMaxY;
-                    cb.height = Math.max(0, bMaxY - bMinY + 1);
-
-                    int bodyTop = bMaxY;
-                    int bodyBottom = bMinY;
-                    int thresh = Math.max(3, (int)(maxColCount * 0.40f));
-                    for (int bx = cb.startX; bx <= cb.endX; bx++) {
-                        int count = colGreen[bx] + colRed[bx];
-                        if (count >= thresh) {
-                            if (colMinY[bx] < bodyTop) bodyTop = colMinY[bx];
-                            if (colMaxY[bx] > bodyBottom) bodyBottom = colMaxY[bx];
-                        }
-                    }
-                    if (bodyBottom < bodyTop) {
-                        bodyTop = bMinY;
-                        bodyBottom = bMaxY;
-                    }
-                    cb.upperWickPx = Math.max(0, bodyTop - bMinY);
-                    cb.lowerWickPx = Math.max(0, bMaxY - bodyBottom);
-                    cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
-
-                    float body = (float) cb.bodyHeight;
-                    float upWick = (float) cb.upperWickPx;
-                    float downWick = (float) cb.lowerWickPx;
-                    cb.isHammer = (downWick >= body * 1.5f && upWick <= body * 0.5f && downWick >= 6);
-                    cb.isShootingStar = (upWick >= body * 1.5f && downWick <= body * 0.5f && upWick >= 6);
-                    cb.isDoji = (body <= 4 && (upWick >= 4 || downWick >= 4));
-
-                    boolean isCandleShape = cb.height >= 7
-                            && (cb.height >= bandWidth * 0.45f || cb.bodyHeight >= 5 || cb.upperWickPx >= 3 || cb.lowerWickPx >= 3);
-                    float fillDensity = (float) (bandGreen + bandRed) * 2.0f / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                    boolean isHollowBox = (bandWidth > 20 && cb.upperWickPx < 3 && cb.lowerWickPx < 3 && cb.bodyHeight < 5 && fillDensity < 0.25f);
-                    if (isCandleShape && !isHollowBox) {
-                        bands.add(cb);
-                    }
+                    inBand = false;
                 }
             }
 
             // =========================================================================
-            // STRICT ANTI-NON-CHART FILTER:
-            // Must have genuine broker background canvas AND at least 4 distinct candlestick bars,
-            // with authentic wicks, and confirmation of broker price scale or trading controls.
-            // When user taps scan on Home Screen, WhatsApp, YouTube, Settings, or Chrome, REJECT!
+            // STRICT ANTI-NON-CHART FILTER
             // =========================================================================
-            boolean hasBrokerControls = (bottomGreen >= 40 && bottomRed >= 40);
-            boolean hasPriceScale = rightAxisDigits >= 25;
+            boolean hasBrokerControls = (bottomGreen >= 45 && bottomRed >= 45);
+            boolean hasPriceScale = rightAxisDigits >= 28;
             int wickCount = 0;
             for (CandleBand b : bands) {
                 if (b.upperWickPx >= 3 || b.lowerWickPx >= 3) {
@@ -1211,7 +1268,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
 
             boolean isAuthenticChart = (hasBrokerControls || (hasPriceScale && wickCount >= 1))
-                    && (bgNavyDark + bgWhiteLight) >= (int)(totalBgSampled * 0.12f)
+                    && (bgNavyDark + bgWhiteLight) >= (int) (totalBgSampled * 0.12f)
                     && bands.size() >= 3;
 
             if (!isAuthenticChart) {
@@ -1222,24 +1279,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         "ব্রোকার চার্ট (Quotex/Pocket Option) স্ক্রিনে রেখে স্ক্যান করুন",
                         "NO_CHART"
                 );
-                bitmap.recycle();
                 return;
             }
 
-            // =========================================================================
-            // INSTITUTIONAL 5-STEP SIGNAL FLOW (NON-VIOLABLE CONFLUENCE ENGINE)
-            // ধাপ ১: Chart Verification (চার্ট, Asset, Timeframe ও ডেটা যাচাই)
-            // ধাপ ২: Candle Data Collection (OHLC, Closed Candle ও Timer যাচাই)
-            // ধাপ ৩: Multi-Timeframe Analysis (১৫M + ৫M + ১M Trend Alignment)
-            // ধাপ ৪: Market Condition Filter (Chop, Doji, Volatility, Spike Kill-Switches)
-            // ধাপ ৫: High-Probability Institutional Setup Matching (Zero Guessing)
-            // =========================================================================
-
-            // Strip right-edge floating price pill/badge if it slipped into bands (wider or far outside regular candle pitch)
+            // Strip right-edge floating price pill/badge if it slipped into bands
             int medianW = 8;
             int medianStep = 14;
             if (bands.size() >= 5) {
-                int sampleCount = Math.min(8, bands.size() - 1);
+                int sampleCount = Math.min(10, bands.size() - 1);
                 int sampleStart = bands.size() - 1 - sampleCount;
                 int[] sampleWidths = new int[sampleCount];
                 for (int i = 0; i < sampleCount; i++) {
@@ -1247,17 +1294,17 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     sampleWidths[i] = Math.max(1, sb.endX - sb.startX + 1);
                 }
                 java.util.Arrays.sort(sampleWidths);
-                medianW = sampleWidths[sampleWidths.length / 2];
+                medianW = Math.max(3, sampleWidths[sampleWidths.length / 2]);
 
                 int gapCount = Math.max(0, sampleCount - 1);
-                medianStep = Math.max(8, (int) (medianW * 1.5f));
+                medianStep = Math.max(6, (int) (medianW * 1.5f));
                 if (gapCount > 0) {
                     int[] sampleGaps = new int[gapCount];
                     for (int i = 0; i < gapCount; i++) {
                         sampleGaps[i] = bands.get(sampleStart + i + 1).centerX - bands.get(sampleStart + i).centerX;
                     }
                     java.util.Arrays.sort(sampleGaps);
-                    medianStep = Math.max(6, sampleGaps[sampleGaps.length / 2]);
+                    medianStep = Math.max(5, sampleGaps[sampleGaps.length / 2]);
                 }
 
                 while (bands.size() >= 5) {
@@ -1265,7 +1312,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     CandleBand prevTailBand = bands.get(bands.size() - 2);
                     int tailWidth = tailBand.endX - tailBand.startX + 1;
                     int tailGap = tailBand.centerX - prevTailBand.centerX;
-                    if (tailGap > Math.max((int) (medianStep * 1.85f), 28) || tailWidth > Math.max((int) (medianW * 1.8f), 22)) {
+                    float tailDensity = (float) (tailBand.greenCount + tailBand.redCount) / (float) Math.max(1, tailWidth * tailBand.height);
+                    boolean isSolidUiPill = tailWidth > Math.max((int) (medianW * 1.45f), 16)
+                            && tailBand.upperWickPx < 4 && tailBand.lowerWickPx < 4 && tailDensity > 0.78f;
+                    if (tailGap > Math.max((int) (medianStep * 1.85f), 28)
+                            || tailWidth > Math.max((int) (medianW * 1.8f), 22)
+                            || isSolidUiPill) {
                         bands.remove(bands.size() - 1);
                     } else {
                         break;
@@ -1283,14 +1335,39 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             CandleBand rightmost = bands.get(candleCount - 1);
             boolean hasInfantTickRight = false;
             if (candleCount >= 4) {
-                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, (int) (medianStep * 0.40f)));
-                int tEnd = Math.min(endX - 1, rightmost.centerX + (int) (medianStep * 1.55f));
+                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, Math.round(medianStep * 0.40f)));
+                int tEnd = Math.min(endX - 1, rightmost.centerX + Math.round(medianStep * 1.55f));
                 int tickCols = 0;
                 for (int tx = tStart; tx <= tEnd; tx++) {
-                    if (colGreen[tx] + colRed[tx] >= 2) tickCols++;
+                    boolean colHasTick = colCounts[tx] >= 2;
+                    if (!colHasTick) {
+                        int rawRun = 0;
+                        int runTopY = -1;
+                        int maxRun = 0;
+                        for (int ty = startY; ty <= endY; ty++) {
+                            byte v = (ty < endY) ? rawGrid[ty * width + tx] : 0;
+                            if (v > 0) {
+                                if (rawRun == 0) runTopY = ty;
+                                rawRun++;
+                            } else {
+                                if (rawRun >= 2) {
+                                    int midY = runTopY + rawRun / 2;
+                                    int lx = Math.max(startX, tx - 3);
+                                    int rx = Math.min(endX - 1, tx + 3);
+                                    boolean isContLine = rawGrid[midY * width + lx] > 0 && rawGrid[midY * width + rx] > 0;
+                                    if (!isContLine && rawRun > maxRun) {
+                                        maxRun = rawRun;
+                                    }
+                                }
+                                rawRun = 0;
+                            }
+                        }
+                        if (maxRun >= 2) colHasTick = true;
+                    }
+                    if (colHasTick) tickCols++;
                 }
                 int rWidth = rightmost.endX - rightmost.startX + 1;
-                if (tickCols >= 1 && tickCols <= 4 && rWidth >= Math.max(2, (int) (medianW * 0.65f))) {
+                if (tickCols >= 1 && tickCols <= 4 && rWidth >= Math.max(2, Math.round(medianW * 0.65f))) {
                     hasInfantTickRight = true;
                 }
             }
@@ -1306,10 +1383,34 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             // ধাপ ৩: 4-Layer Mathematical Backward OHLC Multi-Timeframe Analysis (15M, 5M, 3M, 1M)
             int closedPoolSize = closedIndex + 1;
             int macroPeriod = (closedPoolSize >= 15) ? 15 : (closedPoolSize >= 10 ? closedPoolSize : 999);
-            String macroTrend15M = (macroPeriod <= closedPoolSize) ? classifyAggregatedOhlc(bands, closedPoolSize, macroPeriod, 22) : "SIDEWAYS";
-            String secTrend5M = classifyAggregatedOhlc(bands, closedPoolSize, 5, 22);
-            String momentum3M = classifyAggregatedOhlc(bands, closedPoolSize, 3, 20);
+            String macroTrend15M = (macroPeriod <= closedPoolSize) ? classifyAggregatedOhlc(bands, closedPoolSize, macroPeriod, 18) : "SIDEWAYS";
+            String secTrend5M = classifyAggregatedOhlc(bands, closedPoolSize, 5, 15);
+            String momentum3M = classifyAggregatedOhlc(bands, closedPoolSize, 3, 16);
             String microTrend1M = closedSignalCandle.isDoji ? "SIDEWAYS" : (closedSignalCandle.isGreen ? "UPTREND" : "DOWNTREND");
+
+            // Narrow-viewport slope trend across closed pool (for mobile portrait where < 12 candles are visible)
+            String poolSlopeTrend = "SIDEWAYS";
+            if (closedPoolSize >= 5) {
+                int half = closedPoolSize / 2;
+                float firstSum = 0f, secondSum = 0f;
+                int pMinY = 9999, pMaxY = 0;
+                for (int i = 0; i < closedPoolSize; i++) {
+                    CandleBand b = bands.get(i);
+                    if (b.minY < pMinY) pMinY = b.minY;
+                    if (b.maxY > pMaxY) pMaxY = b.maxY;
+                    float midY = (b.minY + b.upperWickPx + b.maxY - b.lowerWickPx) * 0.5f;
+                    if (i < half) firstSum += midY;
+                    else secondSum += midY;
+                }
+                float avgFirst = firstSum / Math.max(1, half);
+                float avgSecond = secondSum / Math.max(1, closedPoolSize - half);
+                int pSpan = Math.max(15, pMaxY - pMinY);
+                if (avgFirst - avgSecond >= Math.max(4f, pSpan * 0.10f)) {
+                    poolSlopeTrend = "UPTREND";
+                } else if (avgSecond - avgFirst >= Math.max(4f, pSpan * 0.10f)) {
+                    poolSlopeTrend = "DOWNTREND";
+                }
+            }
 
             int microStart = Math.max(0, closedPoolSize - 4);
             int microGreenVol = 0, microRedVol = 0;
@@ -1367,8 +1468,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 int srSpan = Math.max(20, srMaxY - srMinY);
                 int closedBodyTop = closedSignalCandle.minY + closedSignalCandle.upperWickPx;
                 int closedBodyBottom = closedSignalCandle.maxY - closedSignalCandle.lowerWickPx;
-                nearTop = closedBodyTop <= srMinY + (int)(srSpan * 0.14f) && closedBodyTop >= srMinY - (int)(srSpan * 0.06f);
-                nearBottom = closedBodyBottom >= srMaxY - (int)(srSpan * 0.14f) && closedBodyBottom <= srMaxY + (int)(srSpan * 0.06f);
+                nearTop = closedBodyTop <= srMinY + (int) (srSpan * 0.14f) && closedBodyTop >= srMinY - (int) (srSpan * 0.06f);
+                nearBottom = closedBodyBottom >= srMaxY - (int) (srSpan * 0.14f) && closedBodyBottom <= srMaxY + (int) (srSpan * 0.06f);
             }
 
             int prevBodiesSum = 0;
@@ -1378,11 +1479,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 prevBodiesSum += bands.get(i).bodyHeight;
                 prevBodiesCount++;
             }
-            int avgPrevBody = prevBodiesCount > 0 ? (prevBodiesSum / prevBodiesCount) : 15;
-            boolean isExhaustionSpike = (closedSignalCandle.bodyHeight >= Math.max(32, avgPrevBody * 3.2f));
+            int avgPrevBody = prevBodiesCount > 0 ? (prevBodiesSum / prevBodiesCount) : 14;
+            boolean isExhaustionSpike = (closedSignalCandle.bodyHeight >= Math.max(36, (int) (avgPrevBody * 3.4f)));
 
-            boolean isTrueHammer = !isSpinningTop && downWickPct >= 38 && upWickPct <= 22 && downWickPct >= (int)(upWickPct * 1.7f) && closedSignalCandle.lowerWickPx >= 8;
-            boolean isTrueShootingStar = !isSpinningTop && upWickPct >= 38 && downWickPct <= 22 && upWickPct >= (int)(downWickPct * 1.7f) && closedSignalCandle.upperWickPx >= 8;
+            boolean isTrueHammer = !isSpinningTop && downWickPct >= 38 && upWickPct <= 22 && downWickPct >= (int) (upWickPct * 1.7f) && closedSignalCandle.lowerWickPx >= 7;
+            boolean isTrueShootingStar = !isSpinningTop && upWickPct >= 38 && downWickPct <= 22 && upWickPct >= (int) (downWickPct * 1.7f) && closedSignalCandle.upperWickPx >= 7;
 
             // ধাপ ৫: Conservative Offline CV Setup Matching (Zero Chasing / Strict Anti-Loss Filter)
             String proposedDirection = "WAIT";
@@ -1400,13 +1501,19 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 finalReason = "[অফলাইন CV · ফিল্টার] এক্সহশন ক্লাইম্যাক্স স্পাইক — রিভার্সাল ঝুঁকি (WAIT)";
             } else {
                 boolean callPermitted = !"DOWNTREND".equals(macroTrend15M)
-                        && ("UPTREND".equals(secTrend5M) || isTrueHammer)
+                        && ("UPTREND".equals(secTrend5M) || isTrueHammer || ("UPTREND".equals(momentum3M) && "UPTREND".equals(poolSlopeTrend)))
                         && !("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M));
                 boolean putPermitted = !"UPTREND".equals(macroTrend15M)
-                        && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar)
+                        && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar || ("DOWNTREND".equals(momentum3M) && "DOWNTREND".equals(poolSlopeTrend)))
                         && !("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M));
-                boolean allowBullBreakout = "UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && sameColorStreak <= 2;
-                boolean allowBearBreakout = "DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && sameColorStreak <= 2;
+                boolean bullContextStrong = "UPTREND".equals(macroTrend15M)
+                        || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M))
+                        || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(momentum3M) && "UPTREND".equals(poolSlopeTrend));
+                boolean bearContextStrong = "DOWNTREND".equals(macroTrend15M)
+                        || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M))
+                        || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(momentum3M) && "DOWNTREND".equals(poolSlopeTrend));
+                boolean allowBullBreakout = bullContextStrong && !"DOWNTREND".equals(secTrend5M) && sameColorStreak <= 2;
+                boolean allowBearBreakout = bearContextStrong && !"UPTREND".equals(secTrend5M) && sameColorStreak <= 2;
 
                 // Setup 1: True Single-Sided S/R Wick Rejection (Hammer / Shooting Star)
                 if (callPermitted && isTrueHammer) {
@@ -1421,34 +1528,36 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার রিজেকশন (সেলার প্রেসার)";
                 }
                 // Setup 2: Aligned Trend Engulfing
-                else if (("UPTREND".equals(macroTrend15M) || ("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M)))
-                    && (!nearTop || allowBullBreakout) && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
+                else if ((bullContextStrong || ("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M)))
+                        && !"DOWNTREND".equals(macroTrend15M)
+                        && (!nearTop || allowBullBreakout) && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
+                        && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
                     proposedDirection = "UP";
                     confidence = 85;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] আপট্রেন্ড বুলিশ এনগালফিং নিশ্চিত";
-                } else if (("DOWNTREND".equals(macroTrend15M) || ("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M)))
-                    && (!nearBottom || allowBearBreakout) && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
+                } else if ((bearContextStrong || ("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M)))
+                        && !"UPTREND".equals(macroTrend15M)
+                        && (!nearBottom || allowBearBreakout) && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
+                        && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
                     proposedDirection = "DOWN";
                     confidence = 85;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
                 }
-                // Setup 3: Healthy Pullback / Momentum Continuation (supports 1st pullback continuation & clean body >= 24%)
-                else if (("UPTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(momentum3M)))
-                    && ("UPTREND".equals(secTrend5M) || "UPTREND".equals(momentum3M))
-                    && sameColorStreak <= 3 && (!nearTop || allowBullBreakout) && bodyPct >= 24
-                    && closedSignalCandle.isGreen && microGreenPct >= 45) {
+                // Setup 3: Healthy Pullback / Momentum Continuation (supports mobile narrow-viewport 3M+slope alignment)
+                else if (bullContextStrong
+                        && ("UPTREND".equals(secTrend5M) || "UPTREND".equals(momentum3M))
+                        && sameColorStreak <= 3 && (!nearTop || allowBullBreakout) && bodyPct >= 22
+                        && closedSignalCandle.isGreen && microGreenPct >= 42) {
                     proposedDirection = "UP";
                     confidence = ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) ? 85 : 82;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (৫/৫ পয়েন্ট)";
-                } else if (("DOWNTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(momentum3M)))
-                    && ("DOWNTREND".equals(secTrend5M) || "DOWNTREND".equals(momentum3M))
-                    && sameColorStreak <= 3 && (!nearBottom || allowBearBreakout) && bodyPct >= 24
-                    && !closedSignalCandle.isGreen && microRedPct >= 45) {
+                } else if (bearContextStrong
+                        && ("DOWNTREND".equals(secTrend5M) || "DOWNTREND".equals(momentum3M))
+                        && sameColorStreak <= 3 && (!nearBottom || allowBearBreakout) && bodyPct >= 22
+                        && !closedSignalCandle.isGreen && microRedPct >= 42) {
                     proposedDirection = "DOWN";
                     confidence = ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) ? 85 : 82;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
@@ -1470,6 +1579,11 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             boolean has5m3mMomentum = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M)
                     && (secTrend5M.equals(macroTrend15M) || "SIDEWAYS".equals(macroTrend15M));
+            boolean hasMobile3mSlopeAlign = "SIDEWAYS".equals(macroTrend15M)
+                    && !"SIDEWAYS".equals(momentum3M)
+                    && momentum3M.equals(microTrend1M)
+                    && ("SIDEWAYS".equals(secTrend5M) || secTrend5M.equals(momentum3M))
+                    && momentum3M.equals(poolSlopeTrend);
             boolean isSrWallExhaustion = (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom)))
                     && !isTrueHammer && !isTrueShootingStar;
             boolean step1Passed = isAuthenticChart;
@@ -1478,6 +1592,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     || ("DOWN".equals(direction) && isTrueShootingStar && !"UPTREND".equals(macroTrend15M));
             boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M))
                     || has5m3mMomentum
+                    || hasMobile3mSlopeAlign
                     || rejectionStep3Ok;
             boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike
                     && !isSrWallExhaustion;
@@ -1574,7 +1689,6 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             this.lastResolvedTradingProfile = "BINARY_OTC";
             this.lastResolvedProfileLabelBn = "AUTO".equalsIgnoreCase(activeTradingProfile) ? "Binary OTC (অটো CV)" : "";
             updateOverlayUI(direction, confidence, verdictTitle, finalReason, verifiedSymbol, flowObj);
-            bitmap.recycle();
 
         } catch (Exception ex) {
             Log.e("TradePulseNativeScreen", "Local analysis exception: " + ex.getMessage());
@@ -2643,27 +2757,35 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         data.put("action", "scanAndLock");
         notifyListeners("onOverlayScanToggle", data);
 
-        // Capture a clean, unobstructed broker chart frame by hiding overlayView for ~120ms first
+        // Capture a clean, unobstructed broker chart frame by hiding overlayView until a fresh frame arrives
         final String backupFrame = latestFrameBase64;
         final long backupTs = latestFrameTimestamp;
+        final long scanTapTime = System.currentTimeMillis();
         isScanRequested = true;
         isOneClickScanPending = true;
         overlayView.setVisibility(View.INVISIBLE);
 
         if (captureHandler != null) {
-            // Start real analysis immediately after clean bubble-free capture (~120ms) while showing step progress
-            Runnable immediateAnalyzeRunnable = new Runnable() {
+            final int[] waitAttempt = new int[]{0};
+            final Runnable cleanCaptureRunnable = new Runnable() {
                 @Override
                 public void run() {
+                    if (!isOneClickScanPending) return;
+                    boolean gotFreshCleanFrame = (latestFrameBase64 != null && latestFrameTimestamp >= scanTapTime && latestFrameWasClean);
+                    if (!gotFreshCleanFrame && waitAttempt[0] < 2) {
+                        waitAttempt[0]++;
+                        captureHandler.postDelayed(this, 130);
+                        return;
+                    }
                     if (overlayView != null) {
                         overlayView.setVisibility(View.VISIBLE);
                     }
-                    if (!isOneClickScanPending) return;
                     isAnalyzingNativeFrame.set(false);
                     String frameToAnalyze = (latestFrameBase64 != null) ? latestFrameBase64 : backupFrame;
                     long ts = (latestFrameBase64 != null) ? latestFrameTimestamp : backupTs;
+                    boolean isClean = gotFreshCleanFrame || (latestFrameBase64 != null && latestFrameWasClean);
                     if (frameToAnalyze != null) {
-                        executeNativeAnalysis(frameToAnalyze, ts);
+                        executeNativeAnalysis(frameToAnalyze, ts, isClean);
                     } else {
                         isOneClickScanPending = false;
                         cancelPendingScanProgress();
@@ -2680,8 +2802,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     }
                 }
             };
-            pendingScanProgressRunnables.add(immediateAnalyzeRunnable);
-            captureHandler.postDelayed(immediateAnalyzeRunnable, 120);
+            pendingScanProgressRunnables.add(cleanCaptureRunnable);
+            captureHandler.postDelayed(cleanCaptureRunnable, 140);
 
             // Live step progress feedback while Gemini / CV analysis is executing
             Runnable stage2Runnable = new Runnable() {

@@ -1514,7 +1514,7 @@ export class LiveScreenService {
             // Bottom ~28% is trade time, payout, Buy/Sell buttons, and floating overlay
             // Central ~20% to ~70% is the true candlestick chart canvas!
             const yStart = isPortrait ? Math.floor(targetHeight * 0.14) : Math.floor(targetHeight * 0.05);
-            const yEnd = isPortrait ? Math.floor(targetHeight * 0.78) : Math.floor(targetHeight * 0.95);
+            const yEnd = isPortrait ? Math.floor(targetHeight * 0.74) : Math.floor(targetHeight * 0.94);
             const xStart = Math.floor(targetWidth * 0.03);
             const xEnd = Math.floor(targetWidth * (isPortrait ? 0.84 : 0.88)); // Excludes right-side vertical price scale & floating live price pill
             const totalExamined = (yEnd - yStart) * (xEnd - xStart);
@@ -1794,10 +1794,10 @@ export class LiveScreenService {
                       bodyBottom = maxY;
                     }
 
-                    // Scan wicks across centerX - 1 .. centerX + 1 so sub-pixel wicks aren't missed
+                    // Scan wicks across centerX - 1 .. centerX + 1 (checking rawCandleGrid for 1-2px thin wicks separated by anti-aliased gaps, ignoring horizontal indicator lines)
                     let wickTopY = bodyTop;
                     let wickBottomY = bodyBottom;
-                    for (let dy = 1; dy <= 35; dy++) {
+                    for (let dy = 1; dy <= 42; dy++) {
                       const checkY = bodyTop - dy;
                       if (checkY < yStart) break;
                       let hit = false;
@@ -1806,11 +1806,20 @@ export class LiveScreenService {
                           hit = true;
                           break;
                         }
+                        if (rawCandleGrid[checkY * targetWidth + wx] > 0) {
+                          const lx = Math.max(xStart, wx - 3);
+                          const rx = Math.min(xEnd - 1, wx + 3);
+                          const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
+                          if (!isContLine) {
+                            hit = true;
+                            break;
+                          }
+                        }
                       }
                       if (hit) wickTopY = checkY;
                       else if (dy > 3 && checkY < minY) break;
                     }
-                    for (let dy = 1; dy <= 35; dy++) {
+                    for (let dy = 1; dy <= 42; dy++) {
                       const checkY = bodyBottom + dy;
                       if (checkY >= yEnd) break;
                       let hit = false;
@@ -1818,6 +1827,15 @@ export class LiveScreenService {
                         if (candlePixelGrid[checkY * targetWidth + wx] > 0) {
                           hit = true;
                           break;
+                        }
+                        if (rawCandleGrid[checkY * targetWidth + wx] > 0) {
+                          const lx = Math.max(xStart, wx - 3);
+                          const rx = Math.min(xEnd - 1, wx + 3);
+                          const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
+                          if (!isContLine) {
+                            hit = true;
+                            break;
+                          }
                         }
                       }
                       if (hit) wickBottomY = checkY;
@@ -2152,11 +2170,36 @@ export class LiveScreenService {
                 ? aggregateOhlc(closedPool, closedPool.length)
                 : [];
 
-            const momentum3m = classifyOhlcTrend(bars3m, 20);
-            const secondaryTrend = classifyOhlcTrend(bars5m, 22);
-            const macroTrend = classifyOhlcTrend(bars15m, 22);
+            const momentum3m = classifyOhlcTrend(bars3m, 16);
+            const secondaryTrend = classifyOhlcTrend(bars5m, 15);
+            const macroTrend = classifyOhlcTrend(bars15m, 18);
             const microTrend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
               lastClosedCandleColor === 'GREEN' ? 'UPTREND' : lastClosedCandleColor === 'RED' ? 'DOWNTREND' : 'SIDEWAYS';
+
+            // Narrow-viewport slope trend across closedPool (supports mobile portrait viewports showing 6-11 bars)
+            let poolSlopeTrend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' = 'SIDEWAYS';
+            if (closedPool.length >= 5) {
+              const half = Math.floor(closedPool.length / 2);
+              let firstSum = 0;
+              let secondSum = 0;
+              let pMinY = 9999;
+              let pMaxY = 0;
+              closedPool.forEach((c, idx) => {
+                if (c.minY < pMinY) pMinY = c.minY;
+                if (c.maxY > pMaxY) pMaxY = c.maxY;
+                const midY = (c.minY + c.upperWickPx + c.maxY - c.lowerWickPx) * 0.5;
+                if (idx < half) firstSum += midY;
+                else secondSum += midY;
+              });
+              const avgFirst = firstSum / Math.max(1, half);
+              const avgSecond = secondSum / Math.max(1, closedPool.length - half);
+              const pSpan = Math.max(15, pMaxY - pMinY);
+              if (avgFirst - avgSecond >= Math.max(4, pSpan * 0.1)) {
+                poolSlopeTrend = 'UPTREND';
+              } else if (avgSecond - avgFirst >= Math.max(4, pSpan * 0.1)) {
+                poolSlopeTrend = 'DOWNTREND';
+              }
+            }
 
             const fmtTfBn = (t: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS') =>
               t === 'UPTREND' ? 'আপ' : t === 'DOWNTREND' ? 'ডাউন' : 'রেঞ্জ';
@@ -2194,8 +2237,22 @@ export class LiveScreenService {
             }
 
             const has5m3mTrendAlign = secondaryTrend !== 'SIDEWAYS' && momentum3m === secondaryTrend;
-            const allowBullBreakout = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' && streak <= 2;
-            const allowBearBreakout = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' && streak <= 2;
+            const hasMobile3mSlope =
+              macroTrend === 'SIDEWAYS' &&
+              momentum3m !== 'SIDEWAYS' &&
+              momentum3m === microTrend &&
+              (secondaryTrend === 'SIDEWAYS' || secondaryTrend === momentum3m) &&
+              momentum3m === poolSlopeTrend;
+            const bullContextStrong =
+              macroTrend === 'UPTREND' ||
+              (macroTrend === 'SIDEWAYS' && secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND') ||
+              (hasMobile3mSlope && momentum3m === 'UPTREND');
+            const bearContextStrong =
+              macroTrend === 'DOWNTREND' ||
+              (macroTrend === 'SIDEWAYS' && secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND') ||
+              (hasMobile3mSlope && momentum3m === 'DOWNTREND');
+            const allowBullBreakout = bullContextStrong && secondaryTrend !== 'DOWNTREND' && streak <= 2;
+            const allowBearBreakout = bearContextStrong && secondaryTrend !== 'UPTREND' && streak <= 2;
 
             let dir: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
             let pattern = 'স্পষ্ট সেটআপ মেলেনি (WAIT)';
@@ -2224,7 +2281,8 @@ export class LiveScreenService {
               prevPrev &&
               prevPrev.color === 'RED' &&
               closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
-              (macroTrend === 'UPTREND' || (secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) &&
+              (bullContextStrong || (secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) &&
+              macroTrend !== 'DOWNTREND' &&
               (!nearTop || allowBullBreakout)
             ) {
               dir = 'UP';
@@ -2235,30 +2293,31 @@ export class LiveScreenService {
               prevPrev &&
               prevPrev.color === 'GREEN' &&
               closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
-              (macroTrend === 'DOWNTREND' || (secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) &&
+              (bearContextStrong || (secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) &&
+              macroTrend !== 'UPTREND' &&
               (!nearBottom || allowBearBreakout)
             ) {
               dir = 'DOWN';
               confidence = 85;
               pattern = '[অফলাইন CV] বিয়ারিশ এনগালফিং ক্লোজড ক্যান্ডেল (PUT)';
             } else if (
-              (macroTrend === 'UPTREND' || (macroTrend === 'SIDEWAYS' && has5m3mTrendAlign && secondaryTrend === 'UPTREND')) &&
+              bullContextStrong &&
               (secondaryTrend === 'UPTREND' || momentum3m === 'UPTREND') &&
               closedTradeCandle.color === 'GREEN' &&
               streak <= 3 &&
               (!nearTop || allowBullBreakout) &&
-              bodyPercent >= 24
+              bodyPercent >= 22
             ) {
               dir = 'UP';
               confidence = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' ? 85 : 82;
               pattern = '[অফলাইন CV] বুলিশ ট্রেন্ড কনটিনিউয়েশন (CALL)';
             } else if (
-              (macroTrend === 'DOWNTREND' || (macroTrend === 'SIDEWAYS' && has5m3mTrendAlign && secondaryTrend === 'DOWNTREND')) &&
+              bearContextStrong &&
               (secondaryTrend === 'DOWNTREND' || momentum3m === 'DOWNTREND') &&
               closedTradeCandle.color === 'RED' &&
               streak <= 3 &&
               (!nearBottom || allowBearBreakout) &&
-              bodyPercent >= 24
+              bodyPercent >= 22
             ) {
               dir = 'DOWN';
               confidence = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' ? 85 : 82;
@@ -2302,8 +2361,8 @@ export class LiveScreenService {
               bodyPercent,
               upperWickPercent,
               lowerWickPercent,
-              macroTrend,
-              secondaryTrend,
+              macroTrend: macroTrend !== 'SIDEWAYS' ? macroTrend : hasMobile3mSlope ? poolSlopeTrend : 'SIDEWAYS',
+              secondaryTrend: secondaryTrend !== 'SIDEWAYS' ? secondaryTrend : hasMobile3mSlope ? poolSlopeTrend : 'SIDEWAYS',
               momentum3m,
               microTrend,
               ohlcSummaryBn,
