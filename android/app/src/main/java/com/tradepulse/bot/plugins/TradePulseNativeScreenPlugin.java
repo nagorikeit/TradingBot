@@ -1,6 +1,7 @@
 package com.tradepulse.bot.plugins;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -2941,11 +2942,13 @@ public class TradePulseNativeScreenPlugin extends Plugin {
     private void resolveGoogleSignInError(
             PluginCall call,
             GetCredentialException e,
-            long elapsedMs
+            long elapsedMs,
+            boolean pickerWindowShown
     ) {
         JSObject fail = new JSObject();
         fail.put("success", false);
         fail.put("elapsedMs", elapsedMs);
+        fail.put("pickerShown", pickerWindowShown);
         fail.put("packageName", getContext() != null ? getContext().getPackageName() : "com.tradepulse.bot");
         fail.put("sha1", getAppSigningFingerprint("SHA-1"));
         fail.put("sha256", getAppSigningFingerprint("SHA-256"));
@@ -2964,10 +2967,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 || lower.contains("configuration");
 
         if (e instanceof GetCredentialCancellationException) {
-            // On many devices (especially HyperOS/MIUI or when APK SHA-1 is missing in Firebase Console),
-            // Credential Manager throws GetCredentialCancellationException instantaneously (< 1500ms)
-            // before the user ever interacts with an account picker.
-            boolean autoCancelledBySystem = elapsedMs < 1500 || likelyShaOrConfig;
+            // If no picker window ever paused our Activity (or it failed < 2000ms),
+            // Play Services/OS cancelled silently due to missing SHA-1 or OS limits — auto-fallback cleanly!
+            boolean autoCancelledBySystem = !pickerWindowShown || elapsedMs < 2000 || likelyShaOrConfig;
             fail.put("cancelled", !autoCancelledBySystem);
             fail.put("autoCancelled", autoCancelledBySystem);
             fail.put("errorCode", autoCancelledBySystem ? "CREDENTIAL_SHEET_UNAVAILABLE" : "CANCELLED");
@@ -2993,14 +2995,40 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             boolean allowGoogleIdFallback,
             PluginCall call
     ) {
+        final boolean[] pickerWindowShown = new boolean[]{false};
+        final Application app = activity.getApplication();
+        final Application.ActivityLifecycleCallbacks lifecycleTracker = new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(@NonNull Activity a, Bundle b) {}
+            @Override public void onActivityStarted(@NonNull Activity a) {}
+            @Override public void onActivityResumed(@NonNull Activity a) {}
+            @Override public void onActivityPaused(@NonNull Activity a) {
+                if (a == activity) {
+                    pickerWindowShown[0] = true;
+                }
+            }
+            @Override public void onActivityStopped(@NonNull Activity a) {}
+            @Override public void onActivitySaveInstanceState(@NonNull Activity a, @NonNull Bundle outState) {}
+            @Override public void onActivityDestroyed(@NonNull Activity a) {}
+        };
+        if (app != null) {
+            app.registerActivityLifecycleCallbacks(lifecycleTracker);
+        }
+
         credentialManager.getCredentialAsync(
                 activity,
                 request,
                 null,
                 ContextCompat.getMainExecutor(activity),
                 new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                    private void unregisterTracker() {
+                        if (app != null) {
+                            try { app.unregisterActivityLifecycleCallbacks(lifecycleTracker); } catch (Exception ignored) {}
+                        }
+                    }
+
                     @Override
                     public void onResult(@NonNull GetCredentialResponse response) {
+                        unregisterTracker();
                         Credential credential = response.getCredential();
                         if (credential instanceof CustomCredential
                                 && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
@@ -3031,11 +3059,12 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
                     @Override
                     public void onError(@NonNull GetCredentialException e) {
+                        unregisterTracker();
                         long elapsedMs = SystemClock.elapsedRealtime() - startedAtMs;
                         boolean shouldTryGoogleIdOption = allowGoogleIdFallback && (
                                 (e instanceof NoCredentialException)
                                         || (e instanceof GetCredentialProviderConfigurationException)
-                                        || (e instanceof GetCredentialCancellationException && elapsedMs < 1800)
+                                        || (e instanceof GetCredentialCancellationException && (!pickerWindowShown[0] || elapsedMs < 2000))
                                         || !(e instanceof GetCredentialCancellationException)
                         );
                         if (shouldTryGoogleIdOption) {
@@ -3062,7 +3091,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                                 // Fall through to structured error resolution below
                             }
                         }
-                        resolveGoogleSignInError(call, e, elapsedMs);
+                        resolveGoogleSignInError(call, e, elapsedMs, pickerWindowShown[0]);
                     }
                 }
         );
