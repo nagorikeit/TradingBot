@@ -23,7 +23,7 @@ export const MobileGoogleAuthBridge: React.FC = () => {
     }
     const params = new URLSearchParams();
     if (idToken) params.set('idToken', idToken);
-    if (accessToken) params.set('accessToken', accessToken);
+    if (!idToken && accessToken) params.set('accessToken', accessToken);
     return `tradepulse://auth-callback?${params.toString()}`;
   };
 
@@ -45,29 +45,15 @@ export const MobileGoogleAuthBridge: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const autoTrigger = params?.get('auto') === '1';
-
     getRedirectResult(auth)
       .then((res) => {
         if (!active) return;
         if (res) {
           finishWithResult(res);
-        } else if (autoTrigger && !sessionStorage.getItem('tp_google_auto_redirected')) {
-          sessionStorage.setItem('tp_google_auto_redirected', '1');
-          setStatus('loading');
-          signInWithRedirect(auth, googleProvider).catch((err) => {
-            if (active) {
-              sessionStorage.removeItem('tp_google_auto_redirected');
-              setStatus('error');
-              setErrorMsg(err?.message || 'Google লগইন শুরু করা যায়নি');
-            }
-          });
         }
       })
       .catch((err) => {
         if (active) {
-          sessionStorage.removeItem('tp_google_auto_redirected');
           setStatus('error');
           setErrorMsg(err?.message || 'Google লগইন যাচাই ব্যর্থ হয়েছে');
         }

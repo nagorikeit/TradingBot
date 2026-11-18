@@ -52,6 +52,7 @@ export const AuthGatewayModal: React.FC<AuthGatewayModalProps> = ({ onSuccess })
       onSuccess?.();
     } else {
       setError(res.error || 'Google লগইন ব্যর্থ হয়েছে');
+      setCanUseCustomTab(true);
     }
   };
 

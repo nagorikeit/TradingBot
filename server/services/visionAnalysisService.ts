@@ -166,10 +166,10 @@ YOUR CORE DUTIES:
    - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (immediately left of live forming candle) cleanly identified with >= 22% directional body OR clean one-sided >= 38% pin-bar wick (false if Doji, Spinning Top, or ambiguous).
    - Step 3 ("step3TrendAligned"): Visible candle swing progression cleanly forms Higher Highs/Higher Lows (UPTREND) or Lower Highs/Lower Lows (DOWNTREND) aligned with setup, OR clean S/R / Bollinger extreme rejection exists. If price looks flat/mixed on screen, MUST set "macroTrend15m": "SIDEWAYS", "step3TrendAligned": false!
    - Step 4 ("step4FilterPassed"): Market condition filter passes (NO sideways range, NO alternating chop, NO spinning top, NO chasing 3+ candle exhaustion into S/R).
-   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 8.0 out of 10 AND unambiguous high-conviction setup.
+   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 7.5 out of 10 AND unambiguous directional setup. Note: On clean naked candlestick charts without EMA/RSI overlays, score "indicatorMomentumScore" from candle body momentum, swing velocity, and wick pressure (do NOT leave it near 0 just because indicators are hidden).
    CRITICAL CONSISTENCY RULE:
    - "confirmedPoints" MUST equal (step1?1:0) + (step2?1:0) + (step3?1:0) + (step4?1:0) + (step5?1:0).
-   - Only emit "predictedNextCandle": "CALL" or "PUT" when ALL 5 steps pass ("confirmedPoints" >= 4 with "step2ClosedCandleValid", "step4FilterPassed", "step5SetupConfirmed" all true AND "totalScore" >= 8.0). Otherwise emit "WAIT". When in ANY doubt, choose "WAIT"!
+   - Emit "predictedNextCandle": "CALL" or "PUT" whenever Steps 1–4 pass ("step2ClosedCandleValid", "step3TrendAligned", "step4FilterPassed" all true) AND the closed candle + momentum give a clear CALL or PUT edge ("totalScore" >= 7.5). Only output "WAIT" when a real filter/contradiction/indecision exists.
    - Do NOT predict counter to a >= 22% closed candle body unless there is a true one-sided >= 38% pin-bar rejection wick at S/R.
    - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
@@ -318,7 +318,7 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   },
                   predictedNextCandle: {
                     type: Type.STRING,
-                    description: 'CALL, PUT, or WAIT (WAIT whenever confirmedPoints < 4, spinning top, exhaustion streak, or totalScore < 8.0)',
+                    description: 'CALL, PUT, or WAIT (WAIT whenever confirmedPoints < 4, spinning top, exhaustion streak, or totalScore < 7.5)',
                   },
                   nextCandlePredictionReasonBn: {
                     type: Type.STRING,
@@ -340,7 +340,7 @@ ${activeProfileRules ? `\nACTIVE PROFILE LEARNED RULES & CAUTIONS:\n${activeProf
                   step2ClosedCandleValid: { type: Type.BOOLEAN, description: 'Step 2: Newly CLOSED candle cleanly identified & non-ambiguous' },
                   step3TrendAligned: { type: Type.BOOLEAN, description: 'Step 3: Visible trend swing progression or S/R extreme reversal confluence aligned' },
                   step4FilterPassed: { type: Type.BOOLEAN, description: 'Step 4: Market filter passed (no chop, spinning top, doji cluster, or exhaustion chasing)' },
-                  step5SetupConfirmed: { type: Type.BOOLEAN, description: 'Step 5: Setup score >= 8.0/10 and decisive CALL/PUT confirmed' },
+                  step5SetupConfirmed: { type: Type.BOOLEAN, description: 'Step 5: Setup score >= 7.5/10 and decisive CALL/PUT confirmed' },
                   confirmedPoints: { type: Type.NUMBER, description: 'Exact number of passed steps out of 5 (0 to 5)' },
                   priceActionScore: { type: Type.NUMBER, description: 'Price action score 0.0 to 5.0' },
                   indicatorMomentumScore: { type: Type.NUMBER, description: 'Indicator/momentum score 0.0 to 3.0' },

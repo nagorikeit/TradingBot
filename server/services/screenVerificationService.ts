@@ -663,15 +663,9 @@ export class ScreenVerificationService {
       // 3. High-Precision Consensus Scoring + 5-Step Verification Gate (Zero Self-Inflation)
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
-      const aiForecast = visionData.predictedNextCandle || 'WAIT';
+      const rawAiForecast = visionData.predictedNextCandle || 'WAIT';
       const setup = (visionData.priceActionSetup || '').toLowerCase();
       const pattern = (visionData.candlestickPattern || '').toLowerCase();
-
-      // Objective directional score based on measurable evidence (not aiForecast voting for itself)
-      let directionalScore = 0;
-
-      if (aiForecast === 'CALL') directionalScore += 1.5;
-      if (aiForecast === 'PUT') directionalScore -= 1.5;
 
       const isBearishRejection =
         !isSpinningTop &&
@@ -683,25 +677,6 @@ export class ScreenVerificationService {
         (hasLowerPinBar ||
           (setup.includes('hammer') && upperWickPct <= 24) ||
           (pattern.includes('hammer') && upperWickPct <= 24));
-
-      if (isBearishRejection) directionalScore -= 3.0;
-      if (isBullishRejection) directionalScore += 3.0;
-
-      directionalScore += Math.min(2, bullishIndicators) * 1.25;
-      directionalScore -= Math.min(2, bearishIndicators) * 1.25;
-
-      if (!isBearishRejection && macroTrend15m === 'UPTREND' && (!pixelAudit || pixelAudit.slope12 !== 'DOWN')) {
-        directionalScore += 1.5;
-      }
-      if (!isBullishRejection && macroTrend15m === 'DOWNTREND' && (!pixelAudit || pixelAudit.slope12 !== 'UP')) {
-        directionalScore -= 1.5;
-      }
-
-      if (pattern.includes('bullish engulfing') && closedCandleType === 'BULLISH') directionalScore += 2.5;
-      if (pattern.includes('bearish engulfing') && closedCandleType === 'BEARISH') directionalScore -= 2.5;
-
-      if (closedCandleType === 'BULLISH' && !isBearishRejection && bodyPct >= 25) directionalScore += 1.5;
-      if (closedCandleType === 'BEARISH' && !isBullishRejection && bodyPct >= 25) directionalScore -= 1.5;
 
       const step1Passed = Boolean(visionData.step1ChartValid ?? visionData.isClearTradingChart);
 
@@ -753,27 +728,6 @@ export class ScreenVerificationService {
       // User-Drawn Chart Markup Confluence & Anti-Wall Entry Guard
       const drawingInteraction = visionData.drawingInteraction || 'NONE';
       const hasUserDrawings = Boolean(visionData.userDrawingsDetected && drawingInteraction !== 'NONE');
-      const isDrawingConfirmed =
-        hasUserDrawings &&
-        ((aiForecast === 'CALL' && (drawingInteraction === 'AT_SUPPORT_BOUNCE' || drawingInteraction === 'BREAKOUT_RETEST')) ||
-          (aiForecast === 'PUT' && (drawingInteraction === 'AT_RESISTANCE_REJECT' || drawingInteraction === 'BREAKOUT_RETEST')));
-      const isBlockedByDrawing =
-        hasUserDrawings &&
-        ((aiForecast === 'CALL' && drawingInteraction === 'BLOCKED_AT_RESISTANCE') ||
-          (aiForecast === 'PUT' && drawingInteraction === 'BLOCKED_AT_SUPPORT'));
-
-      if (isDrawingConfirmed) {
-        directionalScore += aiForecast === 'CALL' ? 2.0 : -2.0;
-      }
-
-      // Enforce genuine 4-layer TF alignment (15M Macro + 5M Structure + 3M Momentum + 1M Trigger)
-      const step3Passed = Boolean(
-        !isBlockedByDrawing &&
-          !isFlatVisualRange &&
-          (mtfConfluence === 'ALIGNED' ||
-            isDrawingConfirmed ||
-            (hasRejection && mtfConfluence !== 'CONFLICT'))
-      );
 
       // Market filter MUST fail on true 5-flip checkerboard chop, Spinning Top, HIGH_VOLATILITY_SPIKE, or TRUE 4+ exhaustion chasing
       const isPixelChoppy = Boolean(
@@ -786,27 +740,156 @@ export class ScreenVerificationService {
               !hasRejection))
       );
       const isBinaryMode = !isSpotSlTp;
+      const hasBullishBreakoutMomentum = Boolean(
+        macroTrend15m === 'UPTREND' &&
+          secondaryTrend5m === 'UPTREND' &&
+          pixelAudit &&
+          pixelAudit.sameColorStreak <= 2
+      );
+      const hasBearishBreakoutMomentum = Boolean(
+        macroTrend15m === 'DOWNTREND' &&
+          secondaryTrend5m === 'DOWNTREND' &&
+          pixelAudit &&
+          pixelAudit.sameColorStreak <= 2
+      );
+
+      const provisionalCallWall = Boolean(
+        isBinaryMode &&
+          !isBullishRejection &&
+          pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'GREEN') ||
+            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 3 && !hasBullishBreakoutMomentum))
+      );
+      const provisionalPutWall = Boolean(
+        isBinaryMode &&
+          !isBearishRejection &&
+          pixelAudit &&
+          pixelAudit.candleCount >= 6 &&
+          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'RED') ||
+            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 3 && !hasBearishBreakoutMomentum))
+      );
+
+      const hasBullish5m3m = secondaryTrend5m === 'UPTREND' && momentum3m === 'UPTREND';
+      const hasBearish5m3m = secondaryTrend5m === 'DOWNTREND' && momentum3m === 'DOWNTREND';
+
+      // Synthesize objective direction when Vision hesitated ('WAIT') even though Steps 1-4 cleanly aligned
+      let aiForecast: 'CALL' | 'PUT' | 'WAIT' = rawAiForecast;
+      if (aiForecast === 'WAIT' && step1Passed && step2Passed && !isPixelChoppy) {
+        if (
+          isBullishRejection &&
+          macroTrend15m !== 'DOWNTREND' &&
+          !hasBearish5m3m &&
+          !provisionalCallWall &&
+          drawingInteraction !== 'BLOCKED_AT_RESISTANCE'
+        ) {
+          aiForecast = 'CALL';
+        } else if (
+          isBearishRejection &&
+          macroTrend15m !== 'UPTREND' &&
+          !hasBullish5m3m &&
+          !provisionalPutWall &&
+          drawingInteraction !== 'BLOCKED_AT_SUPPORT'
+        ) {
+          aiForecast = 'PUT';
+        } else if (
+          mtfConfluence === 'ALIGNED' &&
+          closedCandleType === 'BULLISH' &&
+          bodyPct >= 24 &&
+          (secondaryTrend5m === 'UPTREND' || macroTrend15m === 'UPTREND') &&
+          momentum3m !== 'DOWNTREND' &&
+          !provisionalCallWall &&
+          drawingInteraction !== 'BLOCKED_AT_RESISTANCE'
+        ) {
+          aiForecast = 'CALL';
+        } else if (
+          mtfConfluence === 'ALIGNED' &&
+          closedCandleType === 'BEARISH' &&
+          bodyPct >= 24 &&
+          (secondaryTrend5m === 'DOWNTREND' || macroTrend15m === 'DOWNTREND') &&
+          momentum3m !== 'UPTREND' &&
+          !provisionalPutWall &&
+          drawingInteraction !== 'BLOCKED_AT_SUPPORT'
+        ) {
+          aiForecast = 'PUT';
+        }
+      }
+
+      const isDrawingConfirmed =
+        hasUserDrawings &&
+        ((aiForecast === 'CALL' && (drawingInteraction === 'AT_SUPPORT_BOUNCE' || drawingInteraction === 'BREAKOUT_RETEST')) ||
+          (aiForecast === 'PUT' && (drawingInteraction === 'AT_RESISTANCE_REJECT' || drawingInteraction === 'BREAKOUT_RETEST')));
+      const isBlockedByDrawing =
+        hasUserDrawings &&
+        ((aiForecast === 'CALL' && drawingInteraction === 'BLOCKED_AT_RESISTANCE') ||
+          (aiForecast === 'PUT' && drawingInteraction === 'BLOCKED_AT_SUPPORT'));
+
+      const isOpposingTrendForForecast =
+        !isDrawingConfirmed &&
+        ((aiForecast === 'CALL' && (hasBearish5m3m || (macroTrend15m === 'DOWNTREND' && secondaryTrend5m !== 'UPTREND'))) ||
+          (aiForecast === 'PUT' && (hasBullish5m3m || (macroTrend15m === 'UPTREND' && secondaryTrend5m !== 'DOWNTREND'))));
+
+      // Enforce genuine 4-layer TF alignment (15M Macro + 5M Structure + 3M Momentum + 1M Trigger)
+      const step3Passed = Boolean(
+        !isBlockedByDrawing &&
+          !isFlatVisualRange &&
+          !isOpposingTrendForForecast &&
+          (mtfConfluence === 'ALIGNED' ||
+            isDrawingConfirmed ||
+            (hasRejection && mtfConfluence !== 'CONFLICT'))
+      );
+
       const isExhaustedCallChase = Boolean(
         isBinaryMode &&
           aiForecast === 'CALL' &&
           !isDrawingConfirmed &&
           !isBullishRejection &&
-          pixelAudit &&
-          pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'GREEN') ||
-            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 3))
+          provisionalCallWall
       );
       const isExhaustedPutChase = Boolean(
         isBinaryMode &&
           aiForecast === 'PUT' &&
           !isDrawingConfirmed &&
           !isBearishRejection &&
-          pixelAudit &&
-          pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'RED') ||
-            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 3))
+          provisionalPutWall
       );
       const isExhaustionChase = isExhaustedCallChase || isExhaustedPutChase;
+
+      // Objective directional score based on measurable evidence
+      let directionalScore = 0;
+
+      if (aiForecast === 'CALL') directionalScore += 1.5;
+      if (aiForecast === 'PUT') directionalScore -= 1.5;
+
+      if (isBearishRejection) directionalScore -= 3.0;
+      if (isBullishRejection) directionalScore += 3.0;
+
+      directionalScore += Math.min(2, bullishIndicators) * 1.25;
+      directionalScore -= Math.min(2, bearishIndicators) * 1.25;
+
+      if (!isBearishRejection && macroTrend15m === 'UPTREND' && (!pixelAudit || pixelAudit.slope12 !== 'DOWN')) {
+        directionalScore += 1.5;
+      }
+      if (!isBullishRejection && macroTrend15m === 'DOWNTREND' && (!pixelAudit || pixelAudit.slope12 !== 'UP')) {
+        directionalScore -= 1.5;
+      }
+
+      if (!isBearishRejection && secondaryTrend5m === 'UPTREND' && momentum3m === 'UPTREND') {
+        directionalScore += 1.25;
+      }
+      if (!isBullishRejection && secondaryTrend5m === 'DOWNTREND' && momentum3m === 'DOWNTREND') {
+        directionalScore -= 1.25;
+      }
+
+      if (pattern.includes('bullish engulfing') && closedCandleType === 'BULLISH') directionalScore += 2.0;
+      if (pattern.includes('bearish engulfing') && closedCandleType === 'BEARISH') directionalScore -= 2.0;
+
+      if (closedCandleType === 'BULLISH' && !isBearishRejection && bodyPct >= 22) directionalScore += 1.5;
+      if (closedCandleType === 'BEARISH' && !isBullishRejection && bodyPct >= 22) directionalScore -= 1.5;
+
+      if (isDrawingConfirmed) {
+        directionalScore += aiForecast === 'CALL' ? 2.0 : -2.0;
+      }
 
       const isWeakDojiRisk =
         visionData.tradeQualityTier === 'HIGH_RISK_DOJI' &&
@@ -850,26 +933,49 @@ export class ScreenVerificationService {
         ? `অস্থির মার্কেট (${marketRegime})`
         : 'AI ফিল্টার (অনিশ্চিত সেটআপ)';
 
-      // Weighted 10-point score
-      const rawPaScore =
-        typeof visionData.priceActionScore === 'number'
-          ? Math.min(5, Math.max(0, visionData.priceActionScore))
-          : Math.min(5, Math.max(1.2, Math.abs(directionalScore) * 0.6 + (hasRejection ? 1.5 : 0.6)));
-      const rawIndScore =
-        typeof visionData.indicatorMomentumScore === 'number'
-          ? Math.min(3, Math.max(0, visionData.indicatorMomentumScore))
-          : Math.min(3, Math.max(0.6, (bullishIndicators + bearishIndicators) * 1.0));
-      const rawTrendScore =
-        typeof visionData.trendAlignmentScore === 'number'
-          ? Math.min(2, Math.max(0, visionData.trendAlignmentScore))
-          : step3Passed
-          ? 1.8
-          : 0.5;
+      // Weighted 10-point score (fair to naked price-action charts even without indicator overlays)
+      const hasAlignedMomentumForScore =
+        (aiForecast === 'CALL' && (closedCandleType === 'BULLISH' || isBullishRejection) && (hasBullish5m3m || macroTrend15m === 'UPTREND')) ||
+        (aiForecast === 'PUT' && (closedCandleType === 'BEARISH' || isBearishRejection) && (hasBearish5m3m || macroTrend15m === 'DOWNTREND'));
+      const paFromStructure = Math.min(
+        4.8,
+        Math.max(
+          1.4,
+          (step2Passed ? 2.4 : 0.8) +
+            (hasRejection ? 1.5 : bodyPct >= 30 ? 1.2 : 0.7) +
+            (isDrawingConfirmed ? 0.8 : hasAlignedMomentumForScore ? 0.8 : 0.2)
+        )
+      );
+      const indFromStructure =
+        bullishIndicators + bearishIndicators > 0
+          ? Math.min(3.0, Math.max(0.8, (bullishIndicators + bearishIndicators) * 1.15 + (has5m3mMomentum ? 0.5 : 0)))
+          : hasAlignedMomentumForScore && filterPassed
+          ? 2.2
+          : filterPassed
+          ? 1.5
+          : 0.7;
+      const trendFromStructure = step3Passed ? (mtfConfluence === 'ALIGNED' ? 1.9 : 1.6) : 0.5;
 
+      const rawPaScore =
+        typeof visionData.priceActionScore === 'number' && visionData.priceActionScore > 0
+          ? Math.max(Math.min(5, visionData.priceActionScore), step2Passed && hasAlignedMomentumForScore ? paFromStructure : 0)
+          : paFromStructure;
+      const rawIndScore =
+        typeof visionData.indicatorMomentumScore === 'number' && visionData.indicatorMomentumScore > 0
+          ? Math.max(Math.min(3, visionData.indicatorMomentumScore), bullishIndicators + bearishIndicators === 0 && hasAlignedMomentumForScore ? indFromStructure : 0)
+          : indFromStructure;
+      const rawTrendScore =
+        typeof visionData.trendAlignmentScore === 'number' && visionData.trendAlignmentScore > 0
+          ? Math.max(Math.min(2, visionData.trendAlignmentScore), step3Passed ? trendFromStructure : 0)
+          : trendFromStructure;
+
+      const calculatedScoreSum = rawPaScore + rawIndScore + rawTrendScore;
       const baseScore =
         typeof visionData.totalScore === 'number' && visionData.totalScore > 0
-          ? visionData.totalScore
-          : rawPaScore + rawIndScore + rawTrendScore;
+          ? (step1Passed && step2Passed && step3Passed && filterPassed
+              ? Math.max(visionData.totalScore, calculatedScoreSum)
+              : visionData.totalScore)
+          : calculatedScoreSum;
       const penalty = (closedCandleMismatch ? 2.5 : 0) + (isExhaustionChase ? 2.5 : 0) + (isSpinningTop ? 2.0 : 0);
       const computedTotalScore = Number(
         Math.min(10, Math.max(0, baseScore + (isDrawingConfirmed ? 0.3 : 0) - penalty)).toFixed(1)
@@ -890,11 +996,11 @@ export class ScreenVerificationService {
         !isBearishRejection &&
         !isDrawingConfirmed &&
         bodyPct >= 22;
-      // 3) Do NOT guess against aligned 15m+5m macro trend without a decisive true rejection wick or explicit drawing level bounce
+      // 3) Do NOT guess against aligned macro/5m+3m trend without a decisive macro-aligned rejection or explicit drawing level bounce
       const isBlindCounterTrend =
         !isDrawingConfirmed &&
-        ((aiForecast === 'CALL' && macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND' && !isBullishRejection) ||
-          (aiForecast === 'PUT' && macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND' && !isBearishRejection));
+        ((aiForecast === 'CALL' && ((macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND' && !isBullishRejection) || (hasBearish5m3m && macroTrend15m !== 'UPTREND'))) ||
+          (aiForecast === 'PUT' && ((macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND' && !isBearishRejection) || (hasBullish5m3m && macroTrend15m !== 'DOWNTREND'))));
 
       const hasClearDirection =
         aiForecast !== 'WAIT' &&
@@ -904,15 +1010,16 @@ export class ScreenVerificationService {
         !isContradictoryCall &&
         !isContradictoryPut &&
         !isBlindCounterTrend &&
-        (aiForecast === 'CALL' ? directionalScore >= 2.5 : directionalScore <= -2.5);
+        (aiForecast === 'CALL' ? directionalScore >= 2.2 : directionalScore <= -2.2);
 
       const step5Passed = Boolean(
-        (visionData.step5SetupConfirmed !== false) &&
-          hasClearDirection &&
+        hasClearDirection &&
+          step1Passed &&
           filterPassed &&
           step2Passed &&
           step3Passed &&
-          computedTotalScore >= 8.0
+          computedTotalScore >= 7.5 &&
+          (visionData.step5SetupConfirmed !== false || (hasAlignedMomentumForScore && computedTotalScore >= 7.5))
       );
 
       const stepChecks = [
@@ -971,9 +1078,10 @@ export class ScreenVerificationService {
 
       const confirmedPoints = stepChecks.filter((s) => s.passed).length;
 
-      // STRICT PRECISION RULE: Require all 5 steps (or 4/5 with >= 8.2 score & mandatory step2/step4/step5), zero contradictions!
+      // STRICT PRECISION RULE: Require all 5 steps (or 4/5 with >= 7.8 score & mandatory step1/step2/step3/step4/step5), zero contradictions!
       const canIssueTradeSignal =
-        (confirmedPoints === 5 || (confirmedPoints >= 4 && computedTotalScore >= 8.2)) &&
+        (confirmedPoints === 5 || (confirmedPoints >= 4 && computedTotalScore >= 7.8)) &&
+        step1Passed &&
         filterPassed &&
         step2Passed &&
         step3Passed &&
@@ -1142,7 +1250,7 @@ export class ScreenVerificationService {
           indicatorMomentumScore: Number(rawIndScore.toFixed(1)),
           trendAlignmentScore: Number(rawTrendScore.toFixed(1)),
           totalScore: computedTotalScore,
-          thresholdRequired: 8.0,
+          thresholdRequired: 7.5,
           finalVerdict: direction === 'UP' ? 'CALL' : direction === 'DOWN' ? 'PUT' : 'WAIT',
         },
       };

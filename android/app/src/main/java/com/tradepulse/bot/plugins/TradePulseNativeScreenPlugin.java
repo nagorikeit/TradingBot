@@ -23,6 +23,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
@@ -37,6 +38,7 @@ import android.widget.TextView;
 import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
 import androidx.browser.customtabs.CustomTabColorSchemeParams;
+import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
 import androidx.credentials.Credential;
@@ -55,6 +57,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 
@@ -68,6 +71,8 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1359,8 +1364,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     if (b.maxY > srMaxY) srMaxY = b.maxY;
                 }
                 int srSpan = Math.max(20, srMaxY - srMinY);
-                nearTop = closedSignalCandle.minY <= srMinY + (int)(srSpan * 0.14f) && closedSignalCandle.minY >= srMinY - (int)(srSpan * 0.06f);
-                nearBottom = closedSignalCandle.maxY >= srMaxY - (int)(srSpan * 0.14f) && closedSignalCandle.maxY <= srMaxY + (int)(srSpan * 0.06f);
+                int closedBodyTop = closedSignalCandle.minY + closedSignalCandle.upperWickPx;
+                int closedBodyBottom = closedSignalCandle.maxY - closedSignalCandle.lowerWickPx;
+                nearTop = closedBodyTop <= srMinY + (int)(srSpan * 0.14f) && closedBodyTop >= srMinY - (int)(srSpan * 0.06f);
+                nearBottom = closedBodyBottom >= srMaxY - (int)(srSpan * 0.14f) && closedBodyBottom <= srMaxY + (int)(srSpan * 0.06f);
             }
 
             int prevBodiesSum = 0;
@@ -1391,8 +1398,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             } else if (isExhaustionSpike) {
                 finalReason = "[অফলাইন CV · ফিল্টার] এক্সহশন ক্লাইম্যাক্স স্পাইক — রিভার্সাল ঝুঁকি (WAIT)";
             } else {
-                boolean callPermitted = !"DOWNTREND".equals(macroTrend15M) && ("UPTREND".equals(secTrend5M) || isTrueHammer);
-                boolean putPermitted = !"UPTREND".equals(macroTrend15M) && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar);
+                boolean callPermitted = !"DOWNTREND".equals(macroTrend15M)
+                        && ("UPTREND".equals(secTrend5M) || isTrueHammer)
+                        && !("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M));
+                boolean putPermitted = !"UPTREND".equals(macroTrend15M)
+                        && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar)
+                        && !("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M));
+                boolean allowBullBreakout = "UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && sameColorStreak <= 2;
+                boolean allowBearBreakout = "DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && sameColorStreak <= 2;
 
                 // Setup 1: True Single-Sided S/R Wick Rejection (Hammer / Shooting Star)
                 if (callPermitted && isTrueHammer) {
@@ -1406,37 +1419,39 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার রিজেকশন (সেলার প্রেসার)";
                 }
-                // Setup 2: Aligned Trend Engulfing (Never at prior resistance/support wall)
-                else if ("UPTREND".equals(macroTrend15M) && !nearTop && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f) && bodyPct >= 35) {
+                // Setup 2: Aligned Trend Engulfing
+                else if (("UPTREND".equals(macroTrend15M) || ("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M)))
+                    && (!nearTop || allowBullBreakout) && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
                     proposedDirection = "UP";
                     confidence = 85;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] আপট্রেন্ড বুলিশ এনগালফিং নিশ্চিত";
-                } else if ("DOWNTREND".equals(macroTrend15M) && !nearBottom && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
-                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.25f) && bodyPct >= 35) {
+                } else if (("DOWNTREND".equals(macroTrend15M) || ("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M)))
+                    && (!nearBottom || allowBearBreakout) && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int)(prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
                     proposedDirection = "DOWN";
                     confidence = 85;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
                     finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
                 }
-                // Setup 3: Healthy Pullback/Momentum Continuation (allows streak 2-3, blocks 4+ exhaustion or hitting prior S/R wall!)
+                // Setup 3: Healthy Pullback / Momentum Continuation (supports 1st pullback continuation & clean body >= 24%)
                 else if (("UPTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(momentum3M)))
-                    && "UPTREND".equals(secTrend5M) && microGreenPct >= 58
-                    && sameColorStreak <= 3 && !nearTop && bodyPct >= 35
-                    && closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen) {
+                    && ("UPTREND".equals(secTrend5M) || "UPTREND".equals(momentum3M))
+                    && sameColorStreak <= 3 && (!nearTop || allowBullBreakout) && bodyPct >= 24
+                    && closedSignalCandle.isGreen && microGreenPct >= 45) {
                     proposedDirection = "UP";
-                    confidence = "UPTREND".equals(macroTrend15M) ? 84 : 82;
+                    confidence = ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) ? 85 : 82;
                     verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
+                    finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (৫/৫ পয়েন্ট)";
                 } else if (("DOWNTREND".equals(macroTrend15M) || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(momentum3M)))
-                    && "DOWNTREND".equals(secTrend5M) && microRedPct >= 58
-                    && sameColorStreak <= 3 && !nearBottom && bodyPct >= 35
-                    && !closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen) {
+                    && ("DOWNTREND".equals(secTrend5M) || "DOWNTREND".equals(momentum3M))
+                    && sameColorStreak <= 3 && (!nearBottom || allowBearBreakout) && bodyPct >= 24
+                    && !closedSignalCandle.isGreen && microRedPct >= 45) {
                     proposedDirection = "DOWN";
-                    confidence = "DOWNTREND".equals(macroTrend15M) ? 84 : 82;
+                    confidence = ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) ? 85 : 82;
                     verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (এক্সহশন-মুক্ত)";
+                    finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (৫/৫ পয়েন্ট)";
                 } else if (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom))) {
                     proposedDirection = "WAIT";
                     confidence = 0;
@@ -1454,15 +1469,18 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             boolean has5m3mMomentum = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M)
                     && (secTrend5M.equals(macroTrend15M) || "SIDEWAYS".equals(macroTrend15M));
+            boolean isSrWallExhaustion = (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom)))
+                    && !isTrueHammer && !isTrueShootingStar;
             boolean step1Passed = isAuthenticChart;
             boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision);
+            boolean rejectionStep3Ok = ("UP".equals(direction) && isTrueHammer && !"DOWNTREND".equals(macroTrend15M))
+                    || ("DOWN".equals(direction) && isTrueShootingStar && !"UPTREND".equals(macroTrend15M));
             boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M))
                     || has5m3mMomentum
-                    || isTrueHammer
-                    || isTrueShootingStar;
+                    || rejectionStep3Ok;
             boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike
-                    && (sameColorStreak < 4 || isTrueHammer || isTrueShootingStar);
-            boolean step5Passed = !"WAIT".equals(direction) && step2Passed && step3Passed && step4Passed;
+                    && !isSrWallExhaustion;
+            boolean step5Passed = !"WAIT".equals(direction) && step1Passed && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
 
             String closedTypeStr = (lastClosedCandle != null && lastClosedCandle.isDoji)
@@ -1545,10 +1563,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             JSObject cScore = new JSObject();
             cScore.put("priceActionScore", step2Passed ? 4.5 : 2.0);
-            cScore.put("indicatorMomentumScore", microGreenPct >= 60 || microRedPct >= 60 ? 2.8 : 1.5);
+            cScore.put("indicatorMomentumScore", microGreenPct >= 50 || microRedPct >= 50 ? 2.6 : 1.6);
             cScore.put("trendAlignmentScore", step3Passed ? 1.8 : 0.6);
             cScore.put("totalScore", confidence > 0 ? (confidence / 10.0f) : ((confirmedPoints / 5.0f) * 8.0f));
-            cScore.put("thresholdRequired", 8.0);
+            cScore.put("thresholdRequired", 7.5);
             cScore.put("finalVerdict", "UP".equals(direction) ? "CALL" : ("DOWN".equals(direction) ? "PUT" : "WAIT"));
             flowObj.put("signalScoring", cScore);
 
@@ -2917,12 +2935,145 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
     }
 
+    private static final String DEFAULT_SERVER_CLIENT_ID =
+            "1074453942803-a3p076amqntv9oblaq01fb6aclbf5c7r.apps.googleusercontent.com";
+
+    private void resolveGoogleSignInError(
+            PluginCall call,
+            GetCredentialException e,
+            long elapsedMs
+    ) {
+        JSObject fail = new JSObject();
+        fail.put("success", false);
+        fail.put("elapsedMs", elapsedMs);
+        fail.put("packageName", getContext() != null ? getContext().getPackageName() : "com.tradepulse.bot");
+        fail.put("sha1", getAppSigningFingerprint("SHA-1"));
+        fail.put("sha256", getAppSigningFingerprint("SHA-256"));
+
+        String rawMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        String lower = rawMsg.toLowerCase(Locale.US);
+
+        boolean likelyShaOrConfig = (e instanceof NoCredentialException)
+                || (e instanceof GetCredentialProviderConfigurationException)
+                || lower.contains("developer")
+                || lower.contains("28444")
+                || lower.contains("10:")
+                || lower.contains("caller has no access")
+                || lower.contains("caller not whitelisted")
+                || lower.contains("sha")
+                || lower.contains("configuration");
+
+        if (e instanceof GetCredentialCancellationException) {
+            // On many devices (especially HyperOS/MIUI or when APK SHA-1 is missing in Firebase Console),
+            // Credential Manager throws GetCredentialCancellationException instantaneously (< 1500ms)
+            // before the user ever interacts with an account picker.
+            boolean autoCancelledBySystem = elapsedMs < 1500 || likelyShaOrConfig;
+            fail.put("cancelled", !autoCancelledBySystem);
+            fail.put("autoCancelled", autoCancelledBySystem);
+            fail.put("errorCode", autoCancelledBySystem ? "CREDENTIAL_SHEET_UNAVAILABLE" : "CANCELLED");
+            fail.put("error", autoCancelledBySystem
+                    ? "নেটিভ Google অ্যাকাউন্ট শীট চালু করা যায়নি (" + rawMsg + ")"
+                    : "Google অ্যাকাউন্ট বাছাই বাতিল করা হয়েছে।");
+            call.resolve(fail);
+            return;
+        }
+
+        fail.put("cancelled", false);
+        fail.put("errorCode", likelyShaOrConfig ? "NEEDS_ANDROID_SHA1" : "NATIVE_ERROR");
+        fail.put("error", rawMsg);
+        call.resolve(fail);
+    }
+
+    private void runCredentialManagerRequest(
+            Activity activity,
+            CredentialManager credentialManager,
+            GetCredentialRequest request,
+            long startedAtMs,
+            String serverClientId,
+            boolean allowGoogleIdFallback,
+            PluginCall call
+    ) {
+        credentialManager.getCredentialAsync(
+                activity,
+                request,
+                null,
+                ContextCompat.getMainExecutor(activity),
+                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                    @Override
+                    public void onResult(@NonNull GetCredentialResponse response) {
+                        Credential credential = response.getCredential();
+                        if (credential instanceof CustomCredential
+                                && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                            try {
+                                GoogleIdTokenCredential googleCred =
+                                        GoogleIdTokenCredential.createFrom(credential.getData());
+                                JSObject ok = new JSObject();
+                                ok.put("success", true);
+                                ok.put("idToken", googleCred.getIdToken());
+                                ok.put("email", googleCred.getId());
+                                ok.put("displayName", googleCred.getDisplayName() != null ? googleCred.getDisplayName() : "");
+                                call.resolve(ok);
+                            } catch (Exception parseEx) {
+                                JSObject fail = new JSObject();
+                                fail.put("success", false);
+                                fail.put("errorCode", "TOKEN_PARSE_ERROR");
+                                fail.put("error", "Google ID টোকেন পার্স করা যায়নি: " + parseEx.getMessage());
+                                call.resolve(fail);
+                            }
+                        } else {
+                            JSObject fail = new JSObject();
+                            fail.put("success", false);
+                            fail.put("errorCode", "UNEXPECTED_CREDENTIAL");
+                            fail.put("error", "অপ্রত্যাশিত Google ক্রেডেনশিয়াল ধরন পাওয়া গেছে।");
+                            call.resolve(fail);
+                        }
+                    }
+
+                    @Override
+                    public void onError(@NonNull GetCredentialException e) {
+                        long elapsedMs = SystemClock.elapsedRealtime() - startedAtMs;
+                        boolean shouldTryGoogleIdOption = allowGoogleIdFallback && (
+                                (e instanceof NoCredentialException)
+                                        || (e instanceof GetCredentialProviderConfigurationException)
+                                        || (e instanceof GetCredentialCancellationException && elapsedMs < 1800)
+                                        || !(e instanceof GetCredentialCancellationException)
+                        );
+                        if (shouldTryGoogleIdOption) {
+                            try {
+                                GetGoogleIdOption googleIdOption = new GetGoogleIdOption.Builder()
+                                        .setFilterByAuthorizedAccounts(false)
+                                        .setServerClientId(serverClientId)
+                                        .setAutoSelectEnabled(false)
+                                        .build();
+                                GetCredentialRequest fallbackReq = new GetCredentialRequest.Builder()
+                                        .addCredentialOption(googleIdOption)
+                                        .build();
+                                runCredentialManagerRequest(
+                                        activity,
+                                        credentialManager,
+                                        fallbackReq,
+                                        SystemClock.elapsedRealtime(),
+                                        serverClientId,
+                                        false,
+                                        call
+                                );
+                                return;
+                            } catch (Exception ignored) {
+                                // Fall through to structured error resolution below
+                            }
+                        }
+                        resolveGoogleSignInError(call, e, elapsedMs);
+                    }
+                }
+        );
+    }
+
     @PluginMethod
     public void signInWithGoogleNative(PluginCall call) {
-        final String serverClientId = call.getString(
-                "serverClientId",
-                "1074453942803-a3p076amqntv9oblaq01fb6aclbf5c7r.apps.googleusercontent.com"
-        );
+        String requestedClientId = call.getString("serverClientId", DEFAULT_SERVER_CLIENT_ID);
+        final String serverClientId = (requestedClientId == null || requestedClientId.trim().isEmpty())
+                ? DEFAULT_SERVER_CLIENT_ID
+                : requestedClientId.trim();
         final Activity activity = getActivity();
         if (activity == null || activity.isFinishing()) {
             JSObject errRes = new JSObject();
@@ -2942,73 +3093,14 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                         .addCredentialOption(signInWithGoogleOption)
                         .build();
 
-                credentialManager.getCredentialAsync(
+                runCredentialManagerRequest(
                         activity,
+                        credentialManager,
                         request,
-                        null,
-                        ContextCompat.getMainExecutor(activity),
-                        new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
-                            @Override
-                            public void onResult(@NonNull GetCredentialResponse response) {
-                                Credential credential = response.getCredential();
-                                if (credential instanceof CustomCredential
-                                        && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
-                                    try {
-                                        GoogleIdTokenCredential googleCred =
-                                                GoogleIdTokenCredential.createFrom(credential.getData());
-                                        JSObject ok = new JSObject();
-                                        ok.put("success", true);
-                                        ok.put("idToken", googleCred.getIdToken());
-                                        ok.put("email", googleCred.getId());
-                                        ok.put("displayName", googleCred.getDisplayName() != null ? googleCred.getDisplayName() : "");
-                                        call.resolve(ok);
-                                    } catch (Exception parseEx) {
-                                        JSObject fail = new JSObject();
-                                        fail.put("success", false);
-                                        fail.put("errorCode", "TOKEN_PARSE_ERROR");
-                                        fail.put("error", "Google ID টোকেন পার্স করা যায়নি: " + parseEx.getMessage());
-                                        call.resolve(fail);
-                                    }
-                                } else {
-                                    JSObject fail = new JSObject();
-                                    fail.put("success", false);
-                                    fail.put("errorCode", "UNEXPECTED_CREDENTIAL");
-                                    fail.put("error", "অপ্রত্যাশিত Google ক্রেডেনশিয়াল ধরন পাওয়া গেছে।");
-                                    call.resolve(fail);
-                                }
-                            }
-
-                            @Override
-                            public void onError(@NonNull GetCredentialException e) {
-                                JSObject fail = new JSObject();
-                                fail.put("success", false);
-                                if (e instanceof GetCredentialCancellationException) {
-                                    fail.put("cancelled", true);
-                                    fail.put("errorCode", "CANCELLED");
-                                    fail.put("error", "Google অ্যাকাউন্ট বাছাই বাতিল করা হয়েছে।");
-                                    call.resolve(fail);
-                                    return;
-                                }
-
-                                String rawMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                                String lower = rawMsg.toLowerCase(Locale.US);
-                                boolean likelyShaOrConfig = (e instanceof NoCredentialException)
-                                        || (e instanceof GetCredentialProviderConfigurationException)
-                                        || lower.contains("developer")
-                                        || lower.contains("28444")
-                                        || lower.contains("10:")
-                                        || lower.contains("caller has no access")
-                                        || lower.contains("sha")
-                                        || lower.contains("configuration");
-
-                                fail.put("errorCode", likelyShaOrConfig ? "NEEDS_ANDROID_SHA1" : "NATIVE_ERROR");
-                                fail.put("error", rawMsg);
-                                fail.put("packageName", getContext() != null ? getContext().getPackageName() : "com.tradepulse.bot");
-                                fail.put("sha1", getAppSigningFingerprint("SHA-1"));
-                                fail.put("sha256", getAppSigningFingerprint("SHA-256"));
-                                call.resolve(fail);
-                            }
-                        }
+                        SystemClock.elapsedRealtime(),
+                        serverClientId,
+                        true,
+                        call
                 );
             } catch (Exception ex) {
                 JSObject fail = new JSObject();
@@ -3038,14 +3130,33 @@ public class TradePulseNativeScreenPlugin extends Plugin {
         }
         activity.runOnUiThread(() -> {
             try {
+                DisplayMetrics dm = activity.getResources().getDisplayMetrics();
+                int sheetHeightPx = Math.max(480, Math.round(dm.heightPixels * 0.82f));
+
                 CustomTabColorSchemeParams colorParams = new CustomTabColorSchemeParams.Builder()
                         .setToolbarColor(0xFF0F172A)
                         .build();
-                CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
+                CustomTabsIntent.Builder builder = new CustomTabsIntent.Builder()
                         .setDefaultColorSchemeParams(colorParams)
                         .setShowTitle(false)
                         .setUrlBarHidingEnabled(true)
-                        .build();
+                        .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+                        .setToolbarCornerRadiusDp(16)
+                        .setInitialActivityHeightPx(sheetHeightPx, CustomTabsIntent.ACTIVITY_HEIGHT_ADJUSTABLE);
+
+                CustomTabsIntent customTabsIntent = builder.build();
+                List<String> preferredPackages = Arrays.asList(
+                        "com.android.chrome",
+                        "com.chrome.beta",
+                        "com.chrome.dev",
+                        "com.sec.android.app.sbrowser",
+                        "com.microsoft.emmx"
+                );
+                String customTabsPkg = CustomTabsClient.getPackageName(activity, preferredPackages);
+                if (customTabsPkg != null && !customTabsPkg.trim().isEmpty()) {
+                    customTabsIntent.intent.setPackage(customTabsPkg);
+                }
+
                 customTabsIntent.launchUrl(activity, Uri.parse(url));
                 JSObject res = new JSObject();
                 res.put("opened", true);

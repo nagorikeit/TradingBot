@@ -2187,9 +2187,15 @@ export class LiveScreenService {
                 if (c.maxY > srMaxY) srMaxY = c.maxY;
               });
               const srSpan = Math.max(20, srMaxY - srMinY);
-              nearTop = closedTradeCandle.minY <= srMinY + srSpan * 0.14 && closedTradeCandle.minY >= srMinY - srSpan * 0.06;
-              nearBottom = closedTradeCandle.maxY >= srMaxY - srSpan * 0.14 && closedTradeCandle.maxY <= srMaxY + srSpan * 0.06;
+              const closedBodyTop = closedTradeCandle.minY + closedTradeCandle.upperWickPx;
+              const closedBodyBottom = closedTradeCandle.maxY - closedTradeCandle.lowerWickPx;
+              nearTop = closedBodyTop <= srMinY + srSpan * 0.14 && closedBodyTop >= srMinY - srSpan * 0.06;
+              nearBottom = closedBodyBottom >= srMaxY - srSpan * 0.14 && closedBodyBottom <= srMaxY + srSpan * 0.06;
             }
+
+            const has5m3mTrendAlign = secondaryTrend !== 'SIDEWAYS' && momentum3m === secondaryTrend;
+            const allowBullBreakout = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' && streak <= 2;
+            const allowBearBreakout = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' && streak <= 2;
 
             let dir: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
             let pattern = 'স্পষ্ট সেটআপ মেলেনি (WAIT)';
@@ -2205,11 +2211,11 @@ export class LiveScreenService {
               dir = 'WAIT';
               confidence = 36;
               pattern = 'সাইডওয়েজ অল্টারনেটিং চপ (WAIT)';
-            } else if (isClosedUpperRejection && macroTrend !== 'UPTREND') {
+            } else if (isClosedUpperRejection && macroTrend !== 'UPTREND' && !(secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) {
               dir = 'DOWN';
               confidence = secondaryTrend === 'DOWNTREND' ? 86 : 82;
               pattern = '[অফলাইন CV] ক্লোজড ক্যান্ডেল আপার উইক রিজেকশন (PUT)';
-            } else if (isClosedLowerRejection && macroTrend !== 'DOWNTREND') {
+            } else if (isClosedLowerRejection && macroTrend !== 'DOWNTREND' && !(secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) {
               dir = 'UP';
               confidence = secondaryTrend === 'UPTREND' ? 86 : 82;
               pattern = '[অফলাইন CV] ক্লোজড ক্যান্ডেল লোয়ার উইক বাউন্স (CALL)';
@@ -2217,9 +2223,9 @@ export class LiveScreenService {
               closedTradeCandle.color === 'GREEN' &&
               prevPrev &&
               prevPrev.color === 'RED' &&
-              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 &&
-              macroTrend === 'UPTREND' &&
-              !nearTop
+              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
+              (macroTrend === 'UPTREND' || (secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) &&
+              (!nearTop || allowBullBreakout)
             ) {
               dir = 'UP';
               confidence = 85;
@@ -2228,35 +2234,35 @@ export class LiveScreenService {
               closedTradeCandle.color === 'RED' &&
               prevPrev &&
               prevPrev.color === 'GREEN' &&
-              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 &&
-              macroTrend === 'DOWNTREND' &&
-              !nearBottom
+              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
+              (macroTrend === 'DOWNTREND' || (secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) &&
+              (!nearBottom || allowBearBreakout)
             ) {
               dir = 'DOWN';
               confidence = 85;
               pattern = '[অফলাইন CV] বিয়ারিশ এনগালফিং ক্লোজড ক্যান্ডেল (PUT)';
             } else if (
-              (macroTrend === 'UPTREND' || (macroTrend === 'SIDEWAYS' && momentum3m === 'UPTREND')) &&
-              secondaryTrend === 'UPTREND' &&
+              (macroTrend === 'UPTREND' || (macroTrend === 'SIDEWAYS' && has5m3mTrendAlign && secondaryTrend === 'UPTREND')) &&
+              (secondaryTrend === 'UPTREND' || momentum3m === 'UPTREND') &&
               closedTradeCandle.color === 'GREEN' &&
               streak <= 3 &&
-              !nearTop &&
-              bodyPercent >= 35
+              (!nearTop || allowBullBreakout) &&
+              bodyPercent >= 24
             ) {
               dir = 'UP';
-              confidence = macroTrend === 'UPTREND' ? 84 : 82;
-              pattern = '[অফলাইন CV] বুলিশ ট্রেন্ড পুলব্যাক কনটিনিউয়েশন (CALL)';
+              confidence = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' ? 85 : 82;
+              pattern = '[অফলাইন CV] বুলিশ ট্রেন্ড কনটিনিউয়েশন (CALL)';
             } else if (
-              (macroTrend === 'DOWNTREND' || (macroTrend === 'SIDEWAYS' && momentum3m === 'DOWNTREND')) &&
-              secondaryTrend === 'DOWNTREND' &&
+              (macroTrend === 'DOWNTREND' || (macroTrend === 'SIDEWAYS' && has5m3mTrendAlign && secondaryTrend === 'DOWNTREND')) &&
+              (secondaryTrend === 'DOWNTREND' || momentum3m === 'DOWNTREND') &&
               closedTradeCandle.color === 'RED' &&
               streak <= 3 &&
-              !nearBottom &&
-              bodyPercent >= 35
+              (!nearBottom || allowBearBreakout) &&
+              bodyPercent >= 24
             ) {
               dir = 'DOWN';
-              confidence = macroTrend === 'DOWNTREND' ? 84 : 82;
-              pattern = '[অফলাইন CV] বিয়ারিশ ট্রেন্ড পুলব্যাক কনটিনিউয়েশন (PUT)';
+              confidence = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' ? 85 : 82;
+              pattern = '[অফলাইন CV] বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (PUT)';
             } else if (streak >= 4 || (streak >= 3 && (nearTop || nearBottom))) {
               dir = 'WAIT';
               confidence = 40;
@@ -2475,14 +2481,18 @@ export class LiveScreenService {
     const has5m3mAligned = secTrend !== 'SIDEWAYS' && momentum3m === secTrend && (macroTrend === secTrend || macroTrend === 'SIDEWAYS');
     const step1Passed = true;
     const step2Passed = closedColor === 'GREEN' || closedColor === 'RED';
+    const rejectionAligned =
+      Boolean(chartDetection.isClosedRejection) &&
+      ((rawDir === 'UP' && macroTrend !== 'DOWNTREND' && !(secTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) ||
+        (rawDir === 'DOWN' && macroTrend !== 'UPTREND' && !(secTrend === 'UPTREND' && momentum3m === 'UPTREND')));
     const step3Passed =
       (macroTrend !== 'SIDEWAYS' &&
         secTrend !== 'SIDEWAYS' &&
         macroTrend === secTrend) ||
       has5m3mAligned ||
-      Boolean(chartDetection.isClosedRejection);
+      rejectionAligned;
     const step4Passed = closedColor !== 'DOJI' && !chartDetection.isChoppy;
-    const step5Passed = rawDir !== 'WAIT' && confidence >= 82 && step2Passed && step3Passed && step4Passed;
+    const step5Passed = rawDir !== 'WAIT' && confidence >= 80 && step1Passed && step2Passed && step3Passed && step4Passed;
 
     const dir: 'UP' | 'DOWN' | 'WAIT' = step5Passed && step1Passed && step2Passed && step3Passed && step4Passed ? rawDir : 'WAIT';
     const confirmedPoints = [step1Passed, step2Passed, step3Passed, step4Passed, step5Passed].filter(Boolean).length;
@@ -2597,7 +2607,7 @@ export class LiveScreenService {
           indicatorMomentumScore: Number((step4Passed ? 2.4 : 1.0).toFixed(1)),
           trendAlignmentScore: Number((step3Passed ? 1.8 : 0.6).toFixed(1)),
           totalScore,
-          thresholdRequired: 8.0,
+          thresholdRequired: 7.5,
           finalVerdict: dir === 'UP' ? 'CALL' : dir === 'DOWN' ? 'PUT' : 'WAIT',
         },
       },
@@ -3127,6 +3137,10 @@ export class LiveScreenService {
    * Cancels any recurring interval timers so the signal never flickers or auto-changes!
    */
   public async triggerScanAndLock(): Promise<ScreenAnalysisFinalResult | null> {
+    if (this.isSingleScanInProgress || this.isProcessingFrame) {
+      return this.latestResult;
+    }
+
     const allowance = authService.checkScanAllowance();
     if (!allowance.allowed) {
       const msg = allowance.reasonBn || 'আপনার স্ক্যান লিমিট শেষ হয়েছে।';
@@ -3156,6 +3170,7 @@ export class LiveScreenService {
       this.scanTimer = null;
     }
     this.isScanningActive = false;
+    this.isSingleScanInProgress = true;
 
     // 2. Progressive 5-Step Scan Sequence on the Floating Overlay Bubble
     this.aiState = 'ANALYZING';
@@ -3175,38 +3190,35 @@ export class LiveScreenService {
       this.notify();
     };
 
-    // ১/৫: চার্ট যাচাই
-    postStep(1, '১/৫ চার্ট যাচাই', 'অ্যাসেট ও টাইমফ্রেম');
-    await new Promise((r) => setTimeout(r, 320));
-
-    // ২/৫: ক্যান্ডেল ডেটা
-    postStep(2, '২/৫ ক্যান্ডেল', 'OHLC ও টাইমার');
-    await new Promise((r) => setTimeout(r, 320));
-
-    // ৩/৫: মাল্টি-TF
-    postStep(3, '৩/৫ মাল্টি-TF', '১৫M · ৫M · ১M');
-    await new Promise((r) => setTimeout(r, 320));
-
-    // ৪/৫: মার্কেট ফিল্টার
-    postStep(4, '৪/৫ ফিল্টার', 'ট্রেন্ড ও ভলিউম');
-    await new Promise((r) => setTimeout(r, 320));
-
-    // ৫/৫: স্কোরিং
-    postStep(5, '৫/৫ স্কোরিং', 'ফাইনাল সিগন্যাল');
-    await new Promise((r) => setTimeout(r, 320));
-
-    // 3. Capture and analyze exactly ONE frame
-    this.isSingleScanInProgress = true;
     try {
+      // ১/৫: চার্ট যাচাই
+      postStep(1, '১/৫ চার্ট যাচাই', 'অ্যাসেট ও টাইমফ্রেম');
+      await new Promise((r) => setTimeout(r, 260));
+
+      // ২/৫: ক্যান্ডেল ডেটা
+      postStep(2, '২/৫ ক্যান্ডেল', 'OHLC ও টাইমার');
+      await new Promise((r) => setTimeout(r, 260));
+
+      // ৩/৫: মাল্টি-TF
+      postStep(3, '৩/৫ মাল্টি-TF', '১৫M · ৫M · ৩M · ১M');
+      await new Promise((r) => setTimeout(r, 260));
+
+      // ৪/৫: মার্কেট ফিল্টার
+      postStep(4, '৪/৫ ফিল্টার', 'ট্রেন্ড ও ভলিউম');
+      await new Promise((r) => setTimeout(r, 260));
+
+      // ৫/৫: স্কোরিং
+      postStep(5, '৫/৫ স্কোরিং', 'ফাইনাল সিগন্যাল');
+      await new Promise((r) => setTimeout(r, 260));
+
+      // 3. Capture and analyze exactly ONE frame
       await this.captureAndAnalyzeCurrentFrame();
     } finally {
       this.isSingleScanInProgress = false;
       this.currentScanStep = null;
+      this.isScanningActive = false;
+      this.aiState = 'IDLE';
     }
-
-    // 4. Ensure recurring scanning remains stopped and single signal is locked
-    this.isScanningActive = false;
-    this.aiState = 'IDLE';
 
     if (this.latestResult) {
       this.updateFloatingOverlayHUD({

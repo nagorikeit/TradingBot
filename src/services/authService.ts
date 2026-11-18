@@ -283,6 +283,8 @@ class AuthService {
   private scanWriteQueue: Promise<unknown> = Promise.resolve();
   private keepTerminalUnlockedUntilNextClick: boolean = false;
   private nativeAuthResolver: ((res: { success: boolean; error?: string; user?: User }) => void) | null = null;
+  private lastHandledNativeCallbackUrl: string | null = null;
+  private isHandlingNativeCallback: boolean = false;
 
   constructor() {
     this.init();
@@ -887,6 +889,12 @@ class AuthService {
     if (!callbackUrl || !callbackUrl.startsWith('tradepulse://auth-callback')) {
       return;
     }
+    if (this.isHandlingNativeCallback || this.lastHandledNativeCallbackUrl === callbackUrl) {
+      return;
+    }
+    this.isHandlingNativeCallback = true;
+    this.lastHandledNativeCallbackUrl = callbackUrl;
+
     const resolvePending = this.nativeAuthResolver;
     this.nativeAuthResolver = null;
 
@@ -912,8 +920,11 @@ class AuthService {
       this.setCurrentUserSession(user, 'firebase_google_auth');
       resolvePending?.({ success: true, user });
     } catch (error: unknown) {
+      this.lastHandledNativeCallbackUrl = null;
       const msg = error instanceof Error ? error.message : String(error);
       resolvePending?.({ success: false, error: 'মোবাইল Google লগইন ব্যর্থ হয়েছে: ' + msg });
+    } finally {
+      this.isHandlingNativeCallback = false;
     }
   }
 
@@ -928,8 +939,9 @@ class AuthService {
   }> {
     this.keepTerminalUnlockedUntilNextClick = false;
 
-    // On Capacitor Android APK: use 100% Native In-App Google Account Picker (Credential Manager).
-    // Never leaves the app to an external browser!
+    // On Capacitor Android APK: try Native In-App Google Account Picker (Credential Manager) first.
+    // If OS/SHA-1 configuration prevents the native sheet from opening, seamlessly open the
+    // embedded In-App Secure Bottom Sheet (Chrome Custom Tab inside app stack — never external browser).
     if (Capacitor.isNativePlatform()) {
       try {
         const nativeRes = await TradePulseNativeScreen.signInWithGoogleNative({
@@ -944,30 +956,51 @@ class AuthService {
           return { success: true, user };
         }
 
-        if (nativeRes.cancelled) {
+        const sha1 = nativeRes.sha1;
+        const packageName = nativeRes.packageName || 'com.tradepulse.bot';
+        const isShaIssue =
+          nativeRes.errorCode === 'NEEDS_ANDROID_SHA1' ||
+          nativeRes.errorCode === 'CREDENTIAL_SHEET_UNAVAILABLE';
+
+        if (nativeRes.cancelled && !nativeRes.autoCancelled) {
           return {
             success: false,
-            error: 'Google অ্যাকাউন্ট বাছাই বাতিল করা হয়েছে। আবার চেষ্টা করুন।',
+            sha1,
+            packageName,
+            canUseCustomTabFallback: true,
+            error: 'Google অ্যাকাউন্ট বাছাই বাতিল করা হয়েছে। আবার চেষ্টা করুন অথবা নিচের ইন-অ্যাপ সিকিউর ট্যাব দিয়ে প্রবেশ করুন।',
           };
         }
 
-        const isShaIssue = nativeRes.errorCode === 'NEEDS_ANDROID_SHA1';
+        // Native Credential Manager failed or was auto-cancelled by OS/missing SHA-1 ->
+        // Automatically launch embedded in-app Chrome Custom Tab sheet right inside TradePulse.
+        const tabRes = await this.loginWithGoogleCustomTabFallback();
+        if (tabRes.success) {
+          return { success: true, user: tabRes.user };
+        }
+
         return {
           success: false,
           needsSha1Setup: isShaIssue,
-          sha1: nativeRes.sha1,
-          packageName: nativeRes.packageName || 'com.tradepulse.bot',
+          sha1,
+          packageName,
           canUseCustomTabFallback: true,
-          error: isShaIssue
-            ? 'ইন-অ্যাপ ১-ট্যাপ Google লগইন সক্রিয় করতে Firebase Console-এ এই অ্যাপের SHA-1 যোগ করা প্রয়োজন।'
-            : `ইন-অ্যাপ Google লগইন সম্পন্ন হয়নি: ${nativeRes.error || 'অজানা ত্রুটি'}`,
+          error:
+            tabRes.error ||
+            (isShaIssue
+              ? 'ইন-অ্যাপ Google লগইন সম্পন্ন হয়নি। আবার চেষ্টা করুন অথবা Firebase Console-এ SHA-1 যুক্ত করুন।'
+              : `ইন-অ্যাপ Google লগইন সম্পন্ন হয়নি: ${nativeRes.error || 'অজানা ত্রুটি'}`),
         };
       } catch (error: unknown) {
+        const tabRes = await this.loginWithGoogleCustomTabFallback();
+        if (tabRes.success) {
+          return { success: true, user: tabRes.user };
+        }
         const msg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
           canUseCustomTabFallback: true,
-          error: 'ইন-অ্যাপ Google লগইন শুরু করা যায়নি: ' + msg,
+          error: tabRes.error || 'ইন-অ্যাপ Google লগইন শুরু করা যায়নি: ' + msg,
         };
       }
     }
@@ -1011,15 +1044,16 @@ class AuthService {
   }
 
   /**
-   * Optional embedded Chrome Custom Tab fallback (stays inside the Android app task stack,
-   * only triggered manually if native Credential Manager reports missing SHA-1 configuration).
+   * Embedded In-App Chrome Custom Tab sheet (stays inside the Android app task stack).
+   * Used automatically when native Credential Manager cannot open due to missing debug SHA-1 or OS limits.
    */
   public async loginWithGoogleCustomTabFallback(): Promise<{ success: boolean; error?: string; user?: User }> {
     if (!Capacitor.isNativePlatform()) {
       return this.loginWithGoogle();
     }
     try {
-      const bridgeUrl = `${MOBILE_GOOGLE_AUTH_BRIDGE_URL}&auto=1`;
+      this.lastHandledNativeCallbackUrl = null;
+      const bridgeUrl = MOBILE_GOOGLE_AUTH_BRIDGE_URL;
       const authPromise = new Promise<{ success: boolean; error?: string; user?: User }>((resolve) => {
         this.nativeAuthResolver = resolve;
 

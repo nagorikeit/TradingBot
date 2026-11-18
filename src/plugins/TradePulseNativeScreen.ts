@@ -186,6 +186,8 @@ export interface TradePulseNativeScreenPlugin {
     email?: string;
     displayName?: string;
     cancelled?: boolean;
+    autoCancelled?: boolean;
+    elapsedMs?: number;
     errorCode?: string;
     error?: string;
     packageName?: string;
