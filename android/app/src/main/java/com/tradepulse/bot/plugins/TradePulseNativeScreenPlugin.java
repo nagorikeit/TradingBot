@@ -793,7 +793,7 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
             int span = Math.max(1, high - low);
             int bodyPct = Math.round(100f * Math.abs(close - open) / span);
-            int colorFlag = (bodyPct < 15) ? 0 : (close >= open ? 1 : -1);
+            int colorFlag = (bodyPct < 16) ? 0 : (close >= open ? 1 : -1);
             bars.add(0, new int[]{open, high, low, close, colorFlag, bodyPct});
         }
         if (bars.isEmpty()) return "SIDEWAYS";
@@ -811,10 +811,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             else if (bars.get(i)[4] == -1) reds++;
         }
         int prevSpan = Math.max(2, prev[1] - prev[2]);
-        boolean hhhl = latest[3] > prev[3] && latest[2] >= prev[2] - (int) (prevSpan * 0.15f);
-        boolean lhll = latest[3] < prev[3] && latest[1] <= prev[1] + (int) (prevSpan * 0.15f);
-        if (latest[4] == 1 && latest[5] >= 14 && (greens >= 2 || hhhl || latest[3] > prev[0])) return "UPTREND";
-        if (latest[4] == -1 && latest[5] >= 14 && (reds >= 2 || lhll || latest[3] < prev[0])) return "DOWNTREND";
+        boolean hhhl = latest[3] > prev[3] && latest[2] >= prev[2] - (int) (prevSpan * 0.12f);
+        boolean lhll = latest[3] < prev[3] && latest[1] <= prev[1] + (int) (prevSpan * 0.12f);
+        if (latest[4] == 1 && latest[5] >= 18 && ((greens >= 2 && latest[3] > prev[3]) || hhhl)) return "UPTREND";
+        if (latest[4] == -1 && latest[5] >= 18 && ((reds >= 2 && latest[3] < prev[3]) || lhll)) return "DOWNTREND";
         return "SIDEWAYS";
     }
 
@@ -1099,155 +1099,194 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     bandRed += colRed[x];
                 } else if (inBand) {
                     int bandWidth = x - bandStart;
-                    if (bandWidth >= 2 && bandWidth <= 65) {
-                        int bMinY = 9999;
-                        int bMaxY = 0;
-                        int maxColPx = 0;
-                        java.util.List<Integer> nonEmptyMins = new java.util.ArrayList<>();
-                        java.util.List<Integer> nonEmptyMaxs = new java.util.ArrayList<>();
-                        for (int bx = bandStart; bx < x; bx++) {
-                            int bxCount = 0;
-                            int bxMin = 9999;
-                            int bxMax = 0;
-                            for (int y = startY; y < endY; y++) {
-                                if (bodyGrid[y * width + bx] > 0) {
-                                    bxCount++;
-                                    if (y < bMinY) bMinY = y;
-                                    if (y > bMaxY) bMaxY = y;
-                                    if (y < bxMin) bxMin = y;
-                                    if (y > bxMax) bxMax = y;
+                    if (bandWidth >= 2 && bandWidth <= 95) {
+                        byte domCode = (bandGreen >= bandRed) ? (byte) 1 : (byte) 2;
+
+                        // Isolate primary candlestick vertical cluster (ignores detached bottom MACD/AO/Volume sub-panels >= 14px away)
+                        int clusterStart = startY;
+                        int clusterEnd = endY - 1;
+                        int bestClusterMass = -1;
+                        int curStart = -1;
+                        int curMass = 0;
+                        int emptyGap = 0;
+                        for (int y = startY; y <= endY; y++) {
+                            int rowHits = 0;
+                            if (y < endY) {
+                                for (int bx = bandStart; bx < x; bx++) {
+                                    if (bodyGrid[y * width + bx] == domCode) rowHits++;
                                 }
                             }
-                            if (bxCount > maxColPx) maxColPx = bxCount;
-                            if (bxCount >= 4) {
-                                nonEmptyMins.add(bxMin);
-                                nonEmptyMaxs.add(bxMax);
+                            if (rowHits > 0) {
+                                if (curStart == -1) curStart = y;
+                                curMass += rowHits;
+                                emptyGap = 0;
+                            } else if (curStart != -1) {
+                                emptyGap++;
+                                if (emptyGap >= 14 || y == endY) {
+                                    int segEnd = y - emptyGap;
+                                    if (curMass > bestClusterMass) {
+                                        bestClusterMass = curMass;
+                                        clusterStart = curStart;
+                                        clusterEnd = segEnd;
+                                    }
+                                    curStart = -1;
+                                    curMass = 0;
+                                    emptyGap = 0;
+                                }
                             }
                         }
 
-                        if (bMaxY >= bMinY) {
-                            int centerX = (bandStart + x - 1) / 2;
-                            int bodyTop = bMinY;
-                            int bodyBottom = bMaxY;
-                            if (bandWidth >= 5 && nonEmptyMins.size() >= 3) {
-                                java.util.Collections.sort(nonEmptyMins);
-                                java.util.Collections.sort(nonEmptyMaxs);
-                                bodyTop = nonEmptyMins.get(nonEmptyMins.size() / 2);
-                                bodyBottom = nonEmptyMaxs.get(nonEmptyMaxs.size() / 2);
-                            } else {
-                                bodyTop = bMaxY;
-                                bodyBottom = bMinY;
-                                int thresh = Math.max(3, Math.round(maxColPx * 0.45f));
-                                for (int bx = bandStart; bx < x; bx++) {
-                                    int bxCount = 0;
-                                    int bxMin = 9999;
-                                    int bxMax = 0;
-                                    for (int y = startY; y < endY; y++) {
-                                        if (bodyGrid[y * width + bx] > 0) {
-                                            bxCount++;
-                                            if (y < bxMin) bxMin = y;
-                                            if (y > bxMax) bxMax = y;
-                                        }
-                                    }
-                                    if (bxCount >= thresh) {
-                                        if (bxMin < bodyTop) bodyTop = bxMin;
-                                        if (bxMax > bodyBottom) bodyBottom = bxMax;
+                        if (bestClusterMass >= 4) {
+                            int bMinY = 9999;
+                            int bMaxY = 0;
+                            int maxColPx = 0;
+                            java.util.List<Integer> nonEmptyMins = new java.util.ArrayList<>();
+                            java.util.List<Integer> nonEmptyMaxs = new java.util.ArrayList<>();
+                            for (int bx = bandStart; bx < x; bx++) {
+                                int bxCount = 0;
+                                int bxMin = 9999;
+                                int bxMax = 0;
+                                for (int y = clusterStart; y <= clusterEnd; y++) {
+                                    if (bodyGrid[y * width + bx] == domCode) {
+                                        bxCount++;
+                                        if (y < bMinY) bMinY = y;
+                                        if (y > bMaxY) bMaxY = y;
+                                        if (y < bxMin) bxMin = y;
+                                        if (y > bxMax) bxMax = y;
                                     }
                                 }
-                            }
-                            if (bodyBottom < bodyTop) {
-                                bodyTop = bMinY;
-                                bodyBottom = bMaxY;
+                                if (bxCount > maxColPx) maxColPx = bxCount;
+                                if (bxCount >= 4) {
+                                    nonEmptyMins.add(bxMin);
+                                    nonEmptyMaxs.add(bxMax);
+                                }
                             }
 
-                            // Scan upper & lower wicks across centerX - 1 .. centerX + 1 (also checks non-horizontal rawGrid pixels)
-                            int wickTopY = bodyTop;
-                            int wickBottomY = bodyBottom;
-                            for (int dy = 1; dy <= 42; dy++) {
-                                int checkY = bodyTop - dy;
-                                if (checkY < startY) break;
-                                boolean hit = false;
-                                for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
-                                    if (bodyGrid[checkY * width + wx] > 0) {
-                                        hit = true;
-                                        break;
+                            if (bMaxY >= bMinY) {
+                                int centerX = (bandStart + x - 1) / 2;
+                                int bodyTop = bMinY;
+                                int bodyBottom = bMaxY;
+                                if (bandWidth >= 5 && nonEmptyMins.size() >= 3) {
+                                    java.util.Collections.sort(nonEmptyMins);
+                                    java.util.Collections.sort(nonEmptyMaxs);
+                                    bodyTop = nonEmptyMins.get(nonEmptyMins.size() / 2);
+                                    bodyBottom = nonEmptyMaxs.get(nonEmptyMaxs.size() / 2);
+                                } else {
+                                    bodyTop = bMaxY;
+                                    bodyBottom = bMinY;
+                                    int thresh = Math.max(3, Math.round(maxColPx * 0.45f));
+                                    for (int bx = bandStart; bx < x; bx++) {
+                                        int bxCount = 0;
+                                        int bxMin = 9999;
+                                        int bxMax = 0;
+                                        for (int y = clusterStart; y <= clusterEnd; y++) {
+                                            if (bodyGrid[y * width + bx] == domCode) {
+                                                bxCount++;
+                                                if (y < bxMin) bxMin = y;
+                                                if (y > bxMax) bxMax = y;
+                                            }
+                                        }
+                                        if (bxCount >= thresh) {
+                                            if (bxMin < bodyTop) bodyTop = bxMin;
+                                            if (bxMax > bodyBottom) bodyBottom = bxMax;
+                                        }
                                     }
-                                    if (rawGrid[checkY * width + wx] > 0) {
-                                        int lx = Math.max(startX, wx - 3);
-                                        int rx = Math.min(endX - 1, wx + 3);
-                                        boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
-                                        if (!horizLine) {
+                                }
+                                if (bodyBottom < bodyTop) {
+                                    bodyTop = bMinY;
+                                    bodyBottom = bMaxY;
+                                }
+
+                                // Scan wicks of dominant candle color only across centerX - 1 .. centerX + 1
+                                int wickTopY = bMinY;
+                                int wickBottomY = bMaxY;
+                                for (int dy = 1; dy <= 45; dy++) {
+                                    int checkY = bodyTop - dy;
+                                    if (checkY < startY || checkY < clusterStart - 45) break;
+                                    boolean hit = false;
+                                    for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
+                                        if (bodyGrid[checkY * width + wx] == domCode) {
                                             hit = true;
                                             break;
                                         }
+                                        if (rawGrid[checkY * width + wx] == domCode) {
+                                            int lx = Math.max(startX, wx - 4);
+                                            int rx = Math.min(endX - 1, wx + 4);
+                                            boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
+                                            if (!horizLine) {
+                                                hit = true;
+                                                break;
+                                            }
+                                        }
                                     }
+                                    if (hit && checkY < wickTopY) wickTopY = checkY;
+                                    else if (!hit && dy > 3 && checkY < bMinY) break;
                                 }
-                                if (hit) wickTopY = checkY;
-                                else if (dy > 3 && checkY < bMinY) break;
-                            }
-                            for (int dy = 1; dy <= 42; dy++) {
-                                int checkY = bodyBottom + dy;
-                                if (checkY >= endY) break;
-                                boolean hit = false;
-                                for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
-                                    if (bodyGrid[checkY * width + wx] > 0) {
-                                        hit = true;
-                                        break;
-                                    }
-                                    if (rawGrid[checkY * width + wx] > 0) {
-                                        int lx = Math.max(startX, wx - 3);
-                                        int rx = Math.min(endX - 1, wx + 3);
-                                        boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
-                                        if (!horizLine) {
+                                for (int dy = 1; dy <= 45; dy++) {
+                                    int checkY = bodyBottom + dy;
+                                    if (checkY >= endY || checkY > clusterEnd + 45) break;
+                                    boolean hit = false;
+                                    for (int wx = Math.max(startX, centerX - 1); wx <= Math.min(endX - 1, centerX + 1); wx++) {
+                                        if (bodyGrid[checkY * width + wx] == domCode) {
                                             hit = true;
                                             break;
                                         }
+                                        if (rawGrid[checkY * width + wx] == domCode) {
+                                            int lx = Math.max(startX, wx - 4);
+                                            int rx = Math.min(endX - 1, wx + 4);
+                                            boolean horizLine = rawGrid[checkY * width + lx] > 0 && rawGrid[checkY * width + rx] > 0;
+                                            if (!horizLine) {
+                                                hit = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (hit && checkY > wickBottomY) wickBottomY = checkY;
+                                    else if (!hit && dy > 3 && checkY > bMaxY) break;
+                                }
+
+                                int finalMinY = Math.min(bMinY, wickTopY);
+                                int finalMaxY = Math.max(bMaxY, wickBottomY);
+
+                                CandleBand cb = new CandleBand();
+                                cb.startX = bandStart;
+                                cb.endX = x - 1;
+                                cb.centerX = centerX;
+                                cb.isGreen = (domCode == 1);
+                                cb.greenCount = (domCode == 1) ? bestClusterMass : 0;
+                                cb.redCount = (domCode == 2) ? bestClusterMass : 0;
+                                cb.minY = finalMinY;
+                                cb.maxY = finalMaxY;
+                                cb.upperWickPx = Math.max(0, bodyTop - finalMinY);
+                                cb.lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
+                                cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+                                cb.height = Math.max(1, finalMaxY - finalMinY + 1);
+
+                                int cTotalSpan = Math.max(1, cb.bodyHeight + cb.upperWickPx + cb.lowerWickPx);
+                                int cBodyPct = Math.round(100f * cb.bodyHeight / cTotalSpan);
+                                int cUpPct = Math.round(100f * cb.upperWickPx / cTotalSpan);
+                                int cDownPct = Math.round(100f * cb.lowerWickPx / cTotalSpan);
+                                boolean cSpin = (cUpPct >= 26 && cDownPct >= 26 && cBodyPct <= 30);
+
+                                cb.isHammer = !cSpin && cDownPct >= 38 && cUpPct <= 20 && cDownPct >= Math.max(25, (int) (cUpPct * 1.8f)) && cb.lowerWickPx >= 6;
+                                cb.isShootingStar = !cSpin && cUpPct >= 38 && cDownPct <= 20 && cUpPct >= Math.max(25, (int) (cDownPct * 1.8f)) && cb.upperWickPx >= 6;
+                                cb.isDoji = cSpin || (cBodyPct <= 19 && (cUpPct >= 20 || cDownPct >= 20));
+
+                                float fillDensity = (float) bestClusterMass / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
+                                int bodyPxCount = 0;
+                                for (int py = bodyTop; py <= bodyBottom; py++) {
+                                    for (int px = cb.startX; px <= cb.endX; px++) {
+                                        if (bodyGrid[py * width + px] == domCode) bodyPxCount++;
                                     }
                                 }
-                                if (hit) wickBottomY = checkY;
-                                else if (dy > 3 && checkY > bMaxY) break;
-                            }
-
-                            int finalMinY = Math.min(bMinY, wickTopY);
-                            int finalMaxY = Math.max(bMaxY, wickBottomY);
-
-                            CandleBand cb = new CandleBand();
-                            cb.startX = bandStart;
-                            cb.endX = x - 1;
-                            cb.centerX = centerX;
-                            cb.isGreen = bandGreen >= bandRed;
-                            cb.greenCount = bandGreen;
-                            cb.redCount = bandRed;
-                            cb.minY = finalMinY;
-                            cb.maxY = finalMaxY;
-                            cb.upperWickPx = Math.max(0, bodyTop - finalMinY);
-                            cb.lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
-                            cb.bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
-                            cb.height = Math.max(1, finalMaxY - finalMinY + 1);
-
-                            int cTotalSpan = Math.max(1, cb.bodyHeight + cb.upperWickPx + cb.lowerWickPx);
-                            int cBodyPct = Math.round(100f * cb.bodyHeight / cTotalSpan);
-                            int cUpPct = Math.round(100f * cb.upperWickPx / cTotalSpan);
-                            int cDownPct = Math.round(100f * cb.lowerWickPx / cTotalSpan);
-                            boolean cSpin = (cUpPct >= 30 && cDownPct >= 30 && cBodyPct <= 26);
-
-                            cb.isHammer = !cSpin && cDownPct >= 38 && cUpPct <= 22 && cDownPct >= (int) (cUpPct * 1.7f) && cb.lowerWickPx >= 6;
-                            cb.isShootingStar = !cSpin && cUpPct >= 38 && cDownPct <= 22 && cUpPct >= (int) (cDownPct * 1.7f) && cb.upperWickPx >= 6;
-                            cb.isDoji = cSpin || (cBodyPct <= 18 && (cUpPct >= 22 || cDownPct >= 22));
-
-                            float fillDensity = (float) (bandGreen + bandRed) / (float) (Math.max(1, bandWidth) * Math.max(1, cb.height));
-                            int bodyPxCount = 0;
-                            for (int py = bodyTop; py <= bodyBottom; py++) {
-                                for (int px = cb.startX; px <= cb.endX; px++) {
-                                    if (bodyGrid[py * width + px] > 0) bodyPxCount++;
+                                float bodyFillDensity = (float) bodyPxCount / (float) Math.max(1, bandWidth * Math.max(1, bodyBottom - bodyTop + 1));
+                                boolean isHollowBox = (bandWidth > 12 && fillDensity < 0.16f && (cb.upperWickPx + cb.lowerWickPx) < cb.height * 0.72f)
+                                        || (bandWidth > 12 && fillDensity < 0.25f && bodyFillDensity < 0.48f);
+                                boolean isCandleShape = cb.height >= 7
+                                        && (cb.height >= bandWidth * 0.45f || bandWidth <= 8 || cb.bodyHeight >= 5 || cb.upperWickPx >= 4 || cb.lowerWickPx >= 4);
+                                if (isCandleShape && !isHollowBox) {
+                                    bands.add(cb);
                                 }
-                            }
-                            float bodyFillDensity = (float) bodyPxCount / (float) Math.max(1, bandWidth * Math.max(1, bodyBottom - bodyTop + 1));
-                            boolean isHollowBox = (bandWidth > 18 && fillDensity < 0.28f && bodyFillDensity < 0.48f);
-                            boolean isCandleShape = cb.height >= 7
-                                    && (cb.height >= bandWidth * 0.45f || bandWidth <= 8 || cb.bodyHeight >= 5 || cb.upperWickPx >= 4 || cb.lowerWickPx >= 4);
-                            if (isCandleShape && !isHollowBox) {
-                                bands.add(cb);
                             }
                         }
                     }
@@ -1269,7 +1308,8 @@ public class TradePulseNativeScreenPlugin extends Plugin {
 
             boolean isAuthenticChart = (hasBrokerControls || (hasPriceScale && wickCount >= 1))
                     && (bgNavyDark + bgWhiteLight) >= (int) (totalBgSampled * 0.12f)
-                    && bands.size() >= 3;
+                    && bands.size() >= 3
+                    && wickCount >= 1;
 
             if (!isAuthenticChart) {
                 updateOverlayUI(
@@ -1313,10 +1353,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     int tailWidth = tailBand.endX - tailBand.startX + 1;
                     int tailGap = tailBand.centerX - prevTailBand.centerX;
                     float tailDensity = (float) (tailBand.greenCount + tailBand.redCount) / (float) Math.max(1, tailWidth * tailBand.height);
-                    boolean isSolidUiPill = tailWidth > Math.max((int) (medianW * 1.45f), 16)
-                            && tailBand.upperWickPx < 4 && tailBand.lowerWickPx < 4 && tailDensity > 0.78f;
-                    if (tailGap > Math.max((int) (medianStep * 1.85f), 28)
-                            || tailWidth > Math.max((int) (medianW * 1.8f), 22)
+                    boolean isSolidUiPill = tailWidth > Math.max((int) (medianW * 1.55f), 24)
+                            && tailBand.upperWickPx < 3 && tailBand.lowerWickPx < 3 && tailDensity > 0.80f;
+                    if (tailGap > Math.max((int) (medianStep * 2.0f), 34)
+                            || tailWidth > Math.max((int) (medianW * 2.1f), 52)
                             || isSolidUiPill) {
                         bands.remove(bands.size() - 1);
                     } else {
@@ -1326,48 +1366,77 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             }
 
             int candleCount = bands.size();
+            int contiguousClusterCount = 1;
+            int maxContiguousCluster = 1;
+            int maxNeighborGap = Math.min(115, Math.max((int) (medianStep * 2.2f), 42));
+            for (int i = 1; i < candleCount; i++) {
+                if (bands.get(i).centerX - bands.get(i - 1).centerX <= maxNeighborGap) {
+                    contiguousClusterCount++;
+                    if (contiguousClusterCount > maxContiguousCluster) maxContiguousCluster = contiguousClusterCount;
+                } else {
+                    contiguousClusterCount = 1;
+                }
+            }
+            if (candleCount < 5 || maxContiguousCluster < 4) {
+                updateOverlayUI(
+                        "WAIT",
+                        0,
+                        "📱 চার্ট সনাক্ত হয়নি",
+                        "ব্রোকার চার্ট (Quotex/Pocket Option) স্ক্রিনে রেখে স্ক্যান করুন",
+                        "NO_CHART"
+                );
+                return;
+            }
             String verifiedSymbol = "QUOTEX • OTC";
 
             int currentSec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND);
             int candleSecondsLeft = 60 - currentSec;
 
-            // ধাপ ২: Candle Data Collection & Precise Closed Candle Identification (with infant open-tick check)
+            // ধাপ ২: Strict Y-Localized Infant Tick Check (ignores dashed horizontal lines & distant markers)
             CandleBand rightmost = bands.get(candleCount - 1);
             boolean hasInfantTickRight = false;
             if (candleCount >= 4) {
-                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, Math.round(medianStep * 0.40f)));
+                int tStart = Math.min(endX - 1, rightmost.endX + Math.max(2, Math.round(medianStep * 0.45f)));
                 int tEnd = Math.min(endX - 1, rightmost.centerX + Math.round(medianStep * 1.55f));
+                int yTickMin = Math.max(startY, rightmost.minY - 35);
+                int yTickMax = Math.min(endY - 1, rightmost.maxY + 35);
                 int tickCols = 0;
+                int maxTickRun = 0;
                 for (int tx = tStart; tx <= tEnd; tx++) {
-                    boolean colHasTick = colCounts[tx] >= 2;
-                    if (!colHasTick) {
-                        int rawRun = 0;
-                        int runTopY = -1;
-                        int maxRun = 0;
-                        for (int ty = startY; ty <= endY; ty++) {
-                            byte v = (ty < endY) ? rawGrid[ty * width + tx] : 0;
-                            if (v > 0) {
-                                if (rawRun == 0) runTopY = ty;
-                                rawRun++;
-                            } else {
-                                if (rawRun >= 2) {
-                                    int midY = runTopY + rawRun / 2;
-                                    int lx = Math.max(startX, tx - 3);
-                                    int rx = Math.min(endX - 1, tx + 3);
-                                    boolean isContLine = rawGrid[midY * width + lx] > 0 && rawGrid[midY * width + rx] > 0;
-                                    if (!isContLine && rawRun > maxRun) {
-                                        maxRun = rawRun;
-                                    }
+                    boolean colHasTick = false;
+                    int rawRun = 0;
+                    int runTopY = -1;
+                    int maxRun = 0;
+                    for (int ty = yTickMin; ty <= yTickMax + 1; ty++) {
+                        byte v = (ty <= yTickMax) ? rawGrid[ty * width + tx] : 0;
+                        if (v > 0) {
+                            if (rawRun == 0) runTopY = ty;
+                            rawRun++;
+                        } else {
+                            if (rawRun >= 2) {
+                                int midY = runTopY + rawRun / 2;
+                                int leftHits = 0;
+                                int rightHits = 0;
+                                for (int dx = 1; dx <= 5; dx++) {
+                                    if (tx - dx >= startX && rawGrid[midY * width + (tx - dx)] > 0) leftHits++;
+                                    if (tx + dx < endX && rawGrid[midY * width + (tx + dx)] > 0) rightHits++;
                                 }
-                                rawRun = 0;
+                                boolean isHorizLine = (leftHits >= 2 && rightHits >= 2 && rawRun <= 4);
+                                if (!isHorizLine && rawRun > maxRun) {
+                                    maxRun = rawRun;
+                                }
                             }
+                            rawRun = 0;
                         }
-                        if (maxRun >= 2) colHasTick = true;
+                    }
+                    if (maxRun >= 2 && maxRun <= Math.max(36, (int) (rightmost.height * 1.25f))) {
+                        colHasTick = true;
+                        if (maxRun > maxTickRun) maxTickRun = maxRun;
                     }
                     if (colHasTick) tickCols++;
                 }
                 int rWidth = rightmost.endX - rightmost.startX + 1;
-                if (tickCols >= 1 && tickCols <= 4 && rWidth >= Math.max(2, Math.round(medianW * 0.65f))) {
+                if (tickCols >= 1 && tickCols <= 4 && maxTickRun >= 2 && rWidth >= Math.max(3, Math.round(medianW * 0.65f))) {
                     hasInfantTickRight = true;
                 }
             }
@@ -1376,21 +1445,18 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             CandleBand runningCandle = hasInfantTickRight ? null : rightmost;
             CandleBand closedSignalCandle = bands.get(closedIndex);
             CandleBand prevCandle = (closedIndex >= 1) ? bands.get(closedIndex - 1) : null;
-
-            // For compatibility with JSObject flow reporting
             CandleBand lastClosedCandle = closedSignalCandle;
 
             // ধাপ ৩: 4-Layer Mathematical Backward OHLC Multi-Timeframe Analysis (15M, 5M, 3M, 1M)
             int closedPoolSize = closedIndex + 1;
             int macroPeriod = (closedPoolSize >= 15) ? 15 : (closedPoolSize >= 10 ? closedPoolSize : 999);
-            String macroTrend15M = (macroPeriod <= closedPoolSize) ? classifyAggregatedOhlc(bands, closedPoolSize, macroPeriod, 18) : "SIDEWAYS";
-            String secTrend5M = classifyAggregatedOhlc(bands, closedPoolSize, 5, 15);
-            String momentum3M = classifyAggregatedOhlc(bands, closedPoolSize, 3, 16);
+            String macroTrend15M = (macroPeriod <= closedPoolSize) ? classifyAggregatedOhlc(bands, closedPoolSize, macroPeriod, 28) : "SIDEWAYS";
+            String secTrend5M = classifyAggregatedOhlc(bands, closedPoolSize, 5, 28);
+            String momentum3M = classifyAggregatedOhlc(bands, closedPoolSize, 3, 26);
             String microTrend1M = closedSignalCandle.isDoji ? "SIDEWAYS" : (closedSignalCandle.isGreen ? "UPTREND" : "DOWNTREND");
 
-            // Narrow-viewport slope trend across closed pool (for mobile portrait where < 12 candles are visible)
             String poolSlopeTrend = "SIDEWAYS";
-            if (closedPoolSize >= 5) {
+            if (closedPoolSize >= 6) {
                 int half = closedPoolSize / 2;
                 float firstSum = 0f, secondSum = 0f;
                 int pMinY = 9999, pMaxY = 0;
@@ -1405,9 +1471,9 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 float avgFirst = firstSum / Math.max(1, half);
                 float avgSecond = secondSum / Math.max(1, closedPoolSize - half);
                 int pSpan = Math.max(15, pMaxY - pMinY);
-                if (avgFirst - avgSecond >= Math.max(4f, pSpan * 0.10f)) {
+                if (avgFirst - avgSecond >= Math.max(5f, pSpan * 0.14f)) {
                     poolSlopeTrend = "UPTREND";
-                } else if (avgSecond - avgFirst >= Math.max(4f, pSpan * 0.10f)) {
+                } else if (avgSecond - avgFirst >= Math.max(5f, pSpan * 0.14f)) {
                     poolSlopeTrend = "DOWNTREND";
                 }
             }
@@ -1426,38 +1492,50 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                     + " • ৫M " + ("UPTREND".equals(secTrend5M) ? "আপ" : ("DOWNTREND".equals(secTrend5M) ? "ডাউন" : "রেঞ্জ"))
                     + " • ৩M " + ("UPTREND".equals(momentum3M) ? "আপ" : ("DOWNTREND".equals(momentum3M) ? "ডাউন" : "রেঞ্জ"));
 
-            // ধাপ ৪: Market Condition Filter (Chop, Doji, Spinning Top, Volatility, Exhaustion & S/R Wall Guard)
+            // ধাপ ৪: Strict Market Condition Filter
             int totalClosedSpan = Math.max(1, closedSignalCandle.bodyHeight + closedSignalCandle.upperWickPx + closedSignalCandle.lowerWickPx);
             int bodyPct = Math.round(100f * closedSignalCandle.bodyHeight / totalClosedSpan);
             int upWickPct = Math.round(100f * closedSignalCandle.upperWickPx / totalClosedSpan);
             int downWickPct = Math.round(100f * closedSignalCandle.lowerWickPx / totalClosedSpan);
 
-            boolean isSpinningTop = (upWickPct >= 30 && downWickPct >= 30 && bodyPct <= 26);
-            boolean isDojiIndecision = (closedSignalCandle.isDoji || bodyPct <= 18 || isSpinningTop);
+            boolean isSpinningTop = (upWickPct >= 26 && downWickPct >= 26 && bodyPct <= 30);
+            boolean isDojiIndecision = (closedSignalCandle.isDoji || bodyPct <= 19 || isSpinningTop);
 
-            boolean isAlternatingChop = false;
-            if (closedPoolSize >= 5) {
-                boolean c1 = bands.get(closedIndex).isGreen;
-                boolean c2 = bands.get(closedIndex - 1).isGreen;
-                boolean c3 = bands.get(closedIndex - 2).isGreen;
-                boolean c4 = bands.get(closedIndex - 3).isGreen;
-                boolean c5 = bands.get(closedIndex - 4).isGreen;
-                boolean has5m3mTrend = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M);
-                if ((c1 != c2) && (c2 != c3) && (c3 != c4) && (c4 != c5) && !has5m3mTrend) {
-                    isAlternatingChop = true;
-                }
+            int alternatingFlips = 0;
+            int chopStart = Math.max(1, closedPoolSize - 5);
+            for (int i = chopStart; i < closedPoolSize; i++) {
+                if (bands.get(i).isGreen != bands.get(i - 1).isGreen) alternatingFlips++;
             }
+            boolean has5m3mStrict = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M);
+            boolean isAlternatingChop = (alternatingFlips >= 4) || (alternatingFlips >= 3 && bodyPct < 34 && !has5m3mStrict);
 
-            // Same-color streak & prior-swing S/R wall check (strictly excludes last 2 candles!)
             int sameColorStreak = 1;
             for (int i = closedIndex - 1; i >= 0; i--) {
                 if (bands.get(i).isGreen == closedSignalCandle.isGreen) sameColorStreak++;
                 else break;
             }
+            boolean isBodyDecelerating = (prevCandle != null && prevCandle.isGreen == closedSignalCandle.isGreen
+                    && prevCandle.bodyHeight >= 8 && closedSignalCandle.bodyHeight < (int) (prevCandle.bodyHeight * 0.55f));
+
+            // Swing high/low range & prior S/R wall detection
+            int lookStart = Math.max(0, closedPoolSize - 14);
+            int rMinY = 9999, rMaxY = 0;
+            for (int i = lookStart; i < closedPoolSize; i++) {
+                CandleBand b = bands.get(i);
+                if (b.minY < rMinY) rMinY = b.minY;
+                if (b.maxY > rMaxY) rMaxY = b.maxY;
+            }
+            int rSpan = Math.max(20, rMaxY - rMinY);
+            float closedMidY = (closedSignalCandle.minY + closedSignalCandle.upperWickPx + closedSignalCandle.maxY - closedSignalCandle.lowerWickPx) * 0.5f;
+            boolean inUpperSwingHalf = closedMidY <= rMinY + rSpan * 0.42f;
+            boolean inLowerSwingHalf = closedMidY >= rMaxY - rSpan * 0.42f;
+
             int srStart = Math.max(0, closedPoolSize - 16);
             int srEnd = Math.max(0, closedPoolSize - 2);
             boolean nearTop = false;
             boolean nearBottom = false;
+            boolean isConfirmedBullBreakout = false;
+            boolean isConfirmedBearBreakdown = false;
             if (srEnd - srStart >= 4) {
                 int srMinY = 9999, srMaxY = 0;
                 for (int i = srStart; i < srEnd; i++) {
@@ -1468,8 +1546,16 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 int srSpan = Math.max(20, srMaxY - srMinY);
                 int closedBodyTop = closedSignalCandle.minY + closedSignalCandle.upperWickPx;
                 int closedBodyBottom = closedSignalCandle.maxY - closedSignalCandle.lowerWickPx;
-                nearTop = closedBodyTop <= srMinY + (int) (srSpan * 0.14f) && closedBodyTop >= srMinY - (int) (srSpan * 0.06f);
-                nearBottom = closedBodyBottom >= srMaxY - (int) (srSpan * 0.14f) && closedBodyBottom <= srMaxY + (int) (srSpan * 0.06f);
+                nearTop = closedBodyTop <= srMinY + (int) (srSpan * 0.16f) && closedBodyTop >= srMinY - (int) (srSpan * 0.18f);
+                nearBottom = closedBodyBottom >= srMaxY - (int) (srSpan * 0.16f) && closedBodyBottom <= srMaxY + (int) (srSpan * 0.18f);
+                isConfirmedBullBreakout = closedSignalCandle.isGreen
+                        && closedBodyTop < srMinY - Math.max(3, (int) (srSpan * 0.03f))
+                        && upWickPct <= 14 && bodyPct >= 45
+                        && "UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M);
+                isConfirmedBearBreakdown = !closedSignalCandle.isGreen
+                        && closedBodyBottom > srMaxY + Math.max(3, (int) (srSpan * 0.03f))
+                        && downWickPct <= 14 && bodyPct >= 45
+                        && "DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M);
             }
 
             int prevBodiesSum = 0;
@@ -1480,16 +1566,34 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 prevBodiesCount++;
             }
             int avgPrevBody = prevBodiesCount > 0 ? (prevBodiesSum / prevBodiesCount) : 14;
-            boolean isExhaustionSpike = (closedSignalCandle.bodyHeight >= Math.max(36, (int) (avgPrevBody * 3.4f)));
+            boolean isExhaustionSpike = (closedSignalCandle.bodyHeight >= Math.max(36, (int) (avgPrevBody * 3.2f)));
 
-            boolean isTrueHammer = !isSpinningTop && downWickPct >= 38 && upWickPct <= 22 && downWickPct >= (int) (upWickPct * 1.7f) && closedSignalCandle.lowerWickPx >= 7;
-            boolean isTrueShootingStar = !isSpinningTop && upWickPct >= 38 && downWickPct <= 22 && upWickPct >= (int) (downWickPct * 1.7f) && closedSignalCandle.upperWickPx >= 7;
+            boolean isTrueHammer = !isSpinningTop && downWickPct >= 38 && upWickPct <= 20
+                    && downWickPct >= Math.max(25, (int) (upWickPct * 1.8f))
+                    && closedSignalCandle.lowerWickPx >= 7
+                    && (nearBottom || inLowerSwingHalf);
+            boolean isTrueShootingStar = !isSpinningTop && upWickPct >= 38 && downWickPct <= 20
+                    && upWickPct >= Math.max(25, (int) (downWickPct * 1.8f))
+                    && closedSignalCandle.upperWickPx >= 7
+                    && (nearTop || inUpperSwingHalf);
 
-            // ধাপ ৫: Conservative Offline CV Setup Matching (Zero Chasing / Strict Anti-Loss Filter)
+            boolean hasOpposingWickForCall = !isTrueHammer
+                    && (upWickPct >= 24 || (upWickPct >= 20 && upWickPct > (int) (downWickPct * 1.6f)) || (bodyPct > 0 && upWickPct > (int) (bodyPct * 0.65f) && upWickPct >= 18));
+            boolean hasOpposingWickForPut = !isTrueShootingStar
+                    && (downWickPct >= 24 || (downWickPct >= 20 && downWickPct > (int) (upWickPct * 1.6f)) || (bodyPct > 0 && downWickPct > (int) (bodyPct * 0.65f) && downWickPct >= 18));
+
+            boolean isSidewaysNoReversal = "SIDEWAYS".equals(macroTrend15M) && "SIDEWAYS".equals(secTrend5M) && !isTrueHammer && !isTrueShootingStar;
+
+            // ধাপ ৫: Strict High-Accuracy Offline CV Decision Rules (Zero False-Positive 5/5!)
             String proposedDirection = "WAIT";
             int confidence = 0;
             String verdictTitle = "⏸ ফিল্টার্ড [অফলাইন CV] (WAIT)";
             String finalReason = "";
+
+            boolean hasFullMacro5m = !"SIDEWAYS".equals(macroTrend15M) && secTrend5M.equals(macroTrend15M)
+                    && !momentum3M.equals("UPTREND".equals(macroTrend15M) ? "DOWNTREND" : "UPTREND");
+            boolean has5m3mMomentum = "SIDEWAYS".equals(macroTrend15M) && !"SIDEWAYS".equals(secTrend5M)
+                    && secTrend5M.equals(momentum3M) && secTrend5M.equals(microTrend1M) && secTrend5M.equals(poolSlopeTrend);
 
             if (isSpinningTop) {
                 finalReason = "[অফলাইন CV · ফিল্টার] স্পিনিং টপ (দ্বিমুখী উইক) — সিদ্ধান্তহীন মার্কেট, এন্ট্রি বন্ধ (WAIT)";
@@ -1499,103 +1603,88 @@ public class TradePulseNativeScreenPlugin extends Plugin {
                 finalReason = "[অফলাইন CV · ফিল্টার] সাইডওয়েজ চপি রেঞ্জ — ফেকআউট ঝুঁকি (WAIT)";
             } else if (isExhaustionSpike) {
                 finalReason = "[অফলাইন CV · ফিল্টার] এক্সহশন ক্লাইম্যাক্স স্পাইক — রিভার্সাল ঝুঁকি (WAIT)";
+            } else if (isTrueHammer && !"DOWNTREND".equals(macroTrend15M)) {
+                proposedDirection = "UP";
+                confidence = "UPTREND".equals(secTrend5M) ? 88 : 84;
+                verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] সাপোর্ট হ্যামার লোয়ার উইক রিজেকশন নিশ্চিত (৫/৫)";
+            } else if (isTrueShootingStar && !"UPTREND".equals(macroTrend15M)) {
+                proposedDirection = "DOWN";
+                confidence = "DOWNTREND".equals(secTrend5M) ? 88 : 84;
+                verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার আপার উইক রিজেকশন নিশ্চিত (৫/৫)";
+            } else if (isSidewaysNoReversal) {
+                finalReason = "[অফলাইন CV · ফিল্টার] সাইডওয়েজ রেঞ্জ (সুইং-এক্সট্রিম রিজেকশন নেই) — WAIT";
+            } else if ((hasFullMacro5m || has5m3mMomentum)
+                    && !"DOWNTREND".equals(macroTrend15M) && !"DOWNTREND".equals(secTrend5M)
+                    && (!nearTop || isConfirmedBullBreakout)
+                    && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.25f)
+                    && bodyPct >= 38 && !hasOpposingWickForCall && sameColorStreak <= 2) {
+                proposedDirection = "UP";
+                confidence = 87;
+                verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] ট্রেন্ড-অ্যালাইন্ড বুলিশ এনগালফিং নিশ্চিত (৫/৫)";
+            } else if ((hasFullMacro5m || has5m3mMomentum)
+                    && !"UPTREND".equals(macroTrend15M) && !"UPTREND".equals(secTrend5M)
+                    && (!nearBottom || isConfirmedBearBreakdown)
+                    && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
+                    && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.25f)
+                    && bodyPct >= 38 && !hasOpposingWickForPut && sameColorStreak <= 2) {
+                proposedDirection = "DOWN";
+                confidence = 87;
+                verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] ট্রেন্ড-অ্যালাইন্ড বিয়ারিশ এনগালফিং নিশ্চিত (৫/৫)";
+            } else if ((hasFullMacro5m || has5m3mMomentum)
+                    && "UPTREND".equals(secTrend5M) && !"DOWNTREND".equals(macroTrend15M)
+                    && sameColorStreak <= 2 && !isBodyDecelerating && !hasOpposingWickForCall
+                    && (!nearTop || isConfirmedBullBreakout) && bodyPct >= 34
+                    && closedSignalCandle.isGreen && microGreenPct >= 52) {
+                proposedDirection = "UP";
+                confidence = ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) ? 86 : 83;
+                verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] হাই-কনফ্লুয়েন্স বুলিশ কনটিনিউয়েশন (৫/৫)";
+            } else if ((hasFullMacro5m || has5m3mMomentum)
+                    && "DOWNTREND".equals(secTrend5M) && !"UPTREND".equals(macroTrend15M)
+                    && sameColorStreak <= 2 && !isBodyDecelerating && !hasOpposingWickForPut
+                    && (!nearBottom || isConfirmedBearBreakdown) && bodyPct >= 34
+                    && !closedSignalCandle.isGreen && microRedPct >= 52) {
+                proposedDirection = "DOWN";
+                confidence = ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) ? 86 : 83;
+                verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
+                finalReason = "[অফলাইন CV] হাই-কনফ্লুয়েন্স বিয়ারিশ কনটিনিউয়েশন (৫/৫)";
+            } else if ((closedSignalCandle.isGreen && (hasOpposingWickForCall || (nearTop && !isConfirmedBullBreakout)))
+                    || (!closedSignalCandle.isGreen && (hasOpposingWickForPut || (nearBottom && !isConfirmedBearBreakdown)))) {
+                proposedDirection = "WAIT";
+                confidence = 0;
+                verdictTitle = "⏸ S/R বা উইক গার্ড (WAIT)";
+                finalReason = "[অফলাইন CV] বিপরীত উইক রিজেকশন বা পূর্বের S/R দেয়াল বাধা — WAIT";
+            } else if (sameColorStreak >= 3 || isBodyDecelerating) {
+                proposedDirection = "WAIT";
+                confidence = 0;
+                verdictTitle = "⏸ এক্সহশন গার্ড (WAIT)";
+                finalReason = isBodyDecelerating
+                        ? "[অফলাইন CV] মোমেন্টাম দুর্বল (বডি ছোট হয়েছে) — WAIT"
+                        : "[অফলাইন CV] টানা " + sameColorStreak + "x ক্যান্ডেল এক্সহশন ঝুঁকি — WAIT";
             } else {
-                boolean callPermitted = !"DOWNTREND".equals(macroTrend15M)
-                        && ("UPTREND".equals(secTrend5M) || isTrueHammer || ("UPTREND".equals(momentum3M) && "UPTREND".equals(poolSlopeTrend)))
-                        && !("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M));
-                boolean putPermitted = !"UPTREND".equals(macroTrend15M)
-                        && ("DOWNTREND".equals(secTrend5M) || isTrueShootingStar || ("DOWNTREND".equals(momentum3M) && "DOWNTREND".equals(poolSlopeTrend)))
-                        && !("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M));
-                boolean bullContextStrong = "UPTREND".equals(macroTrend15M)
-                        || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M))
-                        || ("SIDEWAYS".equals(macroTrend15M) && "UPTREND".equals(momentum3M) && "UPTREND".equals(poolSlopeTrend));
-                boolean bearContextStrong = "DOWNTREND".equals(macroTrend15M)
-                        || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M))
-                        || ("SIDEWAYS".equals(macroTrend15M) && "DOWNTREND".equals(momentum3M) && "DOWNTREND".equals(poolSlopeTrend));
-                boolean allowBullBreakout = bullContextStrong && !"DOWNTREND".equals(secTrend5M) && sameColorStreak <= 2;
-                boolean allowBearBreakout = bearContextStrong && !"UPTREND".equals(secTrend5M) && sameColorStreak <= 2;
-
-                // Setup 1: True Single-Sided S/R Wick Rejection (Hammer / Shooting Star)
-                if (callPermitted && isTrueHammer) {
-                    proposedDirection = "UP";
-                    confidence = 87;
-                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] সাপোর্ট হ্যামার উইক রিজেকশন (নিচের বাউন্স নিশ্চিত)";
-                } else if (putPermitted && isTrueShootingStar) {
-                    proposedDirection = "DOWN";
-                    confidence = 87;
-                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার রিজেকশন (সেলার প্রেসার)";
-                }
-                // Setup 2: Aligned Trend Engulfing
-                else if ((bullContextStrong || ("UPTREND".equals(secTrend5M) && "UPTREND".equals(momentum3M)))
-                        && !"DOWNTREND".equals(macroTrend15M)
-                        && (!nearTop || allowBullBreakout) && closedSignalCandle.isGreen && prevCandle != null && !prevCandle.isGreen
-                        && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
-                    proposedDirection = "UP";
-                    confidence = 85;
-                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] আপট্রেন্ড বুলিশ এনগালফিং নিশ্চিত";
-                } else if ((bearContextStrong || ("DOWNTREND".equals(secTrend5M) && "DOWNTREND".equals(momentum3M)))
-                        && !"UPTREND".equals(macroTrend15M)
-                        && (!nearBottom || allowBearBreakout) && !closedSignalCandle.isGreen && prevCandle != null && prevCandle.isGreen
-                        && closedSignalCandle.bodyHeight >= (int) (prevCandle.bodyHeight * 1.2f) && bodyPct >= 24) {
-                    proposedDirection = "DOWN";
-                    confidence = 85;
-                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] ডাউনট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত";
-                }
-                // Setup 3: Healthy Pullback / Momentum Continuation (supports mobile narrow-viewport 3M+slope alignment)
-                else if (bullContextStrong
-                        && ("UPTREND".equals(secTrend5M) || "UPTREND".equals(momentum3M))
-                        && sameColorStreak <= 3 && (!nearTop || allowBullBreakout) && bodyPct >= 22
-                        && closedSignalCandle.isGreen && microGreenPct >= 42) {
-                    proposedDirection = "UP";
-                    confidence = ("UPTREND".equals(macroTrend15M) && "UPTREND".equals(secTrend5M)) ? 85 : 82;
-                    verdictTitle = "▲ CALL (সবুজ) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] হেলদি বুলিশ ট্রেন্ড কনটিনিউয়েশন (৫/৫ পয়েন্ট)";
-                } else if (bearContextStrong
-                        && ("DOWNTREND".equals(secTrend5M) || "DOWNTREND".equals(momentum3M))
-                        && sameColorStreak <= 3 && (!nearBottom || allowBearBreakout) && bodyPct >= 22
-                        && !closedSignalCandle.isGreen && microRedPct >= 42) {
-                    proposedDirection = "DOWN";
-                    confidence = ("DOWNTREND".equals(macroTrend15M) && "DOWNTREND".equals(secTrend5M)) ? 85 : 82;
-                    verdictTitle = "▼ PUT (লাল) [অফলাইন CV]";
-                    finalReason = "[অফলাইন CV] হেলদি বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (৫/৫ পয়েন্ট)";
-                } else if (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom))) {
-                    proposedDirection = "WAIT";
-                    confidence = 0;
-                    verdictTitle = "⏸ এক্সহশন/S-R গার্ড (WAIT)";
-                    finalReason = "[অফলাইন CV] টানা " + sameColorStreak + "x ক্যান্ডেল বা পূর্বের S/R দেয়ালের কাছে ঝুঁকি — WAIT";
-                } else {
-                    proposedDirection = "WAIT";
-                    confidence = 0;
-                    verdictTitle = "⏸ ফিল্টার্ড [অফলাইন CV] (WAIT)";
-                    finalReason = "[অফলাইন CV] শক্তিশালী ৫-ধাপ কনফার্মেশন নেই — নিরাপদ WAIT";
-                }
+                proposedDirection = "WAIT";
+                confidence = 0;
+                verdictTitle = "⏸ ফিল্টার্ড [অফলাইন CV] (WAIT)";
+                finalReason = "[অফলাইন CV] ৫-ধাপ কঠোর শর্ত পূর্ণ হয়নি — নিরাপদ WAIT";
             }
 
             String direction = proposedDirection;
 
-            boolean has5m3mMomentum = !"SIDEWAYS".equals(secTrend5M) && secTrend5M.equals(momentum3M)
-                    && (secTrend5M.equals(macroTrend15M) || "SIDEWAYS".equals(macroTrend15M));
-            boolean hasMobile3mSlopeAlign = "SIDEWAYS".equals(macroTrend15M)
-                    && !"SIDEWAYS".equals(momentum3M)
-                    && momentum3M.equals(microTrend1M)
-                    && ("SIDEWAYS".equals(secTrend5M) || secTrend5M.equals(momentum3M))
-                    && momentum3M.equals(poolSlopeTrend);
-            boolean isSrWallExhaustion = (sameColorStreak >= 4 || (sameColorStreak >= 3 && (nearTop || nearBottom)))
-                    && !isTrueHammer && !isTrueShootingStar;
+            boolean isSrOrWickRisk = (closedSignalCandle.isGreen && (hasOpposingWickForCall || (nearTop && !isConfirmedBullBreakout)) && !isTrueHammer)
+                    || (!closedSignalCandle.isGreen && (hasOpposingWickForPut || (nearBottom && !isConfirmedBearBreakdown)) && !isTrueShootingStar)
+                    || ((sameColorStreak >= 3 || isBodyDecelerating) && !isTrueHammer && !isTrueShootingStar);
             boolean step1Passed = isAuthenticChart;
-            boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision);
+            boolean step2Passed = (lastClosedCandle != null && !isDojiIndecision && (bodyPct >= 24 || isTrueHammer || isTrueShootingStar));
             boolean rejectionStep3Ok = ("UP".equals(direction) && isTrueHammer && !"DOWNTREND".equals(macroTrend15M))
                     || ("DOWN".equals(direction) && isTrueShootingStar && !"UPTREND".equals(macroTrend15M));
-            boolean step3Passed = (!"SIDEWAYS".equals(macroTrend15M) && macroTrend15M.equals(secTrend5M))
-                    || has5m3mMomentum
-                    || hasMobile3mSlopeAlign
-                    || rejectionStep3Ok;
+            boolean step3Passed = hasFullMacro5m || has5m3mMomentum || rejectionStep3Ok;
             boolean step4Passed = !isDojiIndecision && !isAlternatingChop && !isSpinningTop && !isExhaustionSpike
-                    && !isSrWallExhaustion;
+                    && !isSidewaysNoReversal && !isSrOrWickRisk;
             boolean step5Passed = !"WAIT".equals(direction) && step1Passed && step2Passed && step3Passed && step4Passed;
             int confirmedPoints = (step1Passed ? 1 : 0) + (step2Passed ? 1 : 0) + (step3Passed ? 1 : 0) + (step4Passed ? 1 : 0) + (step5Passed ? 1 : 0);
 
@@ -1649,10 +1738,10 @@ public class TradePulseNativeScreenPlugin extends Plugin {
             cClosed.put("bodySizePx", lastClosedCandle != null ? (lastClosedCandle.bodyHeight > 0 ? lastClosedCandle.bodyHeight : lastClosedCandle.height) : 0);
             cClosed.put("upperWickPx", lastClosedCandle != null ? lastClosedCandle.upperWickPx : 0);
             cClosed.put("lowerWickPx", lastClosedCandle != null ? lastClosedCandle.lowerWickPx : 0);
-            cClosed.put("isRejection", lastClosedCandle != null && (lastClosedCandle.isHammer || lastClosedCandle.isShootingStar));
+            cClosed.put("isRejection", isTrueHammer || isTrueShootingStar);
             cClosed.put("labelBn", closedShortBn);
-            cClosed.put("isHammer", lastClosedCandle != null && lastClosedCandle.isHammer);
-            cClosed.put("isShootingStar", lastClosedCandle != null && lastClosedCandle.isShootingStar);
+            cClosed.put("isHammer", isTrueHammer);
+            cClosed.put("isShootingStar", isTrueShootingStar);
             cClosed.put("isDoji", lastClosedCandle != null && lastClosedCandle.isDoji);
             cData.put("closedCandle", cClosed);
             JSObject cRunning = new JSObject();

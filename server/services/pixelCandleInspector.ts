@@ -20,15 +20,27 @@ export interface PixelCandleBand {
 export interface PixelChartAudit {
   candleCount: number;
   closedColor: 'GREEN' | 'RED' | 'DOJI';
+  prevColor: 'GREEN' | 'RED' | 'DOJI' | 'NONE';
   formingColor: 'GREEN' | 'RED' | 'DOJI' | 'NONE';
   bodyPct: number;
   upperWickPct: number;
   lowerWickPct: number;
+  closedBodyHeight: number;
+  prevBodyHeight: number;
+  isBodyDecelerating: boolean;
+  isEngulfingBull: boolean;
+  isEngulfingBear: boolean;
   isSpinningTop: boolean;
   sameColorStreak: number;
   alternatingFlips: number;
   nearRangeTop: boolean;
   nearRangeBottom: boolean;
+  isBreakoutAbovePriorHigh: boolean;
+  isBreakdownBelowPriorLow: boolean;
+  inUpperSwingHalf: boolean;
+  inLowerSwingHalf: boolean;
+  microGreenPct: number;
+  microRedPct: number;
   slope12: 'UP' | 'DOWN' | 'FLAT';
   tf3m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
   tf5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
@@ -48,12 +60,10 @@ interface SyntheticOhlcBar {
 function aggregateBackwardOhlc(pool: PixelCandleBand[], period: number): SyntheticOhlcBar[] {
   const bars: SyntheticOhlcBar[] = [];
   if (pool.length < period) return bars;
-  // Build complete N-candle blocks backward from the newest closed candle so latest bar is always complete
   for (let endIdx = pool.length; endIdx - period >= 0; endIdx -= period) {
     const chunk = pool.slice(endIdx - period, endIdx);
     const first = chunk[0];
     const last = chunk[chunk.length - 1];
-    // Convert screen Y (downward positive) to standard price coordinates (upward positive)
     const open = first.color === 'GREEN' ? -first.bodyBottom : -first.bodyTop;
     const close = last.color === 'GREEN' ? -last.bodyTop : -last.bodyBottom;
     let high = -999999;
@@ -66,7 +76,7 @@ function aggregateBackwardOhlc(pool: PixelCandleBand[], period: number): Synthet
     const body = Math.abs(close - open);
     const bodyPct = Math.round((body / span) * 100);
     const color: 'GREEN' | 'RED' | 'DOJI' =
-      bodyPct < 15 ? 'DOJI' : close >= open ? 'GREEN' : 'RED';
+      bodyPct < 16 ? 'DOJI' : close >= open ? 'GREEN' : 'RED';
     bars.unshift({ open, high, low, close, color, bodyPct });
   }
   return bars;
@@ -88,13 +98,22 @@ function classifySyntheticTf(
   const greenCount = recent.filter((b) => b.color === 'GREEN').length;
   const redCount = recent.filter((b) => b.color === 'RED').length;
 
-  const hhhl = latest.close > prev.close && latest.low >= prev.low - Math.max(2, (prev.high - prev.low) * 0.15);
-  const lhll = latest.close < prev.close && latest.high <= prev.high + Math.max(2, (prev.high - prev.low) * 0.15);
+  const prevSpan = Math.max(2, prev.high - prev.low);
+  const hhhl = latest.close > prev.close && latest.low >= prev.low - prevSpan * 0.12;
+  const lhll = latest.close < prev.close && latest.high <= prev.high + prevSpan * 0.12;
 
-  if (latest.color === 'GREEN' && latest.bodyPct >= 14 && (greenCount >= 2 || hhhl || latest.close > prev.open)) {
+  if (
+    latest.color === 'GREEN' &&
+    latest.bodyPct >= 18 &&
+    ((greenCount >= 2 && latest.close > prev.close) || hhhl)
+  ) {
     return 'UPTREND';
   }
-  if (latest.color === 'RED' && latest.bodyPct >= 14 && (redCount >= 2 || lhll || latest.close < prev.open)) {
+  if (
+    latest.color === 'RED' &&
+    latest.bodyPct >= 18 &&
+    ((redCount >= 2 && latest.close < prev.close) || lhll)
+  ) {
     return 'DOWNTREND';
   }
   return 'SIDEWAYS';
@@ -102,8 +121,8 @@ function classifySyntheticTf(
 
 /**
  * Decodes JPEG buffer and performs deterministic right-edge candlestick segmentation
- * to cross-check Gemini Vision's closed-candle identification, chop, spinning tops,
- * and consecutive exhaustion streaks. Returns null gracefully for non-JPEG or unclear frames.
+ * with sub-panel separation, dominant-color-pure body detection, strict Y-localized
+ * infant forming candle detection, and anti-text-screen protection.
  */
 export function inspectChartPixels(imageBase64: string): PixelChartAudit | null {
   try {
@@ -112,7 +131,6 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     if (cleanBase64.length < 4000) return null;
 
     const buf = Buffer.from(cleanBase64, 'base64');
-    // Check JPEG magic bytes (FF D8)
     if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
       return null;
     }
@@ -126,20 +144,18 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     const srcH = decoded.height;
     const src = decoded.data;
 
-    // Preserve 1:1 pixel fidelity up to 1440px width so thin 1-2px wicks & infant forming candles aren't blurred out
     const step = srcW > 1440 ? 2 : 1;
     const w = Math.floor(srcW / step);
     const h = Math.floor(srcH / step);
     const isPortrait = h > w;
 
     const yStart = Math.floor(h * (isPortrait ? 0.14 : 0.05));
-    const yEnd = Math.floor(h * (isPortrait ? 0.78 : 0.95));
+    const yEnd = Math.floor(h * (isPortrait ? 0.74 : 0.94));
     const xStart = Math.floor(w * 0.03);
     const xEnd = Math.floor(w * (isPortrait ? 0.84 : 0.88));
 
     if (xEnd - xStart < 60 || yEnd - yStart < 60) return null;
 
-    // Classify green (1) and red (2) chart pixels in ROI
     const grid = new Uint8Array(w * h);
     for (let y = yStart; y < yEnd; y++) {
       const sy = y * step;
@@ -163,16 +179,11 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    // Preserve pre-strip raw pixel grid to detect 1-7px infant forming candles in the rightmost slot
     const rawGrid = new Uint8Array(grid);
 
-    // Strip thin horizontal indicator lines (EMA/SMA/Bollinger/H-lines) by requiring
-    // vertical continuity >= 4px per column so horizontal lines don't bridge gaps between candles.
     const colCounts = new Int32Array(w);
     const colGreen = new Int32Array(w);
     const colRed = new Int32Array(w);
-    const colMinY = new Int32Array(w).fill(99999);
-    const colMaxY = new Int32Array(w).fill(0);
 
     for (let x = xStart; x < xEnd; x++) {
       let runLen = 0;
@@ -189,11 +200,8 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
               colCounts[x]++;
               if (rv === 1) colGreen[x]++;
               else if (rv === 2) colRed[x]++;
-              if (ry < colMinY[x]) colMinY[x] = ry;
-              if (ry > colMaxY[x]) colMaxY[x] = ry;
             }
           } else if (runLen > 0) {
-            // Erase isolated 1-3px horizontal line pixel runs from grid
             for (let ry = runStart; ry < runStart + runLen; ry++) {
               grid[ry * w + x] = 0;
             }
@@ -203,8 +211,8 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    // Segment into candidate candlestick bands
     const rawBands: PixelCandleBand[] = [];
+    let hasGiantUiButton = false;
     let inBand = false;
     let bandStart = 0;
 
@@ -219,35 +227,91 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         inBand = false;
         const endX = x - 1;
         const width = endX - bandStart + 1;
-        if (width >= 2 && width <= 65) {
-          let bMinY = 99999;
-          let bMaxY = 0;
-          let maxColPx = 0;
+        if (width > 120) {
+          let blobMass = 0;
+          for (let bx = bandStart; bx <= endX; bx++) blobMass += colCounts[bx];
+          if (isPortrait && blobMass > width * 20) {
+            hasGiantUiButton = true;
+          }
+        }
+        if (width >= 2 && width <= 95) {
           let sumGreen = 0;
           let sumRed = 0;
-
           for (let bx = bandStart; bx <= endX; bx++) {
             sumGreen += colGreen[bx];
             sumRed += colRed[bx];
-            if (colCounts[bx] > maxColPx) maxColPx = colCounts[bx];
-            if (colMinY[bx] < bMinY) bMinY = colMinY[bx];
-            if (colMaxY[bx] > bMaxY) bMaxY = colMaxY[bx];
           }
-
-          const height = bMaxY - bMinY + 1;
+          const dominantCode = sumGreen >= sumRed ? 1 : 2;
           const mass = sumGreen + sumRed;
-          const fillDensity = mass / Math.max(1, width * height);
 
-          let bodyTop = bMinY;
-          let bodyBottom = bMaxY;
-          const nonEmptyMins: number[] = [];
-          const nonEmptyMaxs: number[] = [];
-          for (let bx = bandStart; bx <= endX; bx++) {
-            if (colCounts[bx] >= 4) {
-              nonEmptyMins.push(colMinY[bx]);
-              nonEmptyMaxs.push(colMaxY[bx]);
+          // Isolate largest vertical cluster of dominant color (separates bottom MACD/AO/Volume sub-panels >= 14px away!)
+          let clusterStart = yStart;
+          let clusterEnd = yEnd - 1;
+          let bestClusterMass = -1;
+          let curStart = -1;
+          let curMass = 0;
+          let emptyGap = 0;
+
+          for (let y = yStart; y <= yEnd; y++) {
+            let rowHits = 0;
+            if (y < yEnd) {
+              for (let bx = bandStart; bx <= endX; bx++) {
+                if (grid[y * w + bx] === dominantCode) rowHits++;
+              }
+            }
+            if (rowHits > 0) {
+              if (curStart === -1) curStart = y;
+              curMass += rowHits;
+              emptyGap = 0;
+            } else if (curStart !== -1) {
+              emptyGap++;
+              if (emptyGap >= 14 || y === yEnd) {
+                const segEnd = y - emptyGap;
+                if (curMass > bestClusterMass) {
+                  bestClusterMass = curMass;
+                  clusterStart = curStart;
+                  clusterEnd = segEnd;
+                }
+                curStart = -1;
+                curMass = 0;
+                emptyGap = 0;
+              }
             }
           }
+
+          if (bestClusterMass < 4) continue;
+
+          let bMinY = 99999;
+          let bMaxY = 0;
+          let maxColPx = 0;
+          const nonEmptyMins: number[] = [];
+          const nonEmptyMaxs: number[] = [];
+
+          for (let bx = bandStart; bx <= endX; bx++) {
+            let bxCount = 0;
+            let bxMin = 99999;
+            let bxMax = 0;
+            for (let y = clusterStart; y <= clusterEnd; y++) {
+              if (grid[y * w + bx] === dominantCode) {
+                bxCount++;
+                if (y < bMinY) bMinY = y;
+                if (y > bMaxY) bMaxY = y;
+                if (y < bxMin) bxMin = y;
+                if (y > bxMax) bxMax = y;
+              }
+            }
+            if (bxCount > maxColPx) maxColPx = bxCount;
+            if (bxCount >= 4) {
+              nonEmptyMins.push(bxMin);
+              nonEmptyMaxs.push(bxMax);
+            }
+          }
+
+          if (bMaxY < bMinY) continue;
+
+          const centerX = Math.round((bandStart + endX) / 2);
+          let bodyTop = bMinY;
+          let bodyBottom = bMaxY;
           if (width >= 5 && nonEmptyMins.length >= 3) {
             nonEmptyMins.sort((a, b) => a - b);
             nonEmptyMaxs.sort((a, b) => a - b);
@@ -258,9 +322,19 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
             bodyBottom = bMinY;
             const bodyThresh = Math.max(3, Math.round(maxColPx * 0.45));
             for (let bx = bandStart; bx <= endX; bx++) {
-              if (colCounts[bx] >= bodyThresh) {
-                if (colMinY[bx] < bodyTop) bodyTop = colMinY[bx];
-                if (colMaxY[bx] > bodyBottom) bodyBottom = colMaxY[bx];
+              let bxCount = 0;
+              let bxMin = 99999;
+              let bxMax = 0;
+              for (let y = clusterStart; y <= clusterEnd; y++) {
+                if (grid[y * w + bx] === dominantCode) {
+                  bxCount++;
+                  if (y < bxMin) bxMin = y;
+                  if (y > bxMax) bxMax = y;
+                }
+              }
+              if (bxCount >= bodyThresh) {
+                if (bxMin < bodyTop) bodyTop = bxMin;
+                if (bxMax > bodyBottom) bodyBottom = bxMax;
               }
             }
           }
@@ -269,21 +343,73 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
             bodyBottom = bMaxY;
           }
 
-          const centerX = Math.round((bandStart + endX) / 2);
-          const upperWickPx = Math.max(0, bodyTop - bMinY);
-          const lowerWickPx = Math.max(0, bMaxY - bodyBottom);
+          // Recover thin 1-2px anti-aliased vertical wicks from rawGrid of the same dominant color
+          let wickTopY = bMinY;
+          let wickBottomY = bMaxY;
+          for (let dy = 1; dy <= 45; dy++) {
+            const checkY = bodyTop - dy;
+            if (checkY < yStart || checkY < clusterStart - 45) break;
+            let hit = false;
+            for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
+              if (grid[checkY * w + wx] === dominantCode) {
+                hit = true;
+                break;
+              }
+              if (rawGrid[checkY * w + wx] === dominantCode) {
+                const lx = Math.max(xStart, wx - 4);
+                const rx = Math.min(xEnd - 1, wx + 4);
+                const isContLine = rawGrid[checkY * w + lx] > 0 && rawGrid[checkY * w + rx] > 0;
+                if (!isContLine) {
+                  hit = true;
+                  break;
+                }
+              }
+            }
+            if (hit && checkY < wickTopY) wickTopY = checkY;
+            else if (!hit && dy > 3 && checkY < bMinY) break;
+          }
+          for (let dy = 1; dy <= 45; dy++) {
+            const checkY = bodyBottom + dy;
+            if (checkY >= yEnd || checkY > clusterEnd + 45) break;
+            let hit = false;
+            for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
+              if (grid[checkY * w + wx] === dominantCode) {
+                hit = true;
+                break;
+              }
+              if (rawGrid[checkY * w + wx] === dominantCode) {
+                const lx = Math.max(xStart, wx - 4);
+                const rx = Math.min(xEnd - 1, wx + 4);
+                const isContLine = rawGrid[checkY * w + lx] > 0 && rawGrid[checkY * w + rx] > 0;
+                if (!isContLine) {
+                  hit = true;
+                  break;
+                }
+              }
+            }
+            if (hit && checkY > wickBottomY) wickBottomY = checkY;
+            else if (!hit && dy > 3 && checkY > bMaxY) break;
+          }
+
+          const finalMinY = Math.min(bMinY, wickTopY);
+          const finalMaxY = Math.max(bMaxY, wickBottomY);
+          const height = Math.max(1, finalMaxY - finalMinY + 1);
+          const upperWickPx = Math.max(0, bodyTop - finalMinY);
+          const lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
           const bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+          const fillDensity = bestClusterMass / Math.max(1, width * height);
 
           let bodyPixels = 0;
           for (let py = bodyTop; py <= bodyBottom; py++) {
             for (let px = bandStart; px <= endX; px++) {
-              if (grid[py * w + px] > 0) bodyPixels++;
+              if (grid[py * w + px] === dominantCode) bodyPixels++;
             }
           }
           const bodyFillDensity = bodyPixels / Math.max(1, width * bodyHeight);
 
-          // Reject wide hollow drawing boxes (empty interior) while keeping zoomed-in Hammer/Pin-bar candles with solid bodies
-          const isHollowOrPill = width > 18 && fillDensity < 0.28 && bodyFillDensity < 0.48;
+          const isHollowOrPill =
+            (width > 12 && fillDensity < 0.16 && (upperWickPx + lowerWickPx) < height * 0.72) ||
+            (width > 12 && fillDensity < 0.25 && bodyFillDensity < 0.48);
           const hasValidMorphology =
             height >= width * 0.45 || width <= 8 || bodyHeight >= 5 || upperWickPx >= 4 || lowerWickPx >= 4;
 
@@ -293,15 +419,15 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
               endX,
               centerX,
               width,
-              minY: bMinY,
-              maxY: bMaxY,
+              minY: finalMinY,
+              maxY: finalMaxY,
               height: Math.max(height, bodyHeight + upperWickPx + lowerWickPx),
               bodyTop,
               bodyBottom,
               bodyHeight,
               upperWickPx,
               lowerWickPx,
-              color: sumGreen >= sumRed ? 'GREEN' : 'RED',
+              color: dominantCode === 1 ? 'GREEN' : 'RED',
               pixelMass: mass,
             });
           }
@@ -309,9 +435,15 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    if (rawBands.length < 5) return null;
+    if (hasGiantUiButton || rawBands.length < 5) return null;
 
-    // Filter outliers using median candle width (ignoring 1-3px Doji wicks) and pitch gap
+    // Reject UI error-log / alert-box screenshots where bands lack real candlestick wicks
+    const wickBandsCount = rawBands.filter((b) => b.upperWickPx >= 3 || b.lowerWickPx >= 3).length;
+    if (wickBandsCount < Math.max(2, Math.ceil(rawBands.length * 0.28))) {
+      return null;
+    }
+
+    // Compute median candle body width & horizontal center spacing
     const sampleForPitch = rawBands.slice(-Math.min(12, rawBands.length - 1), -1);
     const bodyWidths = sampleForPitch.filter((b) => b.width >= 4).map((b) => b.width).sort((a, b) => a - b);
     const allWidths = sampleForPitch.map((b) => b.width).sort((a, b) => a - b);
@@ -325,20 +457,21 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     gaps.sort((a, b) => a - b);
     const medianStep = gaps.length > 0 ? Math.max(4, gaps[Math.floor(gaps.length / 2)]) : Math.max(6, medianW * 1.4);
 
-    let verified = [...rawBands];
+    // Strip right-edge UI price pills/widgets while preserving genuine zoomed-in rightmost candles
+    const verified = [...rawBands];
     while (verified.length >= 5) {
       const tail = verified[verified.length - 1];
       const prev = verified[verified.length - 2];
       const tailGap = tail.centerX - prev.centerX;
       const tailDensity = tail.pixelMass / Math.max(1, tail.width * tail.height);
       const isSolidUiPill =
-        tail.width > Math.max(medianW * 1.45, 16) &&
-        tail.upperWickPx === 0 &&
-        tail.lowerWickPx === 0 &&
-        tailDensity > 0.78;
+        tail.width > Math.max(medianW * 1.55, 24) &&
+        tail.upperWickPx < 3 &&
+        tail.lowerWickPx < 3 &&
+        tailDensity > 0.8;
       if (
-        tailGap > Math.max(medianStep * 1.85, 28) ||
-        tail.width > Math.max(medianW * 1.8, 22) ||
+        tailGap > Math.max(medianStep * 2.0, 34) ||
+        tail.width > Math.max(medianW * 2.1, 52) ||
         isSolidUiPill
       ) {
         verified.pop();
@@ -349,51 +482,73 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
 
     if (verified.length < 5) return null;
 
-    // Check if an infant just-opened forming candle (1-7px tick, flat doji, or thin 1px wick) exists ~1 step right of lastBand.
-    // Inspect BOTH colCounts AND rawGrid around the expected forming X slot while ignoring continuous horizontal EMA lines.
+    // Require a coherent cluster of >= 4 candles on regular horizontal spacing (blocks scattered UI widgets)
+    let contiguousClusterCount = 1;
+    let maxContiguousCluster = 1;
+    const maxNeighborGap = Math.min(115, Math.max(medianStep * 2.2, 42));
+    for (let i = 1; i < verified.length; i++) {
+      if (verified[i].centerX - verified[i - 1].centerX <= maxNeighborGap) {
+        contiguousClusterCount++;
+        if (contiguousClusterCount > maxContiguousCluster) maxContiguousCluster = contiguousClusterCount;
+      } else {
+        contiguousClusterCount = 1;
+      }
+    }
+    if (maxContiguousCluster < 4) return null;
+
+    // Strict Y-localized infant forming candle detection (ignores distant dots, dashed price lines, or sub-panel bars)
     const lastBand = verified[verified.length - 1];
     let hasInfantTickToRight = false;
     let infantGreenPx = 0;
     let infantRedPx = 0;
-    const tickScanStart = Math.min(xEnd - 1, lastBand.endX + Math.max(2, Math.round(medianStep * 0.4)));
+    const tickScanStart = Math.min(xEnd - 1, lastBand.endX + Math.max(2, Math.round(medianStep * 0.45)));
     const tickScanEnd = Math.min(xEnd - 1, lastBand.centerX + Math.round(medianStep * 1.55));
+    const yTickMin = Math.max(yStart, lastBand.minY - 35);
+    const yTickMax = Math.min(yEnd - 1, lastBand.maxY + 35);
     let tickCols = 0;
+    let totalTickHeight = 0;
+
     for (let tx = tickScanStart; tx <= tickScanEnd; tx++) {
-      let colHasTick = colCounts[tx] >= 2;
-      let colG = colGreen[tx];
-      let colR = colRed[tx];
-      if (!colHasTick) {
-        let rawRun = 0;
-        let runG = 0;
-        let runR = 0;
-        let maxRun = 0;
-        let runTopY = -1;
-        for (let ty = yStart; ty <= yEnd; ty++) {
-          const v = ty < yEnd ? rawGrid[ty * w + tx] : 0;
-          if (v > 0) {
-            if (rawRun === 0) runTopY = ty;
-            rawRun++;
-            if (v === 1) runG++;
-            else runR++;
-          } else {
-            if (rawRun >= 2) {
-              // Ensure it's not part of a continuous horizontal indicator line extending from left of tx
-              const midY = runTopY + Math.floor(rawRun / 2);
-              const leftX = Math.max(xStart, tx - 3);
-              const rightX = Math.min(xEnd - 1, tx + 3);
-              const isContinuousLine = rawGrid[midY * w + leftX] > 0 && rawGrid[midY * w + rightX] > 0;
-              if (!isContinuousLine) {
-                maxRun = Math.max(maxRun, rawRun);
-                colG += runG;
-                colR += runR;
-              }
+      let colHasTick = false;
+      let colG = 0;
+      let colR = 0;
+      let rawRun = 0;
+      let runG = 0;
+      let runR = 0;
+      let maxRun = 0;
+      let runTopY = -1;
+
+      for (let ty = yTickMin; ty <= yTickMax + 1; ty++) {
+        const v = ty <= yTickMax ? rawGrid[ty * w + tx] : 0;
+        if (v > 0) {
+          if (rawRun === 0) runTopY = ty;
+          rawRun++;
+          if (v === 1) runG++;
+          else runR++;
+        } else {
+          if (rawRun >= 2) {
+            const midY = runTopY + Math.floor(rawRun / 2);
+            let leftHits = 0;
+            let rightHits = 0;
+            for (let dx = 1; dx <= 5; dx++) {
+              if (tx - dx >= xStart && rawGrid[midY * w + (tx - dx)] > 0) leftHits++;
+              if (tx + dx < xEnd && rawGrid[midY * w + (tx + dx)] > 0) rightHits++;
             }
-            rawRun = 0;
-            runG = 0;
-            runR = 0;
+            const isHorizontalOrDashedLine = leftHits >= 2 && rightHits >= 2 && rawRun <= 4;
+            if (!isHorizontalOrDashedLine) {
+              maxRun = Math.max(maxRun, rawRun);
+              colG += runG;
+              colR += runR;
+            }
           }
+          rawRun = 0;
+          runG = 0;
+          runR = 0;
         }
-        if (maxRun >= 2) colHasTick = true;
+      }
+      if (maxRun >= 2 && maxRun <= Math.max(36, lastBand.height * 1.25)) {
+        colHasTick = true;
+        totalTickHeight = Math.max(totalTickHeight, maxRun);
       }
       if (colHasTick) {
         tickCols++;
@@ -401,27 +556,62 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         infantRedPx += colR;
       }
     }
-    if (tickCols >= 1 && tickCols <= 4 && tickScanEnd > tickScanStart) {
-      // Only treat as infant candle if lastBand already looks like a completed candle
-      if (lastBand.width >= Math.max(2, Math.round(medianW * 0.65))) {
-        hasInfantTickToRight = true;
-      }
+
+    if (
+      tickCols >= 1 &&
+      tickCols <= 4 &&
+      tickScanEnd > tickScanStart &&
+      totalTickHeight >= 2 &&
+      lastBand.width >= Math.max(3, Math.round(medianW * 0.65))
+    ) {
+      hasInfantTickToRight = true;
     }
 
     const closedBand = hasInfantTickToRight ? lastBand : verified[verified.length - 2];
     const formingBand = hasInfantTickToRight ? null : lastBand;
     const closedIndex = hasInfantTickToRight ? verified.length - 1 : verified.length - 2;
     const closedPool = verified.slice(0, closedIndex + 1);
+    const prevBand = closedIndex >= 1 ? closedPool[closedIndex - 1] : null;
 
     const totalSpan = Math.max(1, closedBand.bodyHeight + closedBand.upperWickPx + closedBand.lowerWickPx);
     const bodyPct = Math.round((closedBand.bodyHeight / totalSpan) * 100);
     const upperWickPct = Math.round((closedBand.upperWickPx / totalSpan) * 100);
     const lowerWickPct = Math.round((closedBand.lowerWickPx / totalSpan) * 100);
 
-    const isDoji = bodyPct <= 18 && (upperWickPct >= 22 || lowerWickPct >= 22);
-    const isSpinningTop = upperWickPct >= 30 && lowerWickPct >= 30 && bodyPct <= 26;
-
+    const isSpinningTop = upperWickPct >= 26 && lowerWickPct >= 26 && bodyPct <= 30;
+    const isDoji = isSpinningTop || (bodyPct <= 19 && (upperWickPct >= 20 || lowerWickPct >= 20));
     const closedColor: 'GREEN' | 'RED' | 'DOJI' = isDoji ? 'DOJI' : closedBand.color;
+
+    const prevColor: 'GREEN' | 'RED' | 'DOJI' | 'NONE' = !prevBand
+      ? 'NONE'
+      : Math.round((prevBand.bodyHeight / Math.max(1, prevBand.height)) * 100) <= 18
+      ? 'DOJI'
+      : prevBand.color;
+    const prevBodyHeight = prevBand ? prevBand.bodyHeight : 0;
+    const closedBodyHeight = closedBand.bodyHeight;
+
+    const isBodyDecelerating = Boolean(
+      prevBand &&
+        prevBand.color === closedBand.color &&
+        prevBand.bodyHeight >= 8 &&
+        closedBand.bodyHeight < prevBand.bodyHeight * 0.55
+    );
+    const isEngulfingBull = Boolean(
+      prevBand &&
+        closedColor === 'GREEN' &&
+        prevBand.color === 'RED' &&
+        closedBand.bodyHeight >= prevBand.bodyHeight * 1.25 &&
+        bodyPct >= 38 &&
+        upperWickPct <= 18
+    );
+    const isEngulfingBear = Boolean(
+      prevBand &&
+        closedColor === 'RED' &&
+        prevBand.color === 'GREEN' &&
+        closedBand.bodyHeight >= prevBand.bodyHeight * 1.25 &&
+        bodyPct >= 38 &&
+        lowerWickPct <= 18
+    );
 
     let formingColor: 'GREEN' | 'RED' | 'DOJI' | 'NONE' = 'NONE';
     if (hasInfantTickToRight) {
@@ -440,7 +630,6 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       formingColor = fBodyPct <= 18 ? 'DOJI' : formingBand.color;
     }
 
-    // Same-color streak ending at closed candle
     let sameColorStreak = 1;
     for (let i = closedPool.length - 2; i >= 0; i--) {
       if (closedPool[i].color === closedBand.color) {
@@ -450,7 +639,6 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    // Alternating color flips across last 6 closed candles (detects choppy ranging)
     const recentForChop = closedPool.slice(-6);
     let alternatingFlips = 0;
     for (let i = 1; i < recentForChop.length; i++) {
@@ -459,8 +647,18 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       }
     }
 
-    // Prior-swing S/R wall check (strictly excludes last 2 candles so active trend highs/lows aren't flagged as walls!)
-    const lookback = closedPool.slice(-16);
+    const microSlice = closedPool.slice(-4);
+    let mGreen = 0;
+    let mRed = 0;
+    for (const c of microSlice) {
+      if (c.color === 'GREEN') mGreen += c.pixelMass;
+      else mRed += c.pixelMass;
+    }
+    const mTotal = Math.max(1, mGreen + mRed);
+    const microGreenPct = Math.round((mGreen / mTotal) * 100);
+    const microRedPct = 100 - microGreenPct;
+
+    const lookback = closedPool.slice(-14);
     let rangeMinY = 99999;
     let rangeMaxY = 0;
     for (const c of lookback) {
@@ -468,10 +666,16 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
       if (c.maxY > rangeMaxY) rangeMaxY = c.maxY;
     }
     const rangeHeight = Math.max(20, rangeMaxY - rangeMinY);
+    const closedMidY = (closedBand.bodyTop + closedBand.bodyBottom) * 0.5;
+    const inUpperSwingHalf = closedMidY <= rangeMinY + rangeHeight * 0.42;
+    const inLowerSwingHalf = closedMidY >= rangeMaxY - rangeHeight * 0.42;
 
     const priorLookback = closedPool.slice(Math.max(0, closedPool.length - 16), Math.max(0, closedPool.length - 2));
     let nearRangeTop = false;
     let nearRangeBottom = false;
+    let isBreakoutAbovePriorHigh = false;
+    let isBreakdownBelowPriorLow = false;
+
     if (priorLookback.length >= 4) {
       let priorMinY = 99999;
       let priorMaxY = 0;
@@ -480,17 +684,25 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         if (c.maxY > priorMaxY) priorMaxY = c.maxY;
       }
       const priorSpan = Math.max(20, priorMaxY - priorMinY);
-      // True overhead resistance wall: closed body stopped inside old resistance band without clean breakout above it
       nearRangeTop =
-        closedBand.bodyTop <= priorMinY + priorSpan * 0.14 &&
-        closedBand.bodyTop >= priorMinY - priorSpan * 0.06;
-      // True floor support wall: closed body stopped inside old support band without clean breakdown below it
+        closedBand.bodyTop <= priorMinY + priorSpan * 0.16 &&
+        closedBand.bodyTop >= priorMinY - priorSpan * 0.18;
       nearRangeBottom =
-        closedBand.bodyBottom >= priorMaxY - priorSpan * 0.14 &&
-        closedBand.bodyBottom <= priorMaxY + priorSpan * 0.06;
+        closedBand.bodyBottom >= priorMaxY - priorSpan * 0.16 &&
+        closedBand.bodyBottom <= priorMaxY + priorSpan * 0.18;
+
+      isBreakoutAbovePriorHigh =
+        closedColor === 'GREEN' &&
+        closedBand.bodyTop < priorMinY - Math.max(3, priorSpan * 0.03) &&
+        upperWickPct <= 14 &&
+        bodyPct >= 45;
+      isBreakdownBelowPriorLow =
+        closedColor === 'RED' &&
+        closedBand.bodyBottom > priorMaxY + Math.max(3, priorSpan * 0.03) &&
+        lowerWickPct <= 14 &&
+        bodyPct >= 45;
     }
 
-    // 12-candle midpoint slope
     const slopePool = closedPool.slice(-12);
     let slope12: 'UP' | 'DOWN' | 'FLAT' = 'FLAT';
     if (slopePool.length >= 6) {
@@ -500,12 +712,11 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         arr.reduce((acc, b) => acc + (b.bodyTop + b.bodyBottom) / 2, 0) / Math.max(1, arr.length);
       const mid1 = avgMid(firstHalf);
       const mid2 = avgMid(secondHalf);
-      const diff = mid1 - mid2; // positive means price moved UP (lower Y)
-      if (diff > rangeHeight * 0.12) slope12 = 'UP';
-      else if (diff < -rangeHeight * 0.12) slope12 = 'DOWN';
+      const diff = mid1 - mid2;
+      if (diff > rangeHeight * 0.14) slope12 = 'UP';
+      else if (diff < -rangeHeight * 0.14) slope12 = 'DOWN';
     }
 
-    // Mathematical Backward OHLC Aggregation: 1M -> 3M, 5M, and 15M synthetic candles
     const bars3m = aggregateBackwardOhlc(closedPool, 3);
     const bars5m = aggregateBackwardOhlc(closedPool, 5);
     const bars15m =
@@ -515,9 +726,9 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
         ? aggregateBackwardOhlc(closedPool, closedPool.length)
         : [];
 
-    const tf3m = classifySyntheticTf(bars3m, 20);
-    const tf5m = classifySyntheticTf(bars5m, 22);
-    const tf15m = classifySyntheticTf(bars15m, 22);
+    const tf3m = classifySyntheticTf(bars3m, 26);
+    const tf5m = classifySyntheticTf(bars5m, 28);
+    const tf15m = classifySyntheticTf(bars15m, 28);
 
     const fmtTfBn = (t: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS') =>
       t === 'UPTREND' ? 'আপ' : t === 'DOWNTREND' ? 'ডাউন' : 'রেঞ্জ';
@@ -526,15 +737,27 @@ export function inspectChartPixels(imageBase64: string): PixelChartAudit | null 
     return {
       candleCount: verified.length,
       closedColor,
+      prevColor,
       formingColor,
       bodyPct,
       upperWickPct,
       lowerWickPct,
+      closedBodyHeight,
+      prevBodyHeight,
+      isBodyDecelerating,
+      isEngulfingBull,
+      isEngulfingBear,
       isSpinningTop,
       sameColorStreak,
       alternatingFlips,
       nearRangeTop,
       nearRangeBottom,
+      isBreakoutAbovePriorHigh,
+      isBreakdownBelowPriorLow,
+      inUpperSwingHalf,
+      inLowerSwingHalf,
+      microGreenPct,
+      microRedPct,
       slope12,
       tf3m,
       tf5m,

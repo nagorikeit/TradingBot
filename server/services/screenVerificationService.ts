@@ -526,18 +526,18 @@ export class ScreenVerificationService {
     );
 
     const isSpinningTop =
-      (upperWickPct >= 30 && lowerWickPct >= 30 && bodyPct <= 26) ||
-      Boolean(pixelAudit && pixelAudit.candleCount >= 5 && pixelAudit.isSpinningTop && bodyPct <= 28);
+      (upperWickPct >= 26 && lowerWickPct >= 26 && bodyPct <= 30) ||
+      Boolean(pixelAudit && pixelAudit.candleCount >= 5 && pixelAudit.isSpinningTop && bodyPct <= 32);
 
     const hasUpperPinBar =
       !isSpinningTop &&
-      ((upperWickPct >= 38 && lowerWickPct <= 22 && upperWickPct >= Math.max(25, lowerWickPct * 1.7)) ||
-        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'UPPER_REJECTION' && lowerWickPct <= 24));
+      ((upperWickPct >= 38 && lowerWickPct <= 20 && upperWickPct >= Math.max(25, lowerWickPct * 1.8)) ||
+        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'UPPER_REJECTION' && lowerWickPct <= 22));
 
     const hasLowerPinBar =
       !isSpinningTop &&
-      ((lowerWickPct >= 38 && upperWickPct <= 22 && lowerWickPct >= Math.max(25, upperWickPct * 1.7)) ||
-        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'LOWER_REJECTION' && upperWickPct <= 24));
+      ((lowerWickPct >= 38 && upperWickPct <= 20 && lowerWickPct >= Math.max(25, upperWickPct * 1.8)) ||
+        (!pixelOverrodeClosedCandle && visionData.closedCandleRejection === 'LOWER_REJECTION' && upperWickPct <= 22));
 
     const hasRejection = hasUpperPinBar || hasLowerPinBar;
 
@@ -561,7 +561,7 @@ export class ScreenVerificationService {
     const macroTrend15m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
       pixelAudit && pixelAudit.candleCount >= 15
         ? pixelAudit.tf15m
-        : pixelAudit && pixelAudit.candleCount >= 11 && pixelAudit.tf15m !== 'SIDEWAYS'
+        : pixelAudit && pixelAudit.candleCount >= 10 && pixelAudit.tf15m !== 'SIDEWAYS'
         ? pixelAudit.tf15m
         : rawVision15m;
     const secondaryTrend5m: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
@@ -642,6 +642,7 @@ export class ScreenVerificationService {
         multiTimeframe: {
           macroTrend15m,
           secondaryTrend5m,
+          momentum3m,
           microTrend1m,
           confluenceStatus: 'CONFLICT',
         },
@@ -660,28 +661,61 @@ export class ScreenVerificationService {
         },
       };
     } else {
-      // 3. High-Precision Consensus Scoring + 5-Step Verification Gate (Zero Self-Inflation)
+      // 3. High-Precision Consensus Scoring + 5-Step Verification Gate (Strict Anti-False-Positive)
       const bullishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BULLISH').length;
       const bearishIndicators = visionData.indicatorsIdentified.filter((i) => i.bias === 'BEARISH').length;
       const rawAiForecast = visionData.predictedNextCandle || 'WAIT';
       const setup = (visionData.priceActionSetup || '').toLowerCase();
       const pattern = (visionData.candlestickPattern || '').toLowerCase();
 
+      const hasDrawingSupportConfirm =
+        Boolean(visionData.userDrawingsDetected) &&
+        (visionData.drawingInteraction === 'AT_SUPPORT_BOUNCE' || visionData.drawingInteraction === 'BREAKOUT_RETEST');
+      const hasDrawingResistanceConfirm =
+        Boolean(visionData.userDrawingsDetected) &&
+        (visionData.drawingInteraction === 'AT_RESISTANCE_REJECT' || visionData.drawingInteraction === 'BREAKOUT_RETEST');
+
+      const srZoneText = `${visionData.visionSummary || ''} ${visionData.drawingNoteBn || ''}`.toLowerCase();
+      const patternZoneBlob = `${pattern} ${setup} ${srZoneText}`;
+      const isTextualHangingManTrap =
+        patternZoneBlob.includes('hanging man') ||
+        patternZoneBlob.includes('top of rally') ||
+        patternZoneBlob.includes('rally top') ||
+        patternZoneBlob.includes('near resistance') ||
+        patternZoneBlob.includes('at resistance') ||
+        patternZoneBlob.includes('swing high');
+      const isTextualInvertedHammerTrap =
+        patternZoneBlob.includes('inverted hammer') ||
+        patternZoneBlob.includes('bottom of drop') ||
+        patternZoneBlob.includes('near support') ||
+        patternZoneBlob.includes('at support') ||
+        patternZoneBlob.includes('swing low');
+
+      const inSwingTopForStar =
+        (!pixelAudit ? !isTextualInvertedHammerTrap : pixelAudit.nearRangeTop || pixelAudit.inUpperSwingHalf) ||
+        hasDrawingResistanceConfirm;
+      const inSwingBottomForHammer =
+        (!pixelAudit ? !isTextualHangingManTrap : pixelAudit.nearRangeBottom || pixelAudit.inLowerSwingHalf) ||
+        hasDrawingSupportConfirm;
+
       const isBearishRejection =
         !isSpinningTop &&
+        inSwingTopForStar &&
         (hasUpperPinBar ||
-          (setup.includes('shooting star') && lowerWickPct <= 24) ||
-          (pattern.includes('shooting star') && lowerWickPct <= 24));
+          (setup.includes('shooting star') && upperWickPct >= 34 && lowerWickPct <= 22) ||
+          (pattern.includes('shooting star') && upperWickPct >= 34 && lowerWickPct <= 22));
       const isBullishRejection =
         !isSpinningTop &&
+        inSwingBottomForHammer &&
         (hasLowerPinBar ||
-          (setup.includes('hammer') && upperWickPct <= 24) ||
-          (pattern.includes('hammer') && upperWickPct <= 24));
+          (setup.includes('hammer') && !setup.includes('inverted') && lowerWickPct >= 34 && upperWickPct <= 22) ||
+          (pattern.includes('hammer') && !pattern.includes('inverted') && lowerWickPct >= 34 && upperWickPct <= 22));
+      const hasValidatedRejection = isBearishRejection || isBullishRejection;
 
       const step1Passed = Boolean(visionData.step1ChartValid ?? visionData.isClearTradingChart);
 
-      // Step 2 MUST fail if closed candle is uncertain, Doji, Spinning Top, or Vision vs Pixel clearly disagreed!
-      const isWeakAmbiguousDoji = closedCandleType === 'DOJI' || isSpinningTop || (bodyPct < 20 && !hasRejection);
+      // Step 2 MUST fail on Doji, Spinning Top, ambiguous body (< 24% without S/R pin-bar), or pixel/vision color mismatch!
+      const isWeakAmbiguousDoji = closedCandleType === 'DOJI' || isSpinningTop || (bodyPct < 24 && !hasValidatedRejection);
       const closedCandleMismatch = Boolean(pixelConfirmedOpposite);
       const step2Passed = Boolean(
         effectiveClosedColor !== 'UNCERTAIN' &&
@@ -690,9 +724,11 @@ export class ScreenVerificationService {
           (visionData.step2ClosedCandleValid !== false)
       );
 
-      // Check real visible chart slope via pixelAudit if available
+      // Multi-timeframe structure verification (requires genuine aligned trend, NO sideways free-passes!)
       const has5m3mMomentum =
-        secondaryTrend5m !== 'SIDEWAYS' && momentum3m === secondaryTrend5m;
+        secondaryTrend5m !== 'SIDEWAYS' &&
+        momentum3m === secondaryTrend5m &&
+        microTrend1m === secondaryTrend5m;
       const is15mOpposing5m3m =
         macroTrend15m !== 'SIDEWAYS' &&
         has5m3mMomentum &&
@@ -706,110 +742,129 @@ export class ScreenVerificationService {
         pixelAudit &&
           pixelAudit.candleCount >= 6 &&
           pixelAudit.slope12 === 'FLAT' &&
-          !has5m3mMomentum &&
-          !hasRejection
+          secondaryTrend5m === 'SIDEWAYS' &&
+          !hasValidatedRejection
       );
 
       const mtfConfluence: 'ALIGNED' | 'CONFLICT' | 'NEUTRAL' =
         macroTrend15m !== 'SIDEWAYS' &&
         secondaryTrend5m === macroTrend15m &&
-        momentum3m === macroTrend15m
+        momentum3m !== (macroTrend15m === 'UPTREND' ? 'DOWNTREND' : 'UPTREND')
           ? 'ALIGNED'
-          : has5m3mMomentum && !is15mOpposing5m3m
+          : macroTrend15m === 'SIDEWAYS' && has5m3mMomentum && (!pixelAudit || pixelAudit.slope12 === (secondaryTrend5m === 'UPTREND' ? 'UP' : 'DOWN'))
           ? 'ALIGNED'
           : is5m3mConflicting || is15mOpposing5m3m
           ? 'CONFLICT'
           : isFlatVisualRange
           ? 'NEUTRAL'
-          : macroTrend15m !== 'SIDEWAYS' && secondaryTrend5m === macroTrend15m
-          ? 'ALIGNED'
           : 'NEUTRAL';
 
-      // User-Drawn Chart Markup Confluence & Anti-Wall Entry Guard
       const drawingInteraction = visionData.drawingInteraction || 'NONE';
       const hasUserDrawings = Boolean(visionData.userDrawingsDetected && drawingInteraction !== 'NONE');
 
-      // Market filter MUST fail on true 5-flip checkerboard chop, Spinning Top, HIGH_VOLATILITY_SPIKE, or TRUE 4+ exhaustion chasing
+      // Market chop check: 4+ alternating flips OR 3+ flips with tiny bodies and no 5m/3m alignment
       const isPixelChoppy = Boolean(
         pixelAudit &&
           pixelAudit.candleCount >= 6 &&
-          (pixelAudit.alternatingFlips >= 5 ||
-            (pixelAudit.alternatingFlips >= 4 &&
+          (pixelAudit.alternatingFlips >= 4 ||
+            (pixelAudit.alternatingFlips >= 3 &&
               pixelAudit.sameColorStreak <= 1 &&
+              pixelAudit.bodyPct < 34 &&
               !has5m3mMomentum &&
-              !hasRejection))
+              !hasValidatedRejection))
       );
       const isBinaryMode = !isSpotSlTp;
-      const hasBullishBreakoutMomentum = Boolean(
-        macroTrend15m === 'UPTREND' &&
+      const hasConfirmedBullBreakout = Boolean(
+        pixelAudit &&
+          pixelAudit.isBreakoutAbovePriorHigh &&
+          macroTrend15m === 'UPTREND' &&
           secondaryTrend5m === 'UPTREND' &&
-          pixelAudit &&
           pixelAudit.sameColorStreak <= 2
       );
-      const hasBearishBreakoutMomentum = Boolean(
-        macroTrend15m === 'DOWNTREND' &&
+      const hasConfirmedBearBreakdown = Boolean(
+        pixelAudit &&
+          pixelAudit.isBreakdownBelowPriorLow &&
+          macroTrend15m === 'DOWNTREND' &&
           secondaryTrend5m === 'DOWNTREND' &&
-          pixelAudit &&
           pixelAudit.sameColorStreak <= 2
       );
+
+      // Strict S/R Wall & Exhaustion guard (NO blind streak<=2 S/R exemption! Only actual breakout clears nearRangeTop/Bottom)
+      const isBodyDecelerating = Boolean(pixelAudit && pixelAudit.isBodyDecelerating);
+      const hasOpposingWickForCall =
+        !isBullishRejection &&
+        (upperWickPct >= 24 ||
+          (upperWickPct >= 20 && upperWickPct > lowerWickPct * 1.6) ||
+          (bodyPct > 0 && upperWickPct > bodyPct * 0.65 && upperWickPct >= 18));
+      const hasOpposingWickForPut =
+        !isBearishRejection &&
+        (lowerWickPct >= 24 ||
+          (lowerWickPct >= 20 && lowerWickPct > upperWickPct * 1.6) ||
+          (bodyPct > 0 && lowerWickPct > bodyPct * 0.65 && lowerWickPct >= 18));
 
       const provisionalCallWall = Boolean(
         isBinaryMode &&
           !isBullishRejection &&
+          !hasDrawingSupportConfirm &&
           pixelAudit &&
           pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'GREEN') ||
-            (pixelAudit.nearRangeTop && pixelAudit.sameColorStreak >= 3 && !hasBullishBreakoutMomentum))
+          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'GREEN') ||
+            (pixelAudit.nearRangeTop && !hasConfirmedBullBreakout) ||
+            (isBodyDecelerating && pixelAudit.closedColor === 'GREEN'))
       );
       const provisionalPutWall = Boolean(
         isBinaryMode &&
           !isBearishRejection &&
+          !hasDrawingResistanceConfirm &&
           pixelAudit &&
           pixelAudit.candleCount >= 6 &&
-          ((pixelAudit.sameColorStreak >= 4 && pixelAudit.closedColor === 'RED') ||
-            (pixelAudit.nearRangeBottom && pixelAudit.sameColorStreak >= 3 && !hasBearishBreakoutMomentum))
+          ((pixelAudit.sameColorStreak >= 3 && pixelAudit.closedColor === 'RED') ||
+            (pixelAudit.nearRangeBottom && !hasConfirmedBearBreakdown) ||
+            (isBodyDecelerating && pixelAudit.closedColor === 'RED'))
       );
 
       const hasBullish5m3m = secondaryTrend5m === 'UPTREND' && momentum3m === 'UPTREND';
       const hasBearish5m3m = secondaryTrend5m === 'DOWNTREND' && momentum3m === 'DOWNTREND';
 
-      // Synthesize objective direction when Vision hesitated ('WAIT') even though Steps 1-4 cleanly aligned
+      // Only override AI 'WAIT' when ALL strict institutional reversal or aligned continuation rules confirm cleanly
       let aiForecast: 'CALL' | 'PUT' | 'WAIT' = rawAiForecast;
       if (aiForecast === 'WAIT' && step1Passed && step2Passed && !isPixelChoppy) {
         if (
           isBullishRejection &&
+          !(macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND') &&
           macroTrend15m !== 'DOWNTREND' &&
-          !hasBearish5m3m &&
-          !provisionalCallWall &&
           drawingInteraction !== 'BLOCKED_AT_RESISTANCE'
         ) {
           aiForecast = 'CALL';
         } else if (
           isBearishRejection &&
+          !(macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND') &&
           macroTrend15m !== 'UPTREND' &&
-          !hasBullish5m3m &&
-          !provisionalPutWall &&
           drawingInteraction !== 'BLOCKED_AT_SUPPORT'
         ) {
           aiForecast = 'PUT';
         } else if (
           mtfConfluence === 'ALIGNED' &&
           closedCandleType === 'BULLISH' &&
-          bodyPct >= 24 &&
-          (secondaryTrend5m === 'UPTREND' || macroTrend15m === 'UPTREND') &&
+          bodyPct >= 34 &&
+          !hasOpposingWickForCall &&
+          (secondaryTrend5m === 'UPTREND' && (macroTrend15m === 'UPTREND' || momentum3m === 'UPTREND')) &&
           momentum3m !== 'DOWNTREND' &&
           !provisionalCallWall &&
-          drawingInteraction !== 'BLOCKED_AT_RESISTANCE'
+          drawingInteraction !== 'BLOCKED_AT_RESISTANCE' &&
+          (!pixelAudit || pixelAudit.microGreenPct >= 52)
         ) {
           aiForecast = 'CALL';
         } else if (
           mtfConfluence === 'ALIGNED' &&
           closedCandleType === 'BEARISH' &&
-          bodyPct >= 24 &&
-          (secondaryTrend5m === 'DOWNTREND' || macroTrend15m === 'DOWNTREND') &&
+          bodyPct >= 34 &&
+          !hasOpposingWickForPut &&
+          (secondaryTrend5m === 'DOWNTREND' && (macroTrend15m === 'DOWNTREND' || momentum3m === 'DOWNTREND')) &&
           momentum3m !== 'UPTREND' &&
           !provisionalPutWall &&
-          drawingInteraction !== 'BLOCKED_AT_SUPPORT'
+          drawingInteraction !== 'BLOCKED_AT_SUPPORT' &&
+          (!pixelAudit || pixelAudit.microRedPct >= 52)
         ) {
           aiForecast = 'PUT';
         }
@@ -826,17 +881,45 @@ export class ScreenVerificationService {
 
       const isOpposingTrendForForecast =
         !isDrawingConfirmed &&
-        ((aiForecast === 'CALL' && (hasBearish5m3m || (macroTrend15m === 'DOWNTREND' && secondaryTrend5m !== 'UPTREND'))) ||
-          (aiForecast === 'PUT' && (hasBullish5m3m || (macroTrend15m === 'UPTREND' && secondaryTrend5m !== 'DOWNTREND'))));
+        ((aiForecast === 'CALL' &&
+          ((isBullishRejection && macroTrend15m === 'DOWNTREND') ||
+            (!isBullishRejection && (hasBearish5m3m || (macroTrend15m === 'DOWNTREND' && secondaryTrend5m !== 'UPTREND'))))) ||
+          (aiForecast === 'PUT' &&
+            ((isBearishRejection && macroTrend15m === 'UPTREND') ||
+              (!isBearishRejection && (hasBullish5m3m || (macroTrend15m === 'UPTREND' && secondaryTrend5m !== 'DOWNTREND'))))));
 
-      // Enforce genuine 4-layer TF alignment (15M Macro + 5M Structure + 3M Momentum + 1M Trigger)
+      const hasCandleOpposingWick =
+        !isDrawingConfirmed &&
+        ((closedCandleType === 'BULLISH' && hasOpposingWickForCall && !isBullishRejection) ||
+          (closedCandleType === 'BEARISH' && hasOpposingWickForPut && !isBearishRejection));
+
+      const isMidRangePinTrap =
+        !isDrawingConfirmed &&
+        ((hasLowerPinBar && !inSwingBottomForHammer) ||
+          (hasUpperPinBar && !inSwingTopForStar) ||
+          isTextualHangingManTrap ||
+          isTextualInvertedHammerTrap);
+
+      const isContinuationOpposingWick =
+        !isDrawingConfirmed &&
+        ((aiForecast === 'CALL' && hasOpposingWickForCall) ||
+          (aiForecast === 'PUT' && hasOpposingWickForPut) ||
+          hasCandleOpposingWick);
+
+      const isWeakContinuationBody =
+        !hasValidatedRejection &&
+        !isDrawingConfirmed &&
+        (aiForecast === 'CALL' || aiForecast === 'PUT') &&
+        bodyPct < 32;
+
+      // Enforce genuine multi-TF alignment OR validated swing-extreme S/R reversal OR confirmed user drawing
       const step3Passed = Boolean(
         !isBlockedByDrawing &&
           !isFlatVisualRange &&
           !isOpposingTrendForForecast &&
           (mtfConfluence === 'ALIGNED' ||
             isDrawingConfirmed ||
-            (hasRejection && mtfConfluence !== 'CONFLICT'))
+            (hasValidatedRejection && mtfConfluence !== 'CONFLICT'))
       );
 
       const isExhaustedCallChase = Boolean(
@@ -861,11 +944,11 @@ export class ScreenVerificationService {
       if (aiForecast === 'CALL') directionalScore += 1.5;
       if (aiForecast === 'PUT') directionalScore -= 1.5;
 
-      if (isBearishRejection) directionalScore -= 3.0;
-      if (isBullishRejection) directionalScore += 3.0;
+      if (isBearishRejection) directionalScore -= 3.2;
+      if (isBullishRejection) directionalScore += 3.2;
 
-      directionalScore += Math.min(2, bullishIndicators) * 1.25;
-      directionalScore -= Math.min(2, bearishIndicators) * 1.25;
+      directionalScore += Math.min(2, bullishIndicators) * 1.1;
+      directionalScore -= Math.min(2, bearishIndicators) * 1.1;
 
       if (!isBearishRejection && macroTrend15m === 'UPTREND' && (!pixelAudit || pixelAudit.slope12 !== 'DOWN')) {
         directionalScore += 1.5;
@@ -875,17 +958,25 @@ export class ScreenVerificationService {
       }
 
       if (!isBearishRejection && secondaryTrend5m === 'UPTREND' && momentum3m === 'UPTREND') {
-        directionalScore += 1.25;
+        directionalScore += 1.5;
       }
       if (!isBullishRejection && secondaryTrend5m === 'DOWNTREND' && momentum3m === 'DOWNTREND') {
-        directionalScore -= 1.25;
+        directionalScore -= 1.5;
       }
 
-      if (pattern.includes('bullish engulfing') && closedCandleType === 'BULLISH') directionalScore += 2.0;
-      if (pattern.includes('bearish engulfing') && closedCandleType === 'BEARISH') directionalScore -= 2.0;
+      if ((pattern.includes('bullish engulfing') || pixelAudit?.isEngulfingBull) && closedCandleType === 'BULLISH' && !hasOpposingWickForCall) {
+        directionalScore += 2.0;
+      }
+      if ((pattern.includes('bearish engulfing') || pixelAudit?.isEngulfingBear) && closedCandleType === 'BEARISH' && !hasOpposingWickForPut) {
+        directionalScore -= 2.0;
+      }
 
-      if (closedCandleType === 'BULLISH' && !isBearishRejection && bodyPct >= 22) directionalScore += 1.5;
-      if (closedCandleType === 'BEARISH' && !isBullishRejection && bodyPct >= 22) directionalScore -= 1.5;
+      if (closedCandleType === 'BULLISH' && !isBearishRejection && !hasOpposingWickForCall && bodyPct >= 32) {
+        directionalScore += 1.5;
+      }
+      if (closedCandleType === 'BEARISH' && !isBullishRejection && !hasOpposingWickForPut && bodyPct >= 32) {
+        directionalScore -= 1.5;
+      }
 
       if (isDrawingConfirmed) {
         directionalScore += aiForecast === 'CALL' ? 2.0 : -2.0;
@@ -893,7 +984,7 @@ export class ScreenVerificationService {
 
       const isWeakDojiRisk =
         visionData.tradeQualityTier === 'HIGH_RISK_DOJI' &&
-        (closedCandleType === 'DOJI' || bodyPct < 24 || isPixelChoppy);
+        (closedCandleType === 'DOJI' || bodyPct < 28 || isPixelChoppy);
 
       const isUnsafeMarketRegime =
         marketRegime === 'DOJI_CHOPPY' ||
@@ -902,115 +993,144 @@ export class ScreenVerificationService {
         isSpinningTop ||
         isPixelChoppy;
       const isSidewaysNoRejection =
-        marketRegime === 'SIDEWAYS' &&
-        mtfConfluence !== 'ALIGNED' &&
-        !hasRejection &&
+        (marketRegime === 'SIDEWAYS' || (macroTrend15m === 'SIDEWAYS' && secondaryTrend5m === 'SIDEWAYS')) &&
+        !hasValidatedRejection &&
         !isDrawingConfirmed;
       const aiFilterBlockedUnaligned =
         visionData.step4FilterPassed === false &&
         mtfConfluence !== 'ALIGNED' &&
-        !hasRejection &&
+        !hasValidatedRejection &&
         !isDrawingConfirmed;
       const filterPassed = Boolean(
         !isUnsafeMarketRegime &&
           !isSidewaysNoRejection &&
           !isBlockedByDrawing &&
           !isExhaustionChase &&
+          !isMidRangePinTrap &&
+          !isContinuationOpposingWick &&
+          !isWeakContinuationBody &&
           !aiFilterBlockedUnaligned
       );
 
       const step4SpecificBlockReason = isBlockedByDrawing
         ? 'ড্রয়িং S/R দেয়াল সুরক্ষা'
+        : isMidRangePinTrap
+        ? 'হ্যাংগিং ম্যান / মিড-রেঞ্জ পিন-বার ট্র্যাপ'
+        : isContinuationOpposingWick
+        ? `বিপরীত উইক রিজেকশন ঝুঁকি (আপার ${upperWickPct}% / লোয়ার ${lowerWickPct}%)`
         : isExhaustionChase
-        ? `টানা ${pixelAudit?.sameColorStreak || 3}+ ক্যান্ডেল এক্সহশন / পূর্বের S-R দেয়াল`
+        ? pixelAudit?.isBodyDecelerating
+          ? 'মোমেন্টাম দুর্বল / বডি ছোট হয়েছে (ডিসিলারেশন)'
+          : `টানা ${pixelAudit?.sameColorStreak || 3}+ ক্যান্ডেল এক্সহশন / S-R দেয়াল বাধা`
+        : isWeakContinuationBody
+        ? `দুর্বল ক্যান্ডেল বডি (${bodyPct}%)`
         : isSpinningTop
         ? `স্পিনিং টপ (আপার ${upperWickPct}% / লোয়ার ${lowerWickPct}%)`
         : isPixelChoppy
         ? 'অল্টারনেটিং চপি রেঞ্জ'
         : isSidewaysNoRejection
-        ? 'সাইডওয়েজ মার্কেট (রিজেকশন নেই)'
+        ? 'সাইডওয়েজ মার্কেট (স্বতন্ত্র S/R রিজেকশন নেই)'
         : isUnsafeMarketRegime
         ? `অস্থির মার্কেট (${marketRegime})`
         : 'AI ফিল্টার (অনিশ্চিত সেটআপ)';
 
-      // Weighted 10-point score (fair to naked price-action charts even without indicator overlays)
+      // Quantitative weighted 10-point score (strictly capped below 7.5 whenever Steps 1-4 fail)
       const hasAlignedMomentumForScore =
-        (aiForecast === 'CALL' && (closedCandleType === 'BULLISH' || isBullishRejection) && (hasBullish5m3m || macroTrend15m === 'UPTREND')) ||
-        (aiForecast === 'PUT' && (closedCandleType === 'BEARISH' || isBearishRejection) && (hasBearish5m3m || macroTrend15m === 'DOWNTREND'));
+        (aiForecast === 'CALL' &&
+          (isBullishRejection || (closedCandleType === 'BULLISH' && bodyPct >= 32 && !hasOpposingWickForCall)) &&
+          (hasBullish5m3m || (macroTrend15m === 'UPTREND' && secondaryTrend5m !== 'DOWNTREND'))) ||
+        (aiForecast === 'PUT' &&
+          (isBearishRejection || (closedCandleType === 'BEARISH' && bodyPct >= 32 && !hasOpposingWickForPut)) &&
+          (hasBearish5m3m || (macroTrend15m === 'DOWNTREND' && secondaryTrend5m !== 'UPTREND')));
       const paFromStructure = Math.min(
         4.8,
         Math.max(
-          1.4,
-          (step2Passed ? 2.4 : 0.8) +
-            (hasRejection ? 1.5 : bodyPct >= 30 ? 1.2 : 0.7) +
-            (isDrawingConfirmed ? 0.8 : hasAlignedMomentumForScore ? 0.8 : 0.2)
+          1.2,
+          (step2Passed ? 2.4 : 0.7) +
+            (hasValidatedRejection ? 1.5 : bodyPct >= 36 && !isContinuationOpposingWick ? 1.3 : 0.4) +
+            (isDrawingConfirmed ? 0.9 : hasAlignedMomentumForScore ? 0.9 : 0.1)
         )
       );
       const indFromStructure =
         bullishIndicators + bearishIndicators > 0
-          ? Math.min(3.0, Math.max(0.8, (bullishIndicators + bearishIndicators) * 1.15 + (has5m3mMomentum ? 0.5 : 0)))
+          ? Math.min(2.9, Math.max(0.7, (bullishIndicators + bearishIndicators) * 1.1 + (has5m3mMomentum ? 0.5 : 0)))
           : hasAlignedMomentumForScore && filterPassed
-          ? 2.2
+          ? 2.3
           : filterPassed
           ? 1.5
-          : 0.7;
-      const trendFromStructure = step3Passed ? (mtfConfluence === 'ALIGNED' ? 1.9 : 1.6) : 0.5;
+          : 0.6;
+      const trendFromStructure = step3Passed ? (mtfConfluence === 'ALIGNED' ? 1.9 : 1.5) : 0.4;
 
       const rawPaScore =
         typeof visionData.priceActionScore === 'number' && visionData.priceActionScore > 0
-          ? Math.max(Math.min(5, visionData.priceActionScore), step2Passed && hasAlignedMomentumForScore ? paFromStructure : 0)
+          ? Math.min(5, Math.min(visionData.priceActionScore, paFromStructure + 0.4))
           : paFromStructure;
       const rawIndScore =
         typeof visionData.indicatorMomentumScore === 'number' && visionData.indicatorMomentumScore > 0
-          ? Math.max(Math.min(3, visionData.indicatorMomentumScore), bullishIndicators + bearishIndicators === 0 && hasAlignedMomentumForScore ? indFromStructure : 0)
+          ? Math.min(3, Math.min(visionData.indicatorMomentumScore, indFromStructure + 0.4))
           : indFromStructure;
       const rawTrendScore =
         typeof visionData.trendAlignmentScore === 'number' && visionData.trendAlignmentScore > 0
-          ? Math.max(Math.min(2, visionData.trendAlignmentScore), step3Passed ? trendFromStructure : 0)
+          ? Math.min(2, Math.min(visionData.trendAlignmentScore, trendFromStructure + 0.2))
           : trendFromStructure;
 
       const calculatedScoreSum = rawPaScore + rawIndScore + rawTrendScore;
-      const baseScore =
+      const structuralEligible = step1Passed && step2Passed && step3Passed && filterPassed;
+      const rawBaseScore =
         typeof visionData.totalScore === 'number' && visionData.totalScore > 0
-          ? (step1Passed && step2Passed && step3Passed && filterPassed
-              ? Math.max(visionData.totalScore, calculatedScoreSum)
-              : visionData.totalScore)
-          : calculatedScoreSum;
-      const penalty = (closedCandleMismatch ? 2.5 : 0) + (isExhaustionChase ? 2.5 : 0) + (isSpinningTop ? 2.0 : 0);
+          ? structuralEligible
+              ? Math.min(visionData.totalScore, calculatedScoreSum + 0.5)
+              : Math.min(calculatedScoreSum, 7.1)
+          : structuralEligible
+          ? calculatedScoreSum
+          : Math.min(calculatedScoreSum, 7.1);
+      const penalty =
+        (closedCandleMismatch ? 2.5 : 0) +
+        (isExhaustionChase ? 2.5 : 0) +
+        (isContinuationOpposingWick ? 2.0 : 0) +
+        (isSpinningTop ? 2.0 : 0);
       const computedTotalScore = Number(
-        Math.min(10, Math.max(0, baseScore + (isDrawingConfirmed ? 0.3 : 0) - penalty)).toFixed(1)
+        Math.min(9.8, Math.max(0, rawBaseScore + (isDrawingConfirmed ? 0.3 : 0) - penalty)).toFixed(1)
       );
 
-      // STRICT CLOSED-CANDLE CONSISTENCY & ANTI-COUNTER-TREND GUARD (Prevents wrong entries!)
-      // 1) Do NOT enter CALL if closed candle is BEARISH (>=22% body) without a true Hammer lower-wick rejection or drawing bounce
+      // STRICT CLOSED-CANDLE CONSISTENCY & ANTI-COUNTER-TREND GUARD
       const isContradictoryCall =
         aiForecast === 'CALL' &&
         closedCandleType === 'BEARISH' &&
         !isBullishRejection &&
         !isDrawingConfirmed &&
         bodyPct >= 22;
-      // 2) Do NOT enter PUT if closed candle is BULLISH (>=22% body) without a true Shooting Star upper-wick rejection or drawing rejection
       const isContradictoryPut =
         aiForecast === 'PUT' &&
         closedCandleType === 'BULLISH' &&
         !isBearishRejection &&
         !isDrawingConfirmed &&
         bodyPct >= 22;
-      // 3) Do NOT guess against aligned macro/5m+3m trend without a decisive macro-aligned rejection or explicit drawing level bounce
       const isBlindCounterTrend =
         !isDrawingConfirmed &&
-        ((aiForecast === 'CALL' && ((macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND' && !isBullishRejection) || (hasBearish5m3m && macroTrend15m !== 'UPTREND'))) ||
-          (aiForecast === 'PUT' && ((macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND' && !isBearishRejection) || (hasBullish5m3m && macroTrend15m !== 'DOWNTREND'))));
+        ((aiForecast === 'CALL' &&
+          ((isBullishRejection && macroTrend15m === 'DOWNTREND') ||
+            (!isBullishRejection &&
+              ((macroTrend15m === 'DOWNTREND' && secondaryTrend5m === 'DOWNTREND') ||
+                (hasBearish5m3m && macroTrend15m !== 'UPTREND'))))) ||
+          (aiForecast === 'PUT' &&
+            ((isBearishRejection && macroTrend15m === 'UPTREND') ||
+              (!isBearishRejection &&
+                ((macroTrend15m === 'UPTREND' && secondaryTrend5m === 'UPTREND') ||
+                  (hasBullish5m3m && macroTrend15m !== 'DOWNTREND'))))));
 
       const hasClearDirection =
         aiForecast !== 'WAIT' &&
         !closedCandleMismatch &&
         !isBlockedByDrawing &&
         !isExhaustionChase &&
+        !isMidRangePinTrap &&
+        !isContinuationOpposingWick &&
+        !isWeakContinuationBody &&
         !isContradictoryCall &&
         !isContradictoryPut &&
         !isBlindCounterTrend &&
-        (aiForecast === 'CALL' ? directionalScore >= 2.2 : directionalScore <= -2.2);
+        (aiForecast === 'CALL' ? directionalScore >= 2.6 : directionalScore <= -2.6);
 
       const step5Passed = Boolean(
         hasClearDirection &&
@@ -1018,8 +1138,8 @@ export class ScreenVerificationService {
           filterPassed &&
           step2Passed &&
           step3Passed &&
-          computedTotalScore >= 7.5 &&
-          (visionData.step5SetupConfirmed !== false || (hasAlignedMomentumForScore && computedTotalScore >= 7.5))
+          computedTotalScore >= 7.6 &&
+          (visionData.step5SetupConfirmed !== false || (hasAlignedMomentumForScore && computedTotalScore >= 7.8))
       );
 
       const stepChecks = [
@@ -1050,8 +1170,8 @@ export class ScreenVerificationService {
             ? pixelAudit.ohlcSummaryBn
             : mtfConfluence === 'ALIGNED'
             ? '১৫M+৫M+৩M অ্যালাইন্ড'
-            : hasRejection && step3Passed
-            ? 'রিজেকশন জোন'
+            : hasValidatedRejection && step3Passed
+            ? 'সুইং রিজেকশন'
             : pixelAudit?.ohlcSummaryBn || 'রেঞ্জ/দুর্বল',
         },
         {
@@ -1061,11 +1181,13 @@ export class ScreenVerificationService {
           passed: filterPassed,
           detailBn: isBlockedByDrawing
             ? 'ড্রয়িং দেয়াল ব্লক'
+            : isContinuationOpposingWick
+            ? 'বিপরীত উইক ব্লক'
             : isExhaustionChase
             ? 'এক্সহশন/S-R ব্লক'
             : filterPassed
             ? 'ক্লিয়ার মার্কেট'
-            : 'চপি/দোজি ফিল্টার্ড',
+            : 'চপি/ফিল্টার্ড',
         },
         {
           step: 5,
@@ -1078,9 +1200,9 @@ export class ScreenVerificationService {
 
       const confirmedPoints = stepChecks.filter((s) => s.passed).length;
 
-      // STRICT PRECISION RULE: Require all 5 steps (or 4/5 with >= 7.8 score & mandatory step1/step2/step3/step4/step5), zero contradictions!
+      // STRICT PRECISION RULE: Require all 5 steps passing (5/5) + score >= 7.6 + zero contradictions!
       const canIssueTradeSignal =
-        (confirmedPoints === 5 || (confirmedPoints >= 4 && computedTotalScore >= 7.8)) &&
+        confirmedPoints === 5 &&
         step1Passed &&
         filterPassed &&
         step2Passed &&
@@ -1091,14 +1213,16 @@ export class ScreenVerificationService {
 
       if (!canIssueTradeSignal) {
         direction = 'WAIT';
-        confidence = Math.min(62, Math.max(20, Math.round(confirmedPoints * 12)));
+        confidence = Math.min(58, Math.max(20, Math.round(confirmedPoints * 11)));
         suggestedExpiry = 'অপেক্ষা করুন';
         verdictTitle = `⏸ WAIT (${assetName} · ${confirmedPoints}/5 পয়েন্ট)`;
         const failedStepNames = stepChecks.filter((s) => !s.passed).map((s) => s.labelBn).join(', ');
         const blockNote = closedCandleMismatch
           ? `[${profileLabelBn}] ক্লোজড ক্যান্ডেল যাচাই অমিল (AI: ${visionClosedColor} বনাম চার্ট পিক্সেল: ${pixelAudit?.closedColor}) — ভুল সিগন্যাল এড়াতে WAIT।`
+          : isContinuationOpposingWick
+          ? `[${profileLabelBn}] ক্লোজড ক্যান্ডেলে বিপরীত দিকে শক্তিশালী রিজেকশন উইক (আপার ${upperWickPct}% / লোয়ার ${lowerWickPct}%) — ট্র্যাপ এড়াতে WAIT।`
           : isExhaustionChase
-          ? `[${profileLabelBn}] টানা ${pixelAudit?.sameColorStreak || 3}+ একই রঙের ক্যান্ডেল বা S/R দেয়ালের কাছে এক্সহশন ঝুঁকি — বিপরীত ক্যান্ডেল এড়াতে WAIT।`
+          ? `[${profileLabelBn}] ${pixelAudit?.isBodyDecelerating ? 'মোমেন্টাম ডিসিলারেশন' : `টানা ${pixelAudit?.sameColorStreak || 3}+ ক্যান্ডেল এক্সহশন`} বা পূর্বের S/R দেয়াল বাধা — বিপরীত ক্যান্ডেল এড়াতে WAIT।`
           : isSpinningTop
           ? `[${profileLabelBn}] উভয়মুখী উইক স্পিনিং টপ (${upperWickPct}%/${lowerWickPct}%) — সিদ্ধান্তহীন মার্কেট (WAIT)।`
           : isBlockedByDrawing
@@ -1111,7 +1235,9 @@ export class ScreenVerificationService {
           : isContradictoryCall || isContradictoryPut
           ? `[${profileLabelBn}] ক্লোজড ক্যান্ডেল (${closedCandleLabelBn}) ও সিগন্যালে অসঙ্গতি থাকায় ভুল এন্ট্রি এড়াতে WAIT।`
           : isBlindCounterTrend
-          ? `[${profileLabelBn}] মেইন ট্রেন্ডের বিপরীতে স্পষ্ট রিজেকশন না থাকায় WAIT।`
+          ? `[${profileLabelBn}] মেইন ট্রেন্ডের বিপরীতে সুইং-এক্সট্রিম রিজেকশন না থাকায় WAIT।`
+          : visionData.nextCandlePredictionReasonBn && confirmedPoints < 5
+          ? `[${profileLabelBn}] ৫টির মধ্যে ${confirmedPoints}/৫ পয়েন্ট (${failedStepNames || 'ফিল্টার'}) — ${step4SpecificBlockReason}।`
           : visionData.nextCandlePredictionReasonBn ||
             `[${profileLabelBn}] ৫টির মধ্যে ${confirmedPoints}/৫ পয়েন্ট নিশ্চিত হয়েছে (${failedStepNames || 'কনফার্মেশন অপর্যাপ্ত'}) — নিরাপদ এন্ট্রির জন্য WAIT।`;
         reasoning.push(blockNote);
@@ -1218,7 +1344,7 @@ export class ScreenVerificationService {
             bodySizePx: Math.round(bodyPct),
             upperWickPx: Math.round(upperWickPct),
             lowerWickPx: Math.round(lowerWickPct),
-            isRejection: hasRejection,
+            isRejection: hasValidatedRejection,
             labelBn: closedCandleLabelBn,
           },
           runningCandle: {
@@ -1250,7 +1376,7 @@ export class ScreenVerificationService {
           indicatorMomentumScore: Number(rawIndScore.toFixed(1)),
           trendAlignmentScore: Number(rawTrendScore.toFixed(1)),
           totalScore: computedTotalScore,
-          thresholdRequired: 7.5,
+          thresholdRequired: 7.6,
           finalVerdict: direction === 'UP' ? 'CALL' : direction === 'DOWN' ? 'PUT' : 'WAIT',
         },
       };

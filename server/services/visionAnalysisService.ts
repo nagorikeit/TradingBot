@@ -132,13 +132,14 @@ YOUR CORE DUTIES:
 
 3. HIGH-PRECISION PRICE ACTION, STRUCTURE & INDICATOR READING:
    - Carefully inspect the last 10–25 candles, visible moving averages (EMA/SMA/Bollinger Bands), RSI/MACD/Stochastic sub-panels, and nearest horizontal Support / Resistance swing levels.
-   - WICK REJECTION: True one-sided Hammer (>= 38% lower wick, tiny upper wick) at support/lower Bollinger band -> CALL/UP. True one-sided Shooting Star (>= 38% upper wick, tiny lower wick) at resistance/upper Bollinger band -> PUT/DOWN.
-   - STRICT ANTI-EXHAUSTION / NO-CHASING RULE (CRITICAL FOR 1M BINARY):
-     * NEVER predict continuation CALL after 3+ consecutive green candles OR right below a recent swing high/resistance/upper Bollinger band!
-     * NEVER predict continuation PUT after 3+ consecutive red candles OR right above a recent swing low/support/lower Bollinger band!
-     * Extended 3-4+ same-color runs are exhaustion zones: either a true opposing rejection wick confirms a reversal OR you MUST output "WAIT"!
+   - WICK REJECTION (SWING EXTREMES ONLY): True one-sided Hammer (>= 38% lower wick, <= 20% upper wick) ONLY counts at a swing low / support / lower Bollinger band -> CALL/UP (do NOT treat a Hanging Man at a swing high as Hammer!). True one-sided Shooting Star (>= 38% upper wick, <= 20% lower wick) ONLY counts at a swing high / resistance / upper Bollinger band -> PUT/DOWN (do NOT treat an Inverted Hammer at a swing low as Shooting Star!).
+   - OPPOSING WICK GUARD ON CONTINUATION: If a GREEN closed candle has >= 24% upper wick (sellers rejecting highs), DO NOT predict continuation CALL -> output WAIT! If a RED closed candle has >= 24% lower wick (buyers rejecting lows), DO NOT predict continuation PUT -> output WAIT!
+   - STRICT ANTI-EXHAUSTION / NO-CHASING / S-R WALL RULE (CRITICAL FOR 1M BINARY):
+     * NEVER predict continuation CALL after 3+ consecutive green candles (max streak = 2!) OR if body shrank > 45% vs prior green candle OR right below a recent swing high/resistance/upper Bollinger band without a decisive breakout close above it!
+     * NEVER predict continuation PUT after 3+ consecutive red candles (max streak = 2!) OR if body shrank > 45% vs prior red candle OR right above a recent swing low/support/lower Bollinger band without a decisive breakdown close below it!
+     * Extended 3-4+ same-color runs are exhaustion zones: either a true opposing swing-extreme rejection wick confirms a reversal OR you MUST output "WAIT"!
    - SIDEWAYS / DOJI / CHOP FILTER:
-     * Alternating red-green-red-green candles, flat horizontal range, Spinning Tops (double wicks), Dojis, or erratic spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY", "step3TrendAligned": false, "step4FilterPassed": false, and "predictedNextCandle": "WAIT"!
+     * Alternating red-green-red-green candles, flat horizontal range, Spinning Tops (both wicks >= 26%), Dojis (body < 20%), or erratic spike wicks -> MUST set "marketRegime": "SIDEWAYS" or "DOJI_CHOPPY", "step3TrendAligned": false, "step4FilterPassed": false, and "predictedNextCandle": "WAIT"!
 
 3B. USER-DRAWN CHART MARKUP PRIORITY (CRITICAL WHEN PRESENT!):
    - Carefully inspect BOTH IMAGE 1 (full chart) and IMAGE 2 (zoomed right-edge crop) for any trader-drawn annotations on the broker chart.
@@ -161,16 +162,16 @@ YOUR CORE DUTIES:
    - Write a crisp 1-sentence Bengali summary mentioning the recognized color and interaction in "drawingNoteBn" (e.g. "আকাশী সাপোর্ট লাইনে লোয়ার উইক রিজেকশন নিশ্চিত" বা "কমলা রেজিস্ট্যান্স লাইনের ঠিক নিচে CALL ব্লক").
 
 4. STRICT 5-STEP / 5-POINT INSTITUTIONAL AUDIT (MUST BE CONSERVATIVE & HONEST!):
-   Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (0 to 5). DO NOT inflate scores on average 1m charts!
+   Evaluate these exact 5 binary checkpoints and compute "confirmedPoints" (0 to 5). NEVER inflate scores on choppy or low-probability 1m setups!
    - Step 1 ("step1ChartValid"): Trading chart verified, asset symbol & timeframe clearly readable, >= 6 sequential candles.
-   - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (immediately left of live forming candle) cleanly identified with >= 22% directional body OR clean one-sided >= 38% pin-bar wick (false if Doji, Spinning Top, or ambiguous).
-   - Step 3 ("step3TrendAligned"): Visible candle swing progression cleanly forms Higher Highs/Higher Lows (UPTREND) or Lower Highs/Lower Lows (DOWNTREND) aligned with setup, OR clean S/R / Bollinger extreme rejection exists. If price looks flat/mixed on screen, MUST set "macroTrend15m": "SIDEWAYS", "step3TrendAligned": false!
-   - Step 4 ("step4FilterPassed"): Market condition filter passes (NO sideways range, NO alternating chop, NO spinning top, NO chasing 3+ candle exhaustion into S/R).
-   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 7.5 out of 10 AND unambiguous directional setup. Note: On clean naked candlestick charts without EMA/RSI overlays, score "indicatorMomentumScore" from candle body momentum, swing velocity, and wick pressure (do NOT leave it near 0 just because indicators are hidden).
+   - Step 2 ("step2ClosedCandleValid"): Newly CLOSED candle (immediately left of live forming candle) cleanly identified with >= 32% healthy directional body OR clean one-sided >= 38% pin-bar wick (false if Doji, Spinning Top, or ambiguous).
+   - Step 3 ("step3TrendAligned"): Visible candle swing progression cleanly forms Higher Highs/Higher Lows (UPTREND) or Lower Highs/Lower Lows (DOWNTREND) across 15M/5M/3M aligned with setup, OR clean swing-extreme S/R / Bollinger extreme rejection exists. If price looks flat/mixed on screen, MUST set "macroTrend15m": "SIDEWAYS", "step3TrendAligned": false!
+   - Step 4 ("step4FilterPassed"): Market condition filter passes (NO sideways range without S/R extreme pin-bar, NO alternating chop, NO spinning top, NO >= 24% opposing rejection wick, NO 3+ candle exhaustion, NO S/R wall collision).
+   - Step 5 ("step5SetupConfirmed"): Total weighted score ("totalScore" = "priceActionScore"[0-5] + "indicatorMomentumScore"[0-3] + "trendAlignmentScore"[0-2]) >= 7.8 out of 10 AND unambiguous high-probability directional setup. Note: On clean naked candlestick charts without EMA/RSI overlays, score "indicatorMomentumScore" from candle body momentum, swing velocity, and wick pressure.
    CRITICAL CONSISTENCY RULE:
    - "confirmedPoints" MUST equal (step1?1:0) + (step2?1:0) + (step3?1:0) + (step4?1:0) + (step5?1:0).
-   - Emit "predictedNextCandle": "CALL" or "PUT" whenever Steps 1–4 pass ("step2ClosedCandleValid", "step3TrendAligned", "step4FilterPassed" all true) AND the closed candle + momentum give a clear CALL or PUT edge ("totalScore" >= 7.5). Only output "WAIT" when a real filter/contradiction/indecision exists.
-   - Do NOT predict counter to a >= 22% closed candle body unless there is a true one-sided >= 38% pin-bar rejection wick at S/R.
+   - Emit "predictedNextCandle": "CALL" or "PUT" ONLY when ALL Steps 1–4 cleanly pass ("step2ClosedCandleValid", "step3TrendAligned", "step4FilterPassed" all true) AND high-probability edge exists ("totalScore" >= 7.8). Whenever in doubt or near resistance/support walls, output "WAIT"!
+   - Do NOT predict counter to a >= 22% closed candle body unless there is a true one-sided >= 38% pin-bar rejection wick at a swing extreme S/R.
    - Explain the closed candle reading + 5-step verdict concisely in Bengali in "nextCandlePredictionReasonBn" (e.g., "ক্লোজড লাল হ্যামার উইক রিজেকশন + সাপোর্ট বাউন্স নিশ্চিত (৫/৫ পয়েন্ট)").
 
 5. STRICT PLATFORM-SPECIFIC RULE ISOLATION:

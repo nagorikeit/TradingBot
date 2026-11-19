@@ -1730,140 +1730,179 @@ export class LiveScreenService {
               } else {
                 if (inBand) {
                   const width = x - bandStart;
-                  // Allow genuine candlestick widths (3px to 65px on 720px normalized canvas)
-                  if (width >= 3 && width <= 65) {
-                    let minY = 9999;
-                    let maxY = 0;
-                    let maxColPx = 0;
-                    const nonEmptyMins: number[] = [];
-                    const nonEmptyMaxs: number[] = [];
-                    for (let bx = bandStart; bx < x; bx++) {
-                      let bxCount = 0;
-                      let bxMin = 9999;
-                      let bxMax = 0;
-                      for (let y = yStart; y < yEnd; y++) {
-                        if (candlePixelGrid[y * targetWidth + bx] > 0) {
-                          bxCount++;
-                          if (y < minY) minY = y;
-                          if (y > maxY) maxY = y;
-                          if (y < bxMin) bxMin = y;
-                          if (y > bxMax) bxMax = y;
+                  // Allow genuine candlestick widths (3px to 95px on 720px normalized canvas)
+                  if (width >= 3 && width <= 95) {
+                    const dominantCode = bandColorVote[1] >= bandColorVote[2] ? 1 : 2;
+                    const dominantColor: 'GREEN' | 'RED' = dominantCode === 1 ? 'GREEN' : 'RED';
+
+                    // Isolate largest vertical cluster of dominant color (separates bottom MACD/AO/Volume sub-panels >= 14px away)
+                    let clusterStart = yStart;
+                    let clusterEnd = yEnd - 1;
+                    let bestClusterMass = -1;
+                    let curStart = -1;
+                    let curMass = 0;
+                    let emptyGap = 0;
+                    for (let y = yStart; y <= yEnd; y++) {
+                      let rowHits = 0;
+                      if (y < yEnd) {
+                        for (let bx = bandStart; bx < x; bx++) {
+                          if (candlePixelGrid[y * targetWidth + bx] === dominantCode) rowHits++;
                         }
                       }
-                      if (bxCount > maxColPx) maxColPx = bxCount;
-                      if (bxCount >= 4) {
-                        nonEmptyMins.push(bxMin);
-                        nonEmptyMaxs.push(bxMax);
+                      if (rowHits > 0) {
+                        if (curStart === -1) curStart = y;
+                        curMass += rowHits;
+                        emptyGap = 0;
+                      } else if (curStart !== -1) {
+                        emptyGap++;
+                        if (emptyGap >= 14 || y === yEnd) {
+                          const segEnd = y - emptyGap;
+                          if (curMass > bestClusterMass) {
+                            bestClusterMass = curMass;
+                            clusterStart = curStart;
+                            clusterEnd = segEnd;
+                          }
+                          curStart = -1;
+                          curMass = 0;
+                          emptyGap = 0;
+                        }
                       }
                     }
-                    const height = Math.max(1, maxY - minY + 1);
-                    const dominantColor: 'GREEN' | 'RED' = bandColorVote[1] >= bandColorVote[2] ? 'GREEN' : 'RED';
-                    const centerX = Math.round((bandStart + x - 1) / 2);
 
-                    // Distinguish dense candle body vs thinner upper/lower wicks across columns
-                    let bodyTop = minY;
-                    let bodyBottom = maxY;
-                    if (width >= 5 && nonEmptyMins.length >= 3) {
-                      nonEmptyMins.sort((a, b) => a - b);
-                      nonEmptyMaxs.sort((a, b) => a - b);
-                      bodyTop = nonEmptyMins[Math.floor(nonEmptyMins.length / 2)];
-                      bodyBottom = nonEmptyMaxs[Math.floor(nonEmptyMaxs.length / 2)];
-                    } else {
-                      bodyTop = maxY;
-                      bodyBottom = minY;
-                      const bodyColThreshold = Math.max(3, Math.round(maxColPx * 0.45));
+                    if (bestClusterMass >= 4) {
+                      let minY = 9999;
+                      let maxY = 0;
+                      let maxColPx = 0;
+                      const nonEmptyMins: number[] = [];
+                      const nonEmptyMaxs: number[] = [];
                       for (let bx = bandStart; bx < x; bx++) {
                         let bxCount = 0;
                         let bxMin = 9999;
                         let bxMax = 0;
-                        for (let y = yStart; y < yEnd; y++) {
-                          if (candlePixelGrid[y * targetWidth + bx] > 0) {
+                        for (let y = clusterStart; y <= clusterEnd; y++) {
+                          if (candlePixelGrid[y * targetWidth + bx] === dominantCode) {
                             bxCount++;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
                             if (y < bxMin) bxMin = y;
                             if (y > bxMax) bxMax = y;
                           }
                         }
-                        if (bxCount >= bodyColThreshold) {
-                          if (bxMin < bodyTop) bodyTop = bxMin;
-                          if (bxMax > bodyBottom) bodyBottom = bxMax;
+                        if (bxCount > maxColPx) maxColPx = bxCount;
+                        if (bxCount >= 4) {
+                          nonEmptyMins.push(bxMin);
+                          nonEmptyMaxs.push(bxMax);
                         }
                       }
-                    }
-                    if (bodyBottom < bodyTop) {
-                      bodyTop = minY;
-                      bodyBottom = maxY;
-                    }
+                      if (maxY >= minY) {
+                        const height = Math.max(1, maxY - minY + 1);
+                        const centerX = Math.round((bandStart + x - 1) / 2);
 
-                    // Scan wicks across centerX - 1 .. centerX + 1 (checking rawCandleGrid for 1-2px thin wicks separated by anti-aliased gaps, ignoring horizontal indicator lines)
-                    let wickTopY = bodyTop;
-                    let wickBottomY = bodyBottom;
-                    for (let dy = 1; dy <= 42; dy++) {
-                      const checkY = bodyTop - dy;
-                      if (checkY < yStart) break;
-                      let hit = false;
-                      for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
-                        if (candlePixelGrid[checkY * targetWidth + wx] > 0) {
-                          hit = true;
-                          break;
-                        }
-                        if (rawCandleGrid[checkY * targetWidth + wx] > 0) {
-                          const lx = Math.max(xStart, wx - 3);
-                          const rx = Math.min(xEnd - 1, wx + 3);
-                          const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
-                          if (!isContLine) {
-                            hit = true;
-                            break;
+                        let bodyTop = minY;
+                        let bodyBottom = maxY;
+                        if (width >= 5 && nonEmptyMins.length >= 3) {
+                          nonEmptyMins.sort((a, b) => a - b);
+                          nonEmptyMaxs.sort((a, b) => a - b);
+                          bodyTop = nonEmptyMins[Math.floor(nonEmptyMins.length / 2)];
+                          bodyBottom = nonEmptyMaxs[Math.floor(nonEmptyMaxs.length / 2)];
+                        } else {
+                          bodyTop = maxY;
+                          bodyBottom = minY;
+                          const bodyColThreshold = Math.max(3, Math.round(maxColPx * 0.45));
+                          for (let bx = bandStart; bx < x; bx++) {
+                            let bxCount = 0;
+                            let bxMin = 9999;
+                            let bxMax = 0;
+                            for (let y = clusterStart; y <= clusterEnd; y++) {
+                              if (candlePixelGrid[y * targetWidth + bx] === dominantCode) {
+                                bxCount++;
+                                if (y < bxMin) bxMin = y;
+                                if (y > bxMax) bxMax = y;
+                              }
+                            }
+                            if (bxCount >= bodyColThreshold) {
+                              if (bxMin < bodyTop) bodyTop = bxMin;
+                              if (bxMax > bodyBottom) bodyBottom = bxMax;
+                            }
                           }
                         }
-                      }
-                      if (hit) wickTopY = checkY;
-                      else if (dy > 3 && checkY < minY) break;
-                    }
-                    for (let dy = 1; dy <= 42; dy++) {
-                      const checkY = bodyBottom + dy;
-                      if (checkY >= yEnd) break;
-                      let hit = false;
-                      for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
-                        if (candlePixelGrid[checkY * targetWidth + wx] > 0) {
-                          hit = true;
-                          break;
+                        if (bodyBottom < bodyTop) {
+                          bodyTop = minY;
+                          bodyBottom = maxY;
                         }
-                        if (rawCandleGrid[checkY * targetWidth + wx] > 0) {
-                          const lx = Math.max(xStart, wx - 3);
-                          const rx = Math.min(xEnd - 1, wx + 3);
-                          const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
-                          if (!isContLine) {
-                            hit = true;
-                            break;
+
+                        // Recover thin 1-2px vertical wicks of dominant color only
+                        let wickTopY = minY;
+                        let wickBottomY = maxY;
+                        for (let dy = 1; dy <= 45; dy++) {
+                          const checkY = bodyTop - dy;
+                          if (checkY < yStart || checkY < clusterStart - 45) break;
+                          let hit = false;
+                          for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
+                            if (candlePixelGrid[checkY * targetWidth + wx] === dominantCode) {
+                              hit = true;
+                              break;
+                            }
+                            if (rawCandleGrid[checkY * targetWidth + wx] === dominantCode) {
+                              const lx = Math.max(xStart, wx - 4);
+                              const rx = Math.min(xEnd - 1, wx + 4);
+                              const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
+                              if (!isContLine) {
+                                hit = true;
+                                break;
+                              }
+                            }
                           }
+                          if (hit && checkY < wickTopY) wickTopY = checkY;
+                          else if (!hit && dy > 3 && checkY < minY) break;
                         }
+                        for (let dy = 1; dy <= 45; dy++) {
+                          const checkY = bodyBottom + dy;
+                          if (checkY >= yEnd || checkY > clusterEnd + 45) break;
+                          let hit = false;
+                          for (let wx = Math.max(xStart, centerX - 1); wx <= Math.min(xEnd - 1, centerX + 1); wx++) {
+                            if (candlePixelGrid[checkY * targetWidth + wx] === dominantCode) {
+                              hit = true;
+                              break;
+                            }
+                            if (rawCandleGrid[checkY * targetWidth + wx] === dominantCode) {
+                              const lx = Math.max(xStart, wx - 4);
+                              const rx = Math.min(xEnd - 1, wx + 4);
+                              const isContLine = rawCandleGrid[checkY * targetWidth + lx] > 0 && rawCandleGrid[checkY * targetWidth + rx] > 0;
+                              if (!isContLine) {
+                                hit = true;
+                                break;
+                              }
+                            }
+                          }
+                          if (hit && checkY > wickBottomY) wickBottomY = checkY;
+                          else if (!hit && dy > 3 && checkY > maxY) break;
+                        }
+
+                        const finalMinY = Math.min(minY, wickTopY);
+                        const finalMaxY = Math.max(maxY, wickBottomY);
+                        const upperWickPx = Math.max(0, bodyTop - finalMinY);
+                        const lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
+                        const bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
+
+                        candleBands.push({
+                          start: bandStart,
+                          end: x - 1,
+                          width,
+                          height: Math.max(height, finalMaxY - finalMinY + 1),
+                          bodyHeight,
+                          upperWickPx,
+                          lowerWickPx,
+                          minY: finalMinY,
+                          maxY: finalMaxY,
+                          centerX,
+                          color: dominantColor,
+                          hasUpperWick: upperWickPx >= 4,
+                          hasLowerWick: lowerWickPx >= 4,
+                          pixelMass: bestClusterMass,
+                        });
                       }
-                      if (hit) wickBottomY = checkY;
-                      else if (dy > 3 && checkY > maxY) break;
                     }
-
-                    const finalMinY = Math.min(minY, wickTopY);
-                    const finalMaxY = Math.max(maxY, wickBottomY);
-                    const upperWickPx = Math.max(0, bodyTop - finalMinY);
-                    const lowerWickPx = Math.max(0, finalMaxY - bodyBottom);
-                    const bodyHeight = Math.max(2, bodyBottom - bodyTop + 1);
-
-                    candleBands.push({
-                      start: bandStart,
-                      end: x - 1,
-                      width,
-                      height: Math.max(height, finalMaxY - finalMinY + 1),
-                      bodyHeight,
-                      upperWickPx,
-                      lowerWickPx,
-                      minY: finalMinY,
-                      maxY: finalMaxY,
-                      centerX,
-                      color: dominantColor,
-                      hasUpperWick: upperWickPx >= 4,
-                      hasLowerWick: lowerWickPx >= 4,
-                      pixelMass: bandColorVote[1] + bandColorVote[2],
-                    });
                   }
                   inBand = false;
                 }
@@ -1873,23 +1912,26 @@ export class LiveScreenService {
             // Stage 4: Filter genuine vertical candlestick morphology + strip hollow drawing boxes & right-edge UI price pills
             const rawCandles = candleBands.filter((b) => {
               const fillDensity = b.pixelMass / Math.max(1, b.width * b.height);
+              const domCode = b.color === 'GREEN' ? 1 : 2;
               let bodyPixels = 0;
               const bTop = b.minY + b.upperWickPx;
               const bBot = Math.max(bTop, b.maxY - b.lowerWickPx);
               for (let py = bTop; py <= bBot; py++) {
                 for (let px = b.start; px <= b.end; px++) {
-                  if (candlePixelGrid[py * targetWidth + px] > 0) bodyPixels++;
+                  if (candlePixelGrid[py * targetWidth + px] === domCode) bodyPixels++;
                 }
               }
               const bodyFillDensity = bodyPixels / Math.max(1, b.width * Math.max(1, bBot - bTop + 1));
-              const isHollowBox = b.width > 18 && fillDensity < 0.28 && bodyFillDensity < 0.48;
+              const isHollowBox =
+                (b.width > 12 && fillDensity < 0.16 && b.upperWickPx + b.lowerWickPx < b.height * 0.72) ||
+                (b.width > 12 && fillDensity < 0.25 && bodyFillDensity < 0.48);
               const hasValidShape =
                 b.height >= b.width * 0.45 || b.width <= 8 || b.bodyHeight >= 5 || b.hasUpperWick || b.hasLowerWick;
               return !isHollowBox && hasValidShape && b.height >= 7;
             });
 
-            // Pitch & width outlier guard: if rightmost band is an isolated price tag/badge, strip it cleanly
-            let verifiedCandles = [...rawCandles];
+            // Pitch & width outlier guard: strip isolated right-edge UI price pills while preserving wide zoomed-in candles
+            const verifiedCandles = [...rawCandles];
             let medianStep = 12;
             let medianW = 8;
             if (rawCandles.length >= 5) {
@@ -1913,13 +1955,13 @@ export class LiveScreenService {
                 const tailGap = tail.centerX - prev.centerX;
                 const tailDensity = tail.pixelMass / Math.max(1, tail.width * tail.height);
                 const isSolidUiPill =
-                  tail.width > Math.max(medianW * 1.45, 16) &&
+                  tail.width > Math.max(medianW * 1.55, 24) &&
                   !tail.hasUpperWick &&
                   !tail.hasLowerWick &&
-                  tailDensity > 0.78;
+                  tailDensity > 0.8;
                 if (
-                  tailGap > Math.max(medianStep * 1.85, 28) ||
-                  tail.width > Math.max(medianW * 1.8, 22) ||
+                  tailGap > Math.max(medianStep * 2.0, 34) ||
+                  tail.width > Math.max(medianW * 2.1, 52) ||
                   isSolidUiPill
                 ) {
                   verifiedCandles.pop();
@@ -1934,6 +1976,18 @@ export class LiveScreenService {
             verifiedCandles.forEach((c) => {
               if (c.hasUpperWick || c.hasLowerWick) verifiedWicksCount++;
             });
+
+            let contiguousClusterCount = 1;
+            let maxContiguousCluster = distinctCandleBars > 0 ? 1 : 0;
+            const maxNeighborGap = Math.min(115, Math.max(medianStep * 2.2, 42));
+            for (let i = 1; i < distinctCandleBars; i++) {
+              if (verifiedCandles[i].centerX - verifiedCandles[i - 1].centerX <= maxNeighborGap) {
+                contiguousClusterCount++;
+                if (contiguousClusterCount > maxContiguousCluster) maxContiguousCluster = contiguousClusterCount;
+              } else {
+                contiguousClusterCount = 1;
+              }
+            }
 
             // Stage 5: Time Series & Price Variance Validation (Anti-Text / Anti-Card filter)
             let horizontalSpan = 0;
@@ -1961,7 +2015,10 @@ export class LiveScreenService {
             );
 
             const req2_CandleColor = totalCandlePixels >= 40 && (greenPixelsInChart > 0 || redPixelsInChart > 0);
-            const req3_VerticalAndWicks = distinctCandleBars >= 2 || totalCandlePixels >= 60;
+            const req3_VerticalAndWicks =
+              distinctCandleBars >= 4 &&
+              maxContiguousCluster >= 4 &&
+              verifiedWicksCount >= Math.max(2, Math.ceil(distinctCandleBars * 0.25));
             const req4_TimelineSeries = !isTextRow;
 
             const isCandlestickChart =
@@ -2029,44 +2086,52 @@ export class LiveScreenService {
             let infantGreen = 0;
             let infantRed = 0;
             if (verifiedCandles.length >= 4) {
-              const tStart = Math.min(xEnd - 1, rightmost.end + Math.max(2, Math.round(medianStep * 0.4)));
+              const tStart = Math.min(xEnd - 1, rightmost.end + Math.max(2, Math.round(medianStep * 0.45)));
               const tEnd = Math.min(xEnd - 1, rightmost.centerX + Math.round(medianStep * 1.55));
+              const yTickMin = Math.max(yStart, rightmost.minY - 35);
+              const yTickMax = Math.min(yEnd - 1, rightmost.maxY + 35);
               let tickCols = 0;
+              let maxTickRun = 0;
               for (let tx = tStart; tx <= tEnd; tx++) {
-                let colHasTick = colCounts[tx] >= 2;
+                let colHasTick = false;
                 let colG = 0;
                 let colR = 0;
-                if (!colHasTick) {
-                  let rawRun = 0;
-                  let runG = 0;
-                  let runR = 0;
-                  let maxRun = 0;
-                  let runTopY = -1;
-                  for (let ty = yStart; ty <= yEnd; ty++) {
-                    const v = ty < yEnd ? rawCandleGrid[ty * targetWidth + tx] : 0;
-                    if (v > 0) {
-                      if (rawRun === 0) runTopY = ty;
-                      rawRun++;
-                      if (v === 1) runG++;
-                      else runR++;
-                    } else {
-                      if (rawRun >= 2) {
-                        const midY = runTopY + Math.floor(rawRun / 2);
-                        const leftX = Math.max(xStart, tx - 3);
-                        const rightX = Math.min(xEnd - 1, tx + 3);
-                        const isContinuousLine = rawCandleGrid[midY * targetWidth + leftX] > 0 && rawCandleGrid[midY * targetWidth + rightX] > 0;
-                        if (!isContinuousLine) {
-                          maxRun = Math.max(maxRun, rawRun);
-                          colG += runG;
-                          colR += runR;
-                        }
+                let rawRun = 0;
+                let runG = 0;
+                let runR = 0;
+                let maxRun = 0;
+                let runTopY = -1;
+                for (let ty = yTickMin; ty <= yTickMax + 1; ty++) {
+                  const v = ty <= yTickMax ? rawCandleGrid[ty * targetWidth + tx] : 0;
+                  if (v > 0) {
+                    if (rawRun === 0) runTopY = ty;
+                    rawRun++;
+                    if (v === 1) runG++;
+                    else runR++;
+                  } else {
+                    if (rawRun >= 2) {
+                      const midY = runTopY + Math.floor(rawRun / 2);
+                      let leftHits = 0;
+                      let rightHits = 0;
+                      for (let dx = 1; dx <= 5; dx++) {
+                        if (tx - dx >= xStart && rawCandleGrid[midY * targetWidth + (tx - dx)] > 0) leftHits++;
+                        if (tx + dx < xEnd && rawCandleGrid[midY * targetWidth + (tx + dx)] > 0) rightHits++;
                       }
-                      rawRun = 0;
-                      runG = 0;
-                      runR = 0;
+                      const isHorizLine = leftHits >= 2 && rightHits >= 2 && rawRun <= 4;
+                      if (!isHorizLine) {
+                        maxRun = Math.max(maxRun, rawRun);
+                        colG += runG;
+                        colR += runR;
+                      }
                     }
+                    rawRun = 0;
+                    runG = 0;
+                    runR = 0;
                   }
-                  if (maxRun >= 2) colHasTick = true;
+                }
+                if (maxRun >= 2 && maxRun <= Math.max(36, rightmost.height * 1.25)) {
+                  colHasTick = true;
+                  maxTickRun = Math.max(maxTickRun, maxRun);
                 }
                 if (colHasTick) {
                   tickCols++;
@@ -2074,7 +2139,12 @@ export class LiveScreenService {
                   infantRed += colR;
                 }
               }
-              if (tickCols >= 1 && tickCols <= 4 && rightmost.width >= Math.max(2, Math.round(medianW * 0.65))) {
+              if (
+                tickCols >= 1 &&
+                tickCols <= 4 &&
+                maxTickRun >= 2 &&
+                rightmost.width >= Math.max(3, Math.round(medianW * 0.65))
+              ) {
                 hasInfantTickRight = true;
               }
             }
@@ -2094,10 +2164,10 @@ export class LiveScreenService {
             const upperWickPercent = Math.round((closedTradeCandle.upperWickPx / totalClosedSpan) * 100);
             const lowerWickPercent = Math.round((closedTradeCandle.lowerWickPx / totalClosedSpan) * 100);
 
-            const isSpinningTop = upperWickPercent >= 30 && lowerWickPercent >= 30 && bodyPercent <= 26;
-            const isClosedDoji = isSpinningTop || (bodyPercent <= 18 && (upperWickPercent >= 22 || lowerWickPercent >= 22));
-            const isClosedUpperRejection = !isSpinningTop && upperWickPercent >= 38 && lowerWickPercent <= 22 && upperWickPercent > lowerWickPercent * 1.7;
-            const isClosedLowerRejection = !isSpinningTop && lowerWickPercent >= 38 && upperWickPercent <= 22 && lowerWickPercent > upperWickPercent * 1.7;
+            const isSpinningTop = upperWickPercent >= 26 && lowerWickPercent >= 26 && bodyPercent <= 30;
+            const isClosedDoji = isSpinningTop || (bodyPercent <= 19 && (upperWickPercent >= 20 || lowerWickPercent >= 20));
+            const isClosedUpperRejection = !isSpinningTop && upperWickPercent >= 38 && lowerWickPercent <= 20 && upperWickPercent >= Math.max(25, lowerWickPercent * 1.8);
+            const isClosedLowerRejection = !isSpinningTop && lowerWickPercent >= 38 && upperWickPercent <= 20 && lowerWickPercent >= Math.max(25, upperWickPercent * 1.8);
 
             const lastClosedCandleColor: 'GREEN' | 'RED' | 'DOJI' = isClosedDoji
               ? 'DOJI'
@@ -2109,7 +2179,6 @@ export class LiveScreenService {
               ? rightmost.color
               : 'NONE';
 
-            // 4-Layer Mathematical Backward OHLC Aggregation across visible closed 1M bars (15M, 5M, 3M, 1M)
             const closedPool = verifiedCandles.slice(0, closedIdx + 1);
 
             const aggregateOhlc = (arr: CandleBand[], period: number) => {
@@ -2133,7 +2202,7 @@ export class LiveScreenService {
                 });
                 const span = Math.max(1, high - low);
                 const bodyPct = Math.round((Math.abs(close - open) / span) * 100);
-                const color: 'GREEN' | 'RED' | 'DOJI' = bodyPct < 15 ? 'DOJI' : close >= open ? 'GREEN' : 'RED';
+                const color: 'GREEN' | 'RED' | 'DOJI' = bodyPct < 16 ? 'DOJI' : close >= open ? 'GREEN' : 'RED';
                 bars.unshift({ open, high, low, close, color, bodyPct });
               }
               return bars;
@@ -2154,10 +2223,11 @@ export class LiveScreenService {
               const recent = bars.slice(-3);
               const greens = recent.filter((b) => b.color === 'GREEN').length;
               const reds = recent.filter((b) => b.color === 'RED').length;
-              const hhhl = latest.close > prev.close && latest.low >= prev.low - Math.max(2, (prev.high - prev.low) * 0.15);
-              const lhll = latest.close < prev.close && latest.high <= prev.high + Math.max(2, (prev.high - prev.low) * 0.15);
-              if (latest.color === 'GREEN' && latest.bodyPct >= 14 && (greens >= 2 || hhhl || latest.close > prev.open)) return 'UPTREND';
-              if (latest.color === 'RED' && latest.bodyPct >= 14 && (reds >= 2 || lhll || latest.close < prev.open)) return 'DOWNTREND';
+              const prevSpan = Math.max(2, prev.high - prev.low);
+              const hhhl = latest.close > prev.close && latest.low >= prev.low - prevSpan * 0.12;
+              const lhll = latest.close < prev.close && latest.high <= prev.high + prevSpan * 0.12;
+              if (latest.color === 'GREEN' && latest.bodyPct >= 18 && ((greens >= 2 && latest.close > prev.close) || hhhl)) return 'UPTREND';
+              if (latest.color === 'RED' && latest.bodyPct >= 18 && ((reds >= 2 && latest.close < prev.close) || lhll)) return 'DOWNTREND';
               return 'SIDEWAYS';
             };
 
@@ -2170,15 +2240,14 @@ export class LiveScreenService {
                 ? aggregateOhlc(closedPool, closedPool.length)
                 : [];
 
-            const momentum3m = classifyOhlcTrend(bars3m, 16);
-            const secondaryTrend = classifyOhlcTrend(bars5m, 15);
-            const macroTrend = classifyOhlcTrend(bars15m, 18);
+            const momentum3m = classifyOhlcTrend(bars3m, 26);
+            const secondaryTrend = classifyOhlcTrend(bars5m, 28);
+            const macroTrend = classifyOhlcTrend(bars15m, 28);
             const microTrend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
               lastClosedCandleColor === 'GREEN' ? 'UPTREND' : lastClosedCandleColor === 'RED' ? 'DOWNTREND' : 'SIDEWAYS';
 
-            // Narrow-viewport slope trend across closedPool (supports mobile portrait viewports showing 6-11 bars)
             let poolSlopeTrend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' = 'SIDEWAYS';
-            if (closedPool.length >= 5) {
+            if (closedPool.length >= 6) {
               const half = Math.floor(closedPool.length / 2);
               let firstSum = 0;
               let secondSum = 0;
@@ -2194,9 +2263,9 @@ export class LiveScreenService {
               const avgFirst = firstSum / Math.max(1, half);
               const avgSecond = secondSum / Math.max(1, closedPool.length - half);
               const pSpan = Math.max(15, pMaxY - pMinY);
-              if (avgFirst - avgSecond >= Math.max(4, pSpan * 0.1)) {
+              if (avgFirst - avgSecond >= Math.max(5, pSpan * 0.14)) {
                 poolSlopeTrend = 'UPTREND';
-              } else if (avgSecond - avgFirst >= Math.max(4, pSpan * 0.1)) {
+              } else if (avgSecond - avgFirst >= Math.max(5, pSpan * 0.14)) {
                 poolSlopeTrend = 'DOWNTREND';
               }
             }
@@ -2205,23 +2274,56 @@ export class LiveScreenService {
               t === 'UPTREND' ? 'আপ' : t === 'DOWNTREND' ? 'ডাউন' : 'রেঞ্জ';
             const ohlcSummaryBn = `১৫M ${fmtTfBn(macroTrend)} • ৫M ${fmtTfBn(secondaryTrend)} • ৩M ${fmtTfBn(momentum3m)}`;
 
+            const chopSlice = closedPool.slice(-6);
+            let alternatingFlips = 0;
+            for (let i = 1; i < chopSlice.length; i++) {
+              if (chopSlice[i].color !== chopSlice[i - 1].color) alternatingFlips++;
+            }
             const isAlternatingChop =
-              closedPool.length >= 5 &&
-              closedPool[closedPool.length - 1].color !== closedPool[closedPool.length - 2].color &&
-              closedPool[closedPool.length - 2].color !== closedPool[closedPool.length - 3].color &&
-              closedPool[closedPool.length - 3].color !== closedPool[closedPool.length - 4].color &&
-              closedPool[closedPool.length - 4].color !== closedPool[closedPool.length - 5].color &&
-              !(secondaryTrend !== 'SIDEWAYS' && momentum3m === secondaryTrend);
+              alternatingFlips >= 4 ||
+              (alternatingFlips >= 3 && bodyPercent < 34 && !(secondaryTrend !== 'SIDEWAYS' && momentum3m === secondaryTrend));
 
-            // Count same-color exhaustion streak and prior-swing S/R wall (excluding current 2 candles!)
             let streak = 1;
             for (let i = closedPool.length - 2; i >= 0; i--) {
               if (closedPool[i].color === closedTradeCandle.color) streak++;
               else break;
             }
+            const microSlice = closedPool.slice(-4);
+            let mGreen = 0;
+            let mRed = 0;
+            microSlice.forEach((c) => {
+              if (c.color === 'GREEN') mGreen += c.pixelMass;
+              else mRed += c.pixelMass;
+            });
+            const mTotal = Math.max(1, mGreen + mRed);
+            const microGreenPct = Math.round((mGreen / mTotal) * 100);
+            const microRedPct = 100 - microGreenPct;
+
+            const isBodyDecelerating = Boolean(
+              prevPrev &&
+                prevPrev.color === closedTradeCandle.color &&
+                prevPrev.bodyHeight >= 8 &&
+                closedTradeCandle.bodyHeight < prevPrev.bodyHeight * 0.55
+            );
+
+            // Check if closed candle lies in upper/lower swing extreme & prior-swing S/R wall
+            const lookbackAll = closedPool.slice(-14);
+            let rMinY = 9999;
+            let rMaxY = 0;
+            lookbackAll.forEach((c) => {
+              if (c.minY < rMinY) rMinY = c.minY;
+              if (c.maxY > rMaxY) rMaxY = c.maxY;
+            });
+            const rSpan = Math.max(20, rMaxY - rMinY);
+            const closedMidY = (closedTradeCandle.minY + closedTradeCandle.upperWickPx + closedTradeCandle.maxY - closedTradeCandle.lowerWickPx) * 0.5;
+            const inUpperSwingHalf = closedMidY <= rMinY + rSpan * 0.42;
+            const inLowerSwingHalf = closedMidY >= rMaxY - rSpan * 0.42;
+
             const priorPool = closedPool.slice(Math.max(0, closedPool.length - 16), Math.max(0, closedPool.length - 2));
             let nearTop = false;
             let nearBottom = false;
+            let isConfirmedBullBreakout = false;
+            let isConfirmedBearBreakdown = false;
             if (priorPool.length >= 4) {
               let srMinY = 9999;
               let srMaxY = 0;
@@ -2232,100 +2334,147 @@ export class LiveScreenService {
               const srSpan = Math.max(20, srMaxY - srMinY);
               const closedBodyTop = closedTradeCandle.minY + closedTradeCandle.upperWickPx;
               const closedBodyBottom = closedTradeCandle.maxY - closedTradeCandle.lowerWickPx;
-              nearTop = closedBodyTop <= srMinY + srSpan * 0.14 && closedBodyTop >= srMinY - srSpan * 0.06;
-              nearBottom = closedBodyBottom >= srMaxY - srSpan * 0.14 && closedBodyBottom <= srMaxY + srSpan * 0.06;
+              nearTop = closedBodyTop <= srMinY + srSpan * 0.16 && closedBodyTop >= srMinY - srSpan * 0.18;
+              nearBottom = closedBodyBottom >= srMaxY - srSpan * 0.16 && closedBodyBottom <= srMaxY + srSpan * 0.18;
+              isConfirmedBullBreakout =
+                closedTradeCandle.color === 'GREEN' &&
+                closedBodyTop < srMinY - Math.max(3, srSpan * 0.03) &&
+                upperWickPercent <= 14 &&
+                bodyPercent >= 45 &&
+                macroTrend === 'UPTREND' &&
+                secondaryTrend === 'UPTREND';
+              isConfirmedBearBreakdown =
+                closedTradeCandle.color === 'RED' &&
+                closedBodyBottom > srMaxY + Math.max(3, srSpan * 0.03) &&
+                lowerWickPercent <= 14 &&
+                bodyPercent >= 45 &&
+                macroTrend === 'DOWNTREND' &&
+                secondaryTrend === 'DOWNTREND';
             }
 
-            const has5m3mTrendAlign = secondaryTrend !== 'SIDEWAYS' && momentum3m === secondaryTrend;
-            const hasMobile3mSlope =
-              macroTrend === 'SIDEWAYS' &&
-              momentum3m !== 'SIDEWAYS' &&
-              momentum3m === microTrend &&
-              (secondaryTrend === 'SIDEWAYS' || secondaryTrend === momentum3m) &&
-              momentum3m === poolSlopeTrend;
-            const bullContextStrong =
-              macroTrend === 'UPTREND' ||
-              (macroTrend === 'SIDEWAYS' && secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND') ||
-              (hasMobile3mSlope && momentum3m === 'UPTREND');
-            const bearContextStrong =
-              macroTrend === 'DOWNTREND' ||
-              (macroTrend === 'SIDEWAYS' && secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND') ||
-              (hasMobile3mSlope && momentum3m === 'DOWNTREND');
-            const allowBullBreakout = bullContextStrong && secondaryTrend !== 'DOWNTREND' && streak <= 2;
-            const allowBearBreakout = bearContextStrong && secondaryTrend !== 'UPTREND' && streak <= 2;
+            const has5m3mTrendAlign =
+              secondaryTrend !== 'SIDEWAYS' &&
+              momentum3m === secondaryTrend &&
+              microTrend === secondaryTrend &&
+              (macroTrend === secondaryTrend || (macroTrend === 'SIDEWAYS' && poolSlopeTrend === secondaryTrend));
+            const hasFullMacro5m = macroTrend !== 'SIDEWAYS' && secondaryTrend === macroTrend && momentum3m !== (macroTrend === 'UPTREND' ? 'DOWNTREND' : 'UPTREND');
+            const isValidBullHammer = isClosedLowerRejection && (nearBottom || inLowerSwingHalf);
+            const isValidBearStar = isClosedUpperRejection && (nearTop || inUpperSwingHalf);
+
+            const hasOpposingWickForCall =
+              !isValidBullHammer &&
+              (upperWickPercent >= 24 ||
+                (upperWickPercent >= 20 && upperWickPercent > lowerWickPercent * 1.6) ||
+                (bodyPercent > 0 && upperWickPercent > bodyPercent * 0.65 && upperWickPercent >= 18));
+            const hasOpposingWickForPut =
+              !isValidBearStar &&
+              (lowerWickPercent >= 24 ||
+                (lowerWickPercent >= 20 && lowerWickPercent > upperWickPercent * 1.6) ||
+                (bodyPercent > 0 && lowerWickPercent > bodyPercent * 0.65 && lowerWickPercent >= 18));
+
+            const isSidewaysRange = macroTrend === 'SIDEWAYS' && secondaryTrend === 'SIDEWAYS' && !isValidBullHammer && !isValidBearStar;
 
             let dir: 'UP' | 'DOWN' | 'WAIT' = 'WAIT';
             let pattern = 'স্পষ্ট সেটআপ মেলেনি (WAIT)';
-            let confidence = 42;
+            let confidence = 40;
 
             if (isClosedDoji) {
               dir = 'WAIT';
-              confidence = 30;
+              confidence = 28;
               pattern = isSpinningTop
                 ? 'স্পিনিং টপ (দ্বিমুখী উইক) — সিদ্ধান্তহীন মার্কেট (WAIT)'
                 : 'ক্লোজড ডোজি ক্যান্ডেল — সিদ্ধান্তহীন মার্কেট (WAIT)';
             } else if (isAlternatingChop) {
               dir = 'WAIT';
-              confidence = 36;
+              confidence = 34;
               pattern = 'সাইডওয়েজ অল্টারনেটিং চপ (WAIT)';
-            } else if (isClosedUpperRejection && macroTrend !== 'UPTREND' && !(secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) {
+            } else if (isValidBearStar && macroTrend !== 'UPTREND') {
               dir = 'DOWN';
-              confidence = secondaryTrend === 'DOWNTREND' ? 86 : 82;
-              pattern = '[অফলাইন CV] ক্লোজড ক্যান্ডেল আপার উইক রিজেকশন (PUT)';
-            } else if (isClosedLowerRejection && macroTrend !== 'DOWNTREND' && !(secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) {
+              confidence = secondaryTrend === 'DOWNTREND' ? 88 : 84;
+              pattern = '[অফলাইন CV] রেজিস্ট্যান্স শুটিং স্টার উইক রিজেকশন (PUT)';
+            } else if (isValidBullHammer && macroTrend !== 'DOWNTREND') {
               dir = 'UP';
-              confidence = secondaryTrend === 'UPTREND' ? 86 : 82;
-              pattern = '[অফলাইন CV] ক্লোজড ক্যান্ডেল লোয়ার উইক বাউন্স (CALL)';
+              confidence = secondaryTrend === 'UPTREND' ? 88 : 84;
+              pattern = '[অফলাইন CV] সাপোর্ট হ্যামার লোয়ার উইক বাউন্স (CALL)';
+            } else if (isSidewaysRange) {
+              dir = 'WAIT';
+              confidence = 38;
+              pattern = '[অফলাইন CV] সাইডওয়েজ রেঞ্জ (কোনো S/R রিজেকশন নেই) — WAIT';
             } else if (
               closedTradeCandle.color === 'GREEN' &&
               prevPrev &&
               prevPrev.color === 'RED' &&
-              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
-              (bullContextStrong || (secondaryTrend === 'UPTREND' && momentum3m === 'UPTREND')) &&
+              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 &&
+              bodyPercent >= 38 &&
+              !hasOpposingWickForCall &&
+              (hasFullMacro5m || has5m3mTrendAlign) &&
               macroTrend !== 'DOWNTREND' &&
-              (!nearTop || allowBullBreakout)
+              secondaryTrend !== 'DOWNTREND' &&
+              streak <= 2 &&
+              (!nearTop || isConfirmedBullBreakout)
             ) {
               dir = 'UP';
-              confidence = 85;
-              pattern = '[অফলাইন CV] বুলিশ এনগালফিং ক্লোজড ক্যান্ডেল (CALL)';
+              confidence = 87;
+              pattern = '[অফলাইন CV] ট্রেন্ড বুলিশ এনগালফিং নিশ্চিত (CALL)';
             } else if (
               closedTradeCandle.color === 'RED' &&
               prevPrev &&
               prevPrev.color === 'GREEN' &&
-              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.2 &&
-              (bearContextStrong || (secondaryTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) &&
+              closedTradeCandle.bodyHeight >= prevPrev.bodyHeight * 1.25 &&
+              bodyPercent >= 38 &&
+              !hasOpposingWickForPut &&
+              (hasFullMacro5m || has5m3mTrendAlign) &&
               macroTrend !== 'UPTREND' &&
-              (!nearBottom || allowBearBreakout)
+              secondaryTrend !== 'UPTREND' &&
+              streak <= 2 &&
+              (!nearBottom || isConfirmedBearBreakdown)
             ) {
               dir = 'DOWN';
-              confidence = 85;
-              pattern = '[অফলাইন CV] বিয়ারিশ এনগালফিং ক্লোজড ক্যান্ডেল (PUT)';
+              confidence = 87;
+              pattern = '[অফলাইন CV] ট্রেন্ড বিয়ারিশ এনগালফিং নিশ্চিত (PUT)';
             } else if (
-              bullContextStrong &&
-              (secondaryTrend === 'UPTREND' || momentum3m === 'UPTREND') &&
+              (hasFullMacro5m || has5m3mTrendAlign) &&
+              secondaryTrend === 'UPTREND' &&
+              macroTrend !== 'DOWNTREND' &&
               closedTradeCandle.color === 'GREEN' &&
-              streak <= 3 &&
-              (!nearTop || allowBullBreakout) &&
-              bodyPercent >= 22
+              streak <= 2 &&
+              !isBodyDecelerating &&
+              !hasOpposingWickForCall &&
+              (!nearTop || isConfirmedBullBreakout) &&
+              bodyPercent >= 34 &&
+              microGreenPct >= 52
             ) {
               dir = 'UP';
-              confidence = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' ? 85 : 82;
-              pattern = '[অফলাইন CV] বুলিশ ট্রেন্ড কনটিনিউয়েশন (CALL)';
+              confidence = macroTrend === 'UPTREND' && secondaryTrend === 'UPTREND' ? 86 : 83;
+              pattern = '[অফলাইন CV] হাই-কনফ্লুয়েন্স বুলিশ কনটিনিউয়েশন (CALL)';
             } else if (
-              bearContextStrong &&
-              (secondaryTrend === 'DOWNTREND' || momentum3m === 'DOWNTREND') &&
+              (hasFullMacro5m || has5m3mTrendAlign) &&
+              secondaryTrend === 'DOWNTREND' &&
+              macroTrend !== 'UPTREND' &&
               closedTradeCandle.color === 'RED' &&
-              streak <= 3 &&
-              (!nearBottom || allowBearBreakout) &&
-              bodyPercent >= 22
+              streak <= 2 &&
+              !isBodyDecelerating &&
+              !hasOpposingWickForPut &&
+              (!nearBottom || isConfirmedBearBreakdown) &&
+              bodyPercent >= 34 &&
+              microRedPct >= 52
             ) {
               dir = 'DOWN';
-              confidence = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' ? 85 : 82;
-              pattern = '[অফলাইন CV] বিয়ারিশ ট্রেন্ড কনটিনিউয়েশন (PUT)';
-            } else if (streak >= 4 || (streak >= 3 && (nearTop || nearBottom))) {
+              confidence = macroTrend === 'DOWNTREND' && secondaryTrend === 'DOWNTREND' ? 86 : 83;
+              pattern = '[অফলাইন CV] হাই-কনফ্লুয়েন্স বিয়ারিশ কনটিনিউয়েশন (PUT)';
+            } else if (
+              (closedTradeCandle.color === 'GREEN' && (hasOpposingWickForCall || (nearTop && !isConfirmedBullBreakout))) ||
+              (closedTradeCandle.color === 'RED' && (hasOpposingWickForPut || (nearBottom && !isConfirmedBearBreakdown)))
+            ) {
               dir = 'WAIT';
-              confidence = 40;
-              pattern = `[অফলাইন CV] এক্সহশন / S-R দেয়াল সতর্কতা (টানা ${streak} ক্যান্ডেল) — WAIT`;
+              confidence = 38;
+              pattern = '[অফলাইন CV] বিপরীত উইক রিজেকশন বা S/R দেয়াল বাধা — WAIT';
+            } else if (streak >= 3 || isBodyDecelerating) {
+              dir = 'WAIT';
+              confidence = 38;
+              pattern = isBodyDecelerating
+                ? '[অফলাইন CV] মোমেন্টাম দুর্বল (বডি ছোট হচ্ছে) — WAIT'
+                : `[অফলাইন CV] টানা ${streak}x ক্যান্ডেল এক্সহশন গার্ড — WAIT`;
             }
 
             const closedBn =
@@ -2352,32 +2501,34 @@ export class LiveScreenService {
               lastClosedCandleColor,
               outcomeCandleColor,
               formingCandleColor,
-              isClosedRejection: isClosedUpperRejection || isClosedLowerRejection,
-              closedRejectionType: isClosedUpperRejection
+              isClosedRejection: isValidBullHammer || isValidBearStar,
+              closedRejectionType: isValidBearStar
                 ? 'UPPER_REJECTION'
-                : isClosedLowerRejection
+                : isValidBullHammer
                 ? 'LOWER_REJECTION'
                 : 'NONE',
               bodyPercent,
               upperWickPercent,
               lowerWickPercent,
-              macroTrend: macroTrend !== 'SIDEWAYS' ? macroTrend : hasMobile3mSlope ? poolSlopeTrend : 'SIDEWAYS',
-              secondaryTrend: secondaryTrend !== 'SIDEWAYS' ? secondaryTrend : hasMobile3mSlope ? poolSlopeTrend : 'SIDEWAYS',
+              macroTrend,
+              secondaryTrend,
               momentum3m,
               microTrend,
               ohlcSummaryBn,
               isChoppy:
                 isAlternatingChop ||
                 isSpinningTop ||
-                ((streak >= 4 || (streak >= 3 && (nearTop || nearBottom))) &&
-                  !isClosedLowerRejection &&
-                  !isClosedUpperRejection),
+                isSidewaysRange ||
+                isBodyDecelerating ||
+                (streak >= 3 && !isValidBullHammer && !isValidBearStar) ||
+                (closedTradeCandle.color === 'GREEN' && (hasOpposingWickForCall || (nearTop && !isConfirmedBullBreakout)) && !isValidBullHammer) ||
+                (closedTradeCandle.color === 'RED' && (hasOpposingWickForPut || (nearBottom && !isConfirmedBearBreakdown)) && !isValidBearStar),
               reason: [
                 `[অফলাইন CV] সদ্য ক্লোজড ক্যান্ডেল: ${closedBn} (বডি ${bodyPercent}%, আপার ${upperWickPercent}%, লোয়ার ${lowerWickPercent}%)।`,
                 `OHLC মাল্টি-TF: ${ohlcSummaryBn} · স্ট্রিক ${streak}x।`,
                 dir === 'WAIT'
-                  ? 'নিরাপদ শর্ত বা ক্লাউড AI কনফার্মেশন না মেলায় WAIT।'
-                  : 'অফলাইন ৫-ধাপ অডিটে ক্লোজড ক্যান্ডেল ও ট্রেন্ড অ্যালাইনড।',
+                  ? pattern
+                  : 'অফলাইন ৫-ধাপ কঠোর অডিটে ক্লোজড ক্যান্ডেল, S/R ও ট্রেন্ড সম্পূর্ণ অ্যালাইনড।',
               ],
               diagnostic,
             });
@@ -2536,22 +2687,29 @@ export class LiveScreenService {
     const secTrend = chartDetection.secondaryTrend || 'SIDEWAYS';
     const momentum3m = chartDetection.momentum3m || secTrend;
     const microTrend = chartDetection.microTrend || 'SIDEWAYS';
+    const bodyPct = chartDetection.bodyPercent || 0;
 
-    const has5m3mAligned = secTrend !== 'SIDEWAYS' && momentum3m === secTrend && (macroTrend === secTrend || macroTrend === 'SIDEWAYS');
+    const macroOpposite = macroTrend === 'UPTREND' ? 'DOWNTREND' : macroTrend === 'DOWNTREND' ? 'UPTREND' : '';
+    const hasFullMacro5m =
+      macroTrend !== 'SIDEWAYS' &&
+      secTrend === macroTrend &&
+      momentum3m !== macroOpposite;
+    const has5m3mAligned =
+      secTrend !== 'SIDEWAYS' &&
+      momentum3m === secTrend &&
+      microTrend === secTrend &&
+      (macroTrend === secTrend || (macroTrend === 'SIDEWAYS' && rawDir !== 'WAIT'));
     const step1Passed = true;
-    const step2Passed = closedColor === 'GREEN' || closedColor === 'RED';
+    const step2Passed =
+      (closedColor === 'GREEN' || closedColor === 'RED') &&
+      (bodyPct >= 24 || Boolean(chartDetection.isClosedRejection));
     const rejectionAligned =
       Boolean(chartDetection.isClosedRejection) &&
-      ((rawDir === 'UP' && macroTrend !== 'DOWNTREND' && !(secTrend === 'DOWNTREND' && momentum3m === 'DOWNTREND')) ||
-        (rawDir === 'DOWN' && macroTrend !== 'UPTREND' && !(secTrend === 'UPTREND' && momentum3m === 'UPTREND')));
-    const step3Passed =
-      (macroTrend !== 'SIDEWAYS' &&
-        secTrend !== 'SIDEWAYS' &&
-        macroTrend === secTrend) ||
-      has5m3mAligned ||
-      rejectionAligned;
-    const step4Passed = closedColor !== 'DOJI' && !chartDetection.isChoppy;
-    const step5Passed = rawDir !== 'WAIT' && confidence >= 80 && step1Passed && step2Passed && step3Passed && step4Passed;
+      ((rawDir === 'UP' && macroTrend !== 'DOWNTREND') ||
+        (rawDir === 'DOWN' && macroTrend !== 'UPTREND'));
+    const step3Passed = hasFullMacro5m || has5m3mAligned || rejectionAligned;
+    const step4Passed = closedColor !== 'DOJI' && step2Passed && !chartDetection.isChoppy;
+    const step5Passed = rawDir !== 'WAIT' && confidence >= 82 && step1Passed && step2Passed && step3Passed && step4Passed;
 
     const dir: 'UP' | 'DOWN' | 'WAIT' = step5Passed && step1Passed && step2Passed && step3Passed && step4Passed ? rawDir : 'WAIT';
     const confirmedPoints = [step1Passed, step2Passed, step3Passed, step4Passed, step5Passed].filter(Boolean).length;
@@ -2591,7 +2749,9 @@ export class LiveScreenService {
       }
     }
 
-    const totalScore = Number(((confirmedPoints / 5) * 9.0).toFixed(1));
+    const totalScore = step5Passed
+      ? Number(Math.min(9.4, Math.max(7.8, confidence / 10)).toFixed(1))
+      : Number(Math.min(7.2, (confirmedPoints / 5) * 7.2).toFixed(1));
 
     return {
       analysisId,
